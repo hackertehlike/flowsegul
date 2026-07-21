@@ -1,0 +1,10 @@
+# generated output
+*.html
+!scripts/template.html
+
+# python
+__pycache__/
+*.pyc
+
+# os
+.DS_Store

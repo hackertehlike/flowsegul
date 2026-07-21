@@ -1,0 +1,630 @@
+<title>KPI Endpoints — Call-Flow Explorer</title>
+<style>
+:root{
+ --bg:#eef1f6; --panel:#ffffff; --panel2:#f6f8fb; --ink:#141b26; --muted:#5c6a7e;
+ --line:#d7deea; --edge:#9aa7bd; --chip:#eef2f8; --accent:#3257d6; --model:#7a8699;
+ --kw:#a626a4; --str:#3d8c40; --com:#8a94a6; --def:#2f6df6; --num:#b26a00; --self:#c2410c;
+ --mono:"SF Mono",ui-monospace,SFMono-Regular,Menlo,"Cascadia Code",monospace;
+ --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root{
+ --bg:#0c111a; --panel:#141b27; --panel2:#0f1520; --ink:#e7edf5; --muted:#93a1b5;
+ --line:#25303f; --edge:#4a5a72; --chip:#1b2432; --accent:#6b8cff;
+ --kw:#c678dd; --str:#98c379; --com:#5c6675; --def:#61afef; --num:#d19a66; --self:#e5924b;
+}}
+:root[data-theme=light]{--bg:#eef1f6;--panel:#fff;--panel2:#f6f8fb;--ink:#141b26;--muted:#5c6a7e;--line:#d7deea;--edge:#9aa7bd;--chip:#eef2f8;--kw:#a626a4;--str:#3d8c40;--com:#8a94a6;--def:#2f6df6;--num:#b26a00;--self:#c2410c;}
+:root[data-theme=dark]{--bg:#0c111a;--panel:#141b27;--panel2:#0f1520;--ink:#e7edf5;--muted:#93a1b5;--line:#25303f;--edge:#4a5a72;--chip:#1b2432;--kw:#c678dd;--str:#98c379;--com:#5c6675;--def:#61afef;--num:#d19a66;--self:#e5924b;}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);overflow:hidden;display:flex;flex-direction:column}
+header{display:flex;align-items:center;gap:16px;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--panel);flex:none;z-index:5}
+header h1{margin:0;font-size:15px;font-weight:650;letter-spacing:-.01em}
+header .hint{font-size:12px;color:var(--muted);max-width:60ch}
+.helppop{position:absolute;top:46px;right:12px;z-index:10;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 6px 24px rgba(20,30,50,.16);padding:12px 16px;max-width:360px;font-size:12.5px;color:var(--ink)}
+.helppop[hidden]{display:none}
+.helppop b{font-size:12px}
+.helppop ul{margin:6px 0 0;padding-left:16px;display:flex;flex-direction:column;gap:5px;color:var(--muted)}
+#help.on{background:var(--accent);border-color:var(--accent);color:#fff}
+header .sp{flex:1}
+button.tb{font:inherit;font-size:12px;background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:5px 10px;cursor:pointer}
+button.tb:hover{border-color:var(--accent)}
+.main{flex:1;display:flex;min-height:0}
+.side{width:250px;flex:none;border-right:1px solid var(--line);background:var(--panel);overflow-y:auto;padding:8px;scrollbar-gutter:stable}
+.side .grp{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:10px 8px 4px}
+.ep{display:flex;align-items:center;gap:8px;padding:8px 9px;border-radius:9px;cursor:pointer;border:1px solid transparent}
+.ep:hover{background:var(--panel2)}
+.ep.on{background:var(--panel2);border-color:var(--accent)}
+.ep .m{font:600 10px/1 var(--mono);padding:3px 5px;border-radius:5px;flex:none;background:var(--chip);color:var(--muted);text-transform:uppercase}
+.m.POST{background:#e3edff;color:#2857c4}.m.GET{background:#e2f5ec;color:#1c7a4e}
+:root[data-theme=dark] .m.POST{background:#1c2c4d;color:#8fb0ff}:root[data-theme=dark] .m.GET{background:#12352a;color:#79d3a5}
+@media (prefers-color-scheme:dark){.m.POST{background:#1c2c4d;color:#8fb0ff}.m.GET{background:#12352a;color:#79d3a5}}
+.ep .eptext{flex:1;min-width:0}
+.ep .t{font-size:13px;font-weight:550;line-height:1.2}
+.ep .p{font:11px/1.3 var(--mono);color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stage{flex:1;position:relative;overflow:hidden;background:radial-gradient(circle at 1px 1px, var(--line) 1px, transparent 0) 0 0/22px 22px;cursor:grab}
+.stage:active{cursor:grabbing}
+#world{position:absolute;top:0;left:0;transform-origin:0 0;will-change:transform}
+#edges{position:absolute;top:0;left:0;overflow:visible;pointer-events:none;z-index:1}
+.elab{font:600 10.5px var(--mono);paint-order:stroke;stroke:var(--bg);stroke-width:3.5px;stroke-linejoin:round}
+.elab.ret{font-weight:500;font-size:10px;font-style:italic}
+.pilltext{font:700 10.5px var(--mono)}
+.pillg rect{filter:drop-shadow(0 1px 2px rgba(20,30,50,.25))}
+#edges text{pointer-events:auto;cursor:default}
+#edges.linking .ge{opacity:.1}
+#edges.linking .ge.on{opacity:1}
+/* variable spotlight: hover a variable → it + its arrows stay lit, everything else fades */
+.spot .vchip:not(.vhot),.spot .var:not(.vhot),.spot .lvar:not(.vhot){opacity:.2;transition:opacity .1s}
+.spot .vchip.vhot,.spot .var.vhot{outline:1.5px solid currentColor;outline-offset:1px;border-radius:4px}
+#edges.spot .ge{opacity:.07}
+#edges.spot .vhot{opacity:1}
+[data-var]{cursor:pointer}
+.step.hl{outline:2px solid var(--accent);outline-offset:1px;background:var(--panel)}
+.step.hl.ret{background:var(--panel)}
+.node{position:absolute;width:330px;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 2px 10px rgba(20,30,50,.08);z-index:2}
+.node.wide{width:max-content;max-width:min(940px,86vw)}
+.node.svc{border-color:var(--accent);box-shadow:0 3px 16px rgba(50,87,214,.16)}
+.nhead{display:flex;align-items:center;gap:8px;padding:9px 11px;cursor:grab;border-bottom:1px solid var(--line)}
+.nhead:active{cursor:grabbing}
+.lay{font:600 9px/1 var(--sans);letter-spacing:.06em;text-transform:uppercase;padding:3px 6px;border-radius:5px;flex:none}
+.lay.controller{background:#efe6ff;color:#6b3fd4}.lay.service{background:#e3edff;color:#2857c4}
+.lay.repository{background:#e2f5ec;color:#1c7a4e}.lay.helper{background:#fdeede;color:#b5730f}.lay.external{background:#fde5ec;color:#bd2b62}
+.lay.model{background:#e7eaf0;color:#556}
+.node.model{border-style:dashed}
+@media (prefers-color-scheme:dark){.lay.controller{background:#291d47;color:#b79bff}.lay.service{background:#1c2c4d;color:#8fb0ff}.lay.repository{background:#12352a;color:#79d3a5}.lay.helper{background:#3a2c14;color:#e6b06b}.lay.external{background:#3d1626;color:#f090b4}}
+:root[data-theme=dark] .lay.controller{background:#291d47;color:#b79bff}:root[data-theme=dark] .lay.service{background:#1c2c4d;color:#8fb0ff}:root[data-theme=dark] .lay.repository{background:#12352a;color:#79d3a5}:root[data-theme=dark] .lay.helper{background:#3a2c14;color:#e6b06b}:root[data-theme=dark] .lay.external{background:#3d1626;color:#f090b4}
+.ntitle{font:600 12.5px/1.2 var(--mono);flex:1;word-break:break-word}
+.nsub{font:10.5px/1 var(--mono);color:var(--muted);margin-top:2px}
+.ncaret{font-size:11px;color:var(--muted);flex:none}
+.nbody{padding:8px 10px;display:flex;flex-direction:column;gap:6px}
+.step{font:11.5px/1.45 var(--mono);background:var(--panel2);border-radius:7px;padding:6px 8px;border-left:3px solid var(--line)}
+.step.ret{background:transparent;border-left:3px solid var(--edge)}
+.step .kw{color:var(--kw)} .step .arw{color:var(--muted)}
+.vchip{padding:1px 5px;border-radius:5px;font-weight:700;white-space:nowrap}
+.codebtn{align-self:flex-start;font:11px/1 var(--sans);color:var(--accent);background:none;border:1px dashed var(--line);border-radius:6px;padding:4px 8px;cursor:pointer;margin-top:2px}
+.codebtn:hover{border-color:var(--accent)}
+pre.code{margin:6px 0 0;padding:12px 14px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;font:12.5px/1.6 var(--mono);overflow:auto;max-height:70vh;white-space:pre;tab-size:4;width:max-content;max-width:min(910px,84vw)}
+pre.code .kw{color:var(--kw)}pre.code .str{color:var(--str)}pre.code .com{color:var(--com);font-style:italic}
+pre.code .def{color:var(--def);font-weight:600}pre.code .num{color:var(--num)}pre.code .self{color:var(--self)}
+pre.code .dec{color:var(--num)}
+pre.code .var{border-radius:3px;padding:0 2px;font-weight:600}
+pre.code .lvar{color:color-mix(in srgb,var(--ink) 45%,var(--muted));font-weight:500}
+pre.code .call{font-weight:600;text-decoration:underline dotted;text-decoration-thickness:1.5px;text-underline-offset:3px;cursor:pointer}
+pre.code .call:hover{text-decoration-style:solid;text-decoration-thickness:2px}
+.node.flash{animation:cfflash 2s ease-out}
+@keyframes cfflash{0%,12%{outline:3px solid var(--accent);outline-offset:3px}100%{outline:3px solid transparent;outline-offset:3px}}
+.node.changed{border-color:#e8823a;box-shadow:0 0 0 1px #e8823a55,0 3px 14px rgba(210,110,30,.18)}
+.chgbadge{margin-left:6px;font:700 8.5px/1 var(--sans);letter-spacing:.06em;padding:2px 5px;border-radius:4px;background:#e8823a;color:#fff;vertical-align:middle}
+.chgbadge.del{background:#dc2626}
+.node.deleted{border-color:#dc2626;box-shadow:0 0 0 1px #dc262655,0 3px 14px rgba(200,40,40,.16)}
+.chgdot{color:#e8823a;font-size:9px;vertical-align:middle}
+.ep.haschg .t{font-weight:650}
+.seg{display:flex;gap:3px;margin-top:2px}
+.segb{font:600 10.5px/1 var(--sans);border:1px solid var(--line);background:var(--panel2);color:var(--muted);border-radius:6px;padding:4px 9px;cursor:pointer}
+.segb.on{background:#e8823a;border-color:#e8823a;color:#fff}
+pre.code.diff{white-space:pre}
+pre.code.diff .dl{display:block;padding:0 4px;border-radius:2px}
+pre.code.diff .dadd{background:#16a34a22;color:var(--str)}
+pre.code.diff .ddel{background:#dc262622;color:#e5484d}
+pre.code.diff .dhunk{color:var(--def);font-weight:600}
+pre.code.diff .dfile{color:var(--muted)}
+.legend{position:absolute;right:12px;bottom:12px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px 11px;font-size:11px;color:var(--muted);z-index:4;display:flex;flex-direction:column;gap:5px;max-width:240px}
+.legend b{color:var(--ink);font-size:11px}
+.legend .row{display:flex;align-items:center;gap:6px}
+.legend .dot{width:20px;height:3px;border-radius:2px;flex:none}
+.epinfo{position:absolute;left:12px;top:12px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 13px;z-index:4;max-width:460px}
+.epinfo .path{font:600 13px/1.3 var(--mono)}
+.epinfo .sum{font-size:12px;color:var(--muted);margin-top:3px}
+.zoom{position:absolute;right:12px;top:12px;display:flex;gap:6px;z-index:4}
+.zoom button{width:30px;height:30px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--ink);font-size:16px;cursor:pointer}
+.chgnav{position:absolute;top:52px;right:12px;z-index:4;display:flex;align-items:center;gap:6px;background:var(--panel);border:1px solid #e8823a;border-radius:20px;padding:4px 6px;box-shadow:0 2px 10px rgba(210,110,30,.18)}
+button.tb.on{background:#e8823a;border-color:#e8823a;color:#fff}
+/* step → jump to its call site in the code */
+.step[data-callee]{cursor:pointer}
+.step[data-callee]:hover{outline:1px solid var(--accent);outline-offset:1px}
+@keyframes callpulse{0%,30%{background:var(--accent);color:#fff;border-radius:3px}100%{background:transparent}}
+.call.callflash{animation:callpulse 1.6s ease-out}
+/* review mode: check off flows you've already looked at */
+.ep .revchk{margin-left:auto;flex:none;width:18px;height:18px;border-radius:50%;border:1.5px solid var(--line);background:none;color:transparent;font-size:11px;line-height:1;cursor:pointer;display:none;align-items:center;justify-content:center}
+body.review .ep .revchk{display:flex}
+.ep.reviewed .revchk{background:#16a34a;border-color:#16a34a;color:#fff;display:flex}
+.ep.reviewed .t{color:var(--muted);text-decoration:line-through}
+.ep.reviewed{opacity:.6}
+.side .revprog{font:600 11px var(--mono);color:#16a34a;padding:4px 8px}
+.chgnav[hidden]{display:none}
+.chgnav button{width:26px;height:26px;border-radius:50%;border:none;background:#e8823a;color:#fff;font-size:14px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.chgnav button:hover{filter:brightness(1.08)}
+.chgnav #chglabel{font:600 12px var(--sans);color:#e8823a;padding:0 4px;white-space:nowrap}
+/* model chips (in the endpoint header) + the field drawer they open */
+.mchip{display:inline-flex;align-items:center;gap:4px;font:600 11px/1 var(--mono);background:var(--chip);color:var(--model);border:1px solid var(--line);border-radius:6px;padding:3px 7px;margin:5px 5px 0 0;cursor:pointer}
+.mchip:hover{border-color:var(--accent);color:var(--accent)}
+.mchip .k{font:600 8.5px/1 var(--sans);letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
+.mchip.chg{border-color:#e8823a;color:#e8823a}
+.drawer{position:absolute;right:0;top:0;bottom:0;width:min(380px,80vw);background:var(--panel);border-left:1px solid var(--line);box-shadow:-4px 0 20px rgba(20,30,50,.14);z-index:6;overflow:auto;padding:14px 16px}
+.drawer[hidden]{display:none}
+.drawer h3{font:600 13px/1.3 var(--mono);display:flex;align-items:center;gap:8px}
+.drawer .dsub{font:11px/1 var(--mono);color:var(--muted);margin:2px 0 12px}
+.drawer .fld{display:flex;justify-content:space-between;gap:12px;font:12px/1.5 var(--mono);padding:5px 0;border-bottom:1px solid var(--line)}
+.drawer .fname{color:var(--ink)} .drawer .fopt{color:var(--muted);font-style:italic;font-size:10px}
+.drawer .ftype{color:var(--def);text-align:right;word-break:break-word}
+.drawer .ftype .lnk{cursor:pointer;text-decoration:underline dotted;text-underline-offset:2px}
+.drawer .dx{margin-left:auto;border:none;background:none;color:var(--muted);font-size:18px;cursor:pointer;line-height:1}
+.drawer .dnest{margin-top:12px;font:11px/1.4 var(--sans);color:var(--muted)}
+.drawer .dcrumb{font:11px/1.4 var(--sans);color:var(--accent);cursor:pointer;margin-bottom:8px}
+</style>
+<header>
+ <h1>KPI Endpoints · Call-Flow Explorer</h1>
+ <span class="sp"></span>
+ <button class="tb" id="help" title="tips">?</button>
+ <button class="tb" id="expandAll">Show all code</button>
+ <button class="tb" id="foldAll">Hide all code</button>
+ <button class="tb" id="chgtoggle" title="jump between changed nodes">↕ Changes</button>
+ <button class="tb" id="revtoggle" title="mark flows reviewed">✓ Review</button>
+ <button class="tb" id="theme">◐</button>
+</header>
+<div class="helppop" id="helppop" hidden>
+ <b>Tips</b>
+ <ul>
+  <li>Drag boxes to rearrange · scroll to zoom, drag empty space to pan.</li>
+  <li>Click a step row to jump to its call site in the code below.</li>
+  <li>Hover a variable to trace it across chips, code, and arrows.</li>
+  <li>“<b>↕ Changes</b>” cycles through changed nodes · “<b>✓ Review</b>” checks flows off.</li>
+ </ul>
+</div>
+<div class="main">
+ <nav class="side" id="side"></nav>
+ <div class="stage" id="stage">
+   <div id="world"><svg id="edges"></svg></div>
+   <div class="epinfo" id="epinfo"></div>
+   <div class="zoom"><button id="zin">+</button><button id="zout">−</button><button id="zfit" title="fit to screen">⤢</button></div>
+   <div class="chgnav" id="chgnav" hidden><button id="chgprev" title="previous changed (⇧↵)">↑</button><span id="chglabel"></span><button id="chgnext" title="next changed (↵)">↓</button></div>
+   <div class="legend" id="legend"></div>
+   <div class="drawer" id="drawer" hidden></div>
+ </div>
+</div>
+<script>
+const DATA = __DATA__;
+const {code, graph} = DATA;
+const PALETTE=['#3b82f6','#0ea5a4','#d97706','#db2777','#16a34a','#7c3aed','#ea580c','#0891b2','#4f46e5','#059669'];
+// Request inputs, fixed colors kept consistent across every endpoint. Each lists the aliases the
+// value takes at deeper layers (service uses start_date/end_date; repositories rename to start/end).
+const INPUT_DEF=[['start_date','#e8590c',['start']],['end_date','#1098ad',['end']],['is_positive','#9c36b5',[]]];
+const $=(s,r=document)=>r.querySelector(s);
+const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
+const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const reEsc=s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+
+const KW=new Set('def async await return for if elif else in is not None True False and or class import from as with lambda yield raise try except finally while pass continue break global nonlocal del assert'.split(' '));
+const Q3D='"'+'"'+'"', Q3S="'"+"'"+"'";
+function hl(src,vars,calls,locals){
+ vars=vars||{}; calls=calls||{};
+ const re=new RegExp('(#[^\\n]*)|('+Q3D+'[\\s\\S]*?'+Q3D+'|'+Q3S+'[\\s\\S]*?'+Q3S+')|("[^"\\n]*"|\'[^\'\\n]*\')|(@[A-Za-z_.]+)|(\\b\\d+(?:\\.\\d+)?\\b)|([A-Za-z_][A-Za-z0-9_]*)|([\\s\\S])','g');
+ let out='',m;
+ while((m=re.exec(src))){
+   if(m[1])out+='<span class=com>'+esc(m[1])+'</span>';
+   else if(m[2])out+='<span class=str>'+esc(m[2])+'</span>';
+   else if(m[3])out+='<span class=str>'+esc(m[3])+'</span>';
+   else if(m[4])out+='<span class=dec>'+esc(m[4])+'</span>';
+   else if(m[5])out+='<span class=num>'+esc(m[5])+'</span>';
+   else if(m[6]){const w=m[6];if(KW.has(w))out+='<span class=kw>'+w+'</span>';else if(w==='self'||w==='cls')out+='<span class=self>'+w+'</span>';else if(vars[w])out+='<span class="var" data-var="'+esc(w)+'" style="background:'+vars[w]+'22;color:'+vars[w]+'">'+esc(w)+'</span>';else if(calls[w])out+='<span class="call" style="color:'+calls[w].color+'" data-target="'+calls[w].target+'">'+esc(w)+'</span>';else if(locals&&locals.has(w))out+='<span class="lvar" data-var="'+esc(w)+'">'+esc(w)+'</span>';else out+=esc(w);}
+   else out+=esc(m[7]);
+ }
+ return out;
+}
+
+function hlDiff(diff,vars,calls,locals){
+ if(!diff)return '(new definition — no previous version)';
+ return diff.split('\n').map(l=>{
+   if(l.startsWith('@@'))return '<span class="dl dhunk">'+esc(l)+'</span>';
+   if(l.startsWith('+++')||l.startsWith('---'))return '<span class="dl dfile">'+esc(l)+'</span>';
+   const add=l.startsWith('+'), del=l.startsWith('-'), ctx=l.startsWith(' ');
+   const cls=add?'dadd':del?'ddel':'';
+   // keep the +/-/space marker literal, syntax-highlight the code after it (same var colours as New/Old)
+   const marker=(add||del||ctx)?l[0]:'';
+   return '<span class="dl '+cls+'">'+esc(marker)+(hl(marker?l.slice(1):l,vars,calls,locals)||' ')+'</span>';
+ }).join('');
+}
+
+// derive, from a unified diff, which 1-indexed line numbers are added (new side) / removed (old side)
+function diffFlags(diff){
+ const newAdded=new Set(), oldRemoved=new Set();
+ if(!diff)return {newAdded,oldRemoved};
+ let oln=0,nln=0;
+ diff.split('\n').forEach(l=>{
+   const h=l.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+   if(h){oln=+h[1];nln=+h[2];return;}
+   if(l.startsWith('+++')||l.startsWith('---'))return;
+   if(l.startsWith('+')){newAdded.add(nln++);}
+   else if(l.startsWith('-')){oldRemoved.add(oln++);}
+   else {oln++;nln++;}          // context line advances both sides
+ });
+ return {newAdded,oldRemoved};
+}
+
+// full source, syntax-highlighted, with the diffed lines tinted (cls = dadd on new side, ddel on old side)
+function hlSide(src,vars,flags,cls,calls,locals){
+ return String(src).split('\n').map((line,i)=>
+   '<span class="dl'+(flags.has(i+1)?' '+cls:'')+'">'+(hl(line,vars,calls,locals)||' ')+'</span>').join('');
+}
+
+const stage=$('#stage'), world=$('#world'), svg=$('#edges');
+let view={x:40,y:20,s:1};
+function applyView(){world.style.transform='translate('+view.x+'px,'+view.y+'px) scale('+view.s+')';}
+let nodes={}, edges=[], curEp=null, dragMoved=false, inputTokens={}, legendInputs=[], pvcolor={}, chgList=[], chgIdx=-1, chgNavOn=false;
+const REVKEY='flowsegul_reviewed';
+function loadReviewed(){try{return new Set(JSON.parse(localStorage.getItem(REVKEY)||'[]'));}catch(e){return new Set();}}
+function saveReviewed(s){try{localStorage.setItem(REVKEY,JSON.stringify([...s]));}catch(e){}}
+const reviewed=loadReviewed();
+
+function build(ep){
+ curEp=ep; nodes={}; edges=[];
+ world.querySelectorAll('.node').forEach(n=>n.remove());
+ svg.innerHTML='';
+ let ci=0; const varColor={};
+ const assignColors=(steps)=>{(steps||[]).forEach(s=>{if(s.var&&s.var!=='return'&&!(s.var in varColor))varColor[s.var]=PALETTE[ci++%PALETTE.length];});};
+ ep.nodes.forEach(n=>assignColors(n.steps));
+
+ // input colors: fixed across endpoints; only include those the endpoint actually uses
+ const epText=JSON.stringify(ep);
+ inputTokens={}; legendInputs=[]; pvcolor=varColor;   // expose produced-var colours to drawEdges
+ const codeVars=Object.assign({},varColor);
+ (ep.inputs||INPUT_DEF).forEach(([name,col,aliases])=>{
+   if(!epText.includes(name))return;
+   legendInputs.push([name,col]);
+   [name,...(aliases||[])].forEach(tok=>{inputTokens[tok]=col; codeVars[tok]=col;});
+ });
+
+ // map node id -> the callee's simple function name, to light up call sites inside the code
+ const nameById={}; ep.nodes.forEach(n=>{nameById[n.id]=(n.title||'').split('.').pop();});
+
+ ep.nodes.forEach(n=>{
+   const c=code[n.fnKey]||{};
+   // which function names this node calls → colour (matches its arrow) + target node to jump to
+   const callMarks={};
+   (n.steps||[]).forEach(s=>{if(s.target&&nameById[s.target])
+     callMarks[nameById[s.target]]={color:(s.var&&s.var!=='return')?varColor[s.var]:'var(--accent)',target:s.target};});
+   const card=el('div','node '+n.layer+(n.entry?' svc':'')+(n.changed?' changed':'')+(n.deleted?' deleted':''));card.dataset.id=n.id;
+   const head=el('div','nhead');
+   const badge=n.changed?'<span class="chgbadge'+(n.deleted?' del':'')+'">'+(n.deleted?'DELETED':n.isnew?'NEW':'CHANGED')+'</span>':'';
+   head.innerHTML='<span class="lay '+n.layer+'">'+n.layer+'</span><span class="ntitle">'+esc(n.title)+badge+'<div class="nsub">'+esc(n.sub||'')+'</div></span><span class="ncaret">▾</span>';
+   card.appendChild(head);
+   const body=el('div','nbody');
+   // one row per statement; extra calls in the same statement have no expr — they still get an
+   // arrow (edge), but we don't render a blank duplicate row for them.
+   (n.steps||[]).forEach(s=>{if(s.expr==='')return;const row=renderStep(s,varColor);if(s.target&&nameById[s.target])row.dataset.callee=nameById[s.target];body.appendChild(row);});
+   if(c.code||n.diff||n.base!=null){   // deleted nodes have no HEAD code but do have a removal diff
+     card.classList.add('wide');
+     const pre=el('pre','code'); pre.style.display='block';
+     const flags=diffFlags(n.diff||'');
+     const lset=new Set(n.locals||[]);
+     const paint=(mode)=>{
+       if(mode==='Plain'){pre.className='code';pre.innerHTML=hl(c.code,codeVars,callMarks,lset);return;}
+       pre.className='code diff';
+       if(mode==='Diff')pre.innerHTML=hlDiff(n.diff||'',codeVars,callMarks,lset);
+       else if(mode==='Old')pre.innerHTML=hlSide(n.base||'',codeVars,flags.oldRemoved,'ddel',callMarks,lset);
+       else if(n.deleted)pre.innerHTML='(deleted — no current version)';
+       else pre.innerHTML=hlSide(c.code,codeVars,flags.newAdded,'dadd',callMarks,lset);
+     };
+     if(n.changed&&(n.diff||n.base!=null)){
+       const seg=el('div','seg');
+       ['Diff','New','Old'].forEach((mode,idx)=>{const b=el('button','segb'+(idx===0?' on':''),mode);
+         b.onclick=(e)=>{e.stopPropagation();seg.querySelectorAll('.segb').forEach(x=>x.classList.remove('on'));b.classList.add('on');paint(mode);relayout();};
+         seg.appendChild(b);});
+       body.appendChild(seg);body.appendChild(pre);paint('Diff');
+     }else{
+       const btn=el('button','codebtn','▾ hide code');
+       btn.onclick=(e)=>{e.stopPropagation();const open=pre.style.display==='none';pre.style.display=open?'block':'none';card.classList.toggle('wide',open);btn.textContent=open?'▾ hide code':'⟨⟩ view code';relayout();};
+       body.appendChild(btn);body.appendChild(pre);paint('Plain');
+     }
+   }
+   card.appendChild(body);
+   head.addEventListener('click',()=>{if(dragMoved)return;body.style.display=body.style.display==='none'?'flex':'none';head.querySelector('.ncaret').textContent=body.style.display==='none'?'▸':'▾';relayout();});
+   world.appendChild(card);
+   nodes[n.id]={def:n,el:card,x:0,y:0};
+   makeDraggable(card,nodes[n.id],head);
+ });
+
+ // edges: every node's steps that target another node
+ ep.nodes.forEach(n=>{(n.steps||[]).forEach(s=>{if(s.target&&nodes[s.target])edges.push({src:n.id,dst:s.target,color:(s.var&&s.var!=='return')?varColor[s.var]:'var(--edge)',rowVar:s.var,label:s.arg||'',ret:s.ret||''});});});
+ // schema edges: only the response shape (dashed). The request model is shown as a node but not
+ // wired with an arrow — it's the input type, not a call, so an arrow would just be documentation.
+ (ep.modelEdges||[]).forEach(m=>{if(m.kind==='resp'&&nodes[m.src]&&nodes[m.dst])
+   edges.push({src:m.src,dst:m.dst,color:'var(--model)',plain:true,label:m.label});});
+
+ layout();
+ closeDrawer();
+ $('#epinfo').innerHTML='<div class="path"><span style="color:var(--accent)">'+ep.method+'</span> '+esc(ep.path)+'</div><div class="sum">'+esc(ep.summary)+'</div>'+modelChips(ep);
+ renderLegend(varColor);
+ initView();
+ setupChgNav();
+}
+function initView(){const r=stage.getBoundingClientRect();view.s=r.width?Math.max(0.6,Math.min(1,(r.width-40)/1000)):0.9;view.x=20;view.y=20;applyView();}
+
+function renderStep(s,varColor){
+ const row=el('div','step'+(s.var==='return'?' ret':''));
+ const col=(s.var&&s.var!=='return')?varColor[s.var]:null;
+ if(col)row.style.borderLeftColor=col;
+ let label = s.var==='return' ? '<span class="kw">return</span> '
+   : '<span class="vchip" data-var="'+esc(s.var)+'" style="background:'+col+'22;color:'+col+'">'+esc(s.var)+'</span> <span class="arw">=</span> ';
+ let expr=esc(s.expr);
+ (s.uses||[]).forEach(u=>{const c=varColor[u];if(!c)return;expr=expr.replace(new RegExp('\\b'+reEsc(u)+'\\b','g'),'<span class="vchip" data-var="'+esc(u)+'" style="background:'+c+'22;color:'+c+'">'+esc(u)+'</span>');});
+ row.innerHTML=label+expr;
+ row.dataset.rowvar=s.var;
+ return row;
+}
+
+function layout(){
+ // Space columns by the actual (possibly expanded) width of their widest box, and stack
+ // rows by real heights, so nothing overlaps once a box is uncollapsed.
+ // Widen the column gap to fit the longest arrow label (args or "type → var") so text sits in
+ // open space between boxes rather than overlapping them.
+ let maxLab=0;
+ groupEdges().forEach(g=>{
+   const f=(g.label||'').length+(g.items.length>1?4:0);
+   const vars=[...new Set(g.items.filter(e=>e.rowVar).map(e=>e.rowVar==='return'?'response':e.rowVar))];
+   const rets=[...new Set(g.items.map(e=>e.ret).filter(Boolean))];
+   const r=vars.length?((rets.length===1?rets[0].length+2:0)+vars.join(', ').length+2):0;
+   maxLab=Math.max(maxLab,f,r);
+ });
+ const gapX=Math.min(580,Math.max(190,Math.round(maxLab*6.7)+70)), padTop=24, gapY=46;
+ const cols=[...new Set(curEp.nodes.map(n=>n.col))].sort((a,b)=>a-b);
+ let x=20;
+ cols.forEach(col=>{
+   const ids=curEp.nodes.filter(n=>n.col===col).map(n=>n.id);
+   let y=padTop, maxW=330;
+   ids.forEach(id=>{const nd=nodes[id];nd.x=x;nd.y=y;place(nd);y+=nd.el.offsetHeight+gapY;maxW=Math.max(maxW,nd.el.offsetWidth);});
+   x+=maxW+gapX;
+ });
+ drawEdges();
+}
+function relayout(){requestAnimationFrame(()=>{layout();});}
+function place(nd){nd.el.style.left=nd.x+'px';nd.el.style.top=nd.y+'px';}
+function anchorRow(nd,rowVar){const rows=nd.el.querySelectorAll('.step');for(const r of rows){if(r.dataset.rowvar===rowVar)return nd.y+r.offsetTop+r.offsetHeight/2;}return nd.y+nd.el.offsetHeight/2;}
+function bez(x0,y0,cx0,cy0,cx1,cy1,x1,y1,t){const u=1-t;return[u*u*u*x0+3*u*u*t*cx0+3*u*t*t*cx1+t*t*t*x1, u*u*u*y0+3*u*u*t*cy0+3*u*t*t*cy1+t*t*t*y1];}
+function argTspans(text,base){return text.split(/,\s*/).map((piece,i)=>{const key=piece.split('=')[0].trim();const c=inputTokens[key];return '<tspan fill="'+(c||base)+'">'+esc((i?', ':'')+piece)+'</tspan>';}).join('');}
+// a value pill: the variable travelling along an arrow. Solid = produced here, dashed = consumed.
+function pill(cx,cy,text,color,dashed,gi,dv){
+ const w=Math.max(30,text.length*7+16),h=17,x=cx-w/2,y=cy-h/2;
+ return '<g class="ge ge'+gi+' pillg"'+dv+' data-g="'+gi+'">'
+  +'<rect x="'+x+'" y="'+y+'" width="'+w+'" height="'+h+'" rx="8.5" fill="'+(dashed?'var(--panel)':color)+'" stroke="'+color+'" stroke-width="'+(dashed?1.5:0)+'"'+(dashed?' stroke-dasharray="3 2"':'')+'/>'
+  +'<text x="'+cx+'" y="'+(cy+3.6)+'" text-anchor="middle" class="pilltext" fill="'+(dashed?color:'#fff')+'">'+esc(text)+'</text></g>';
+}
+// Bundle parallel calls: several steps with the same caller→callee AND the same args are one
+// logical operation drawn N times, so collapse them into a single connector tagged ×N. Distinct
+// result variables are preserved and listed (each in its own colour) on the return arrow.
+function groupEdges(){
+ const map=new Map(), order=[];
+ edges.forEach(e=>{
+   const key=e.src+''+e.dst+''+(e.plain?'~':'')+''+(e.label||'');
+   let g=map.get(key);
+   if(!g){g={src:e.src,dst:e.dst,label:e.label||'',plain:!!e.plain,items:[]};map.set(key,g);order.push(g);}
+   g.items.push(e);
+ });
+ return order;
+}
+let GORIG=[];            // GORIG[groupIndex] = ["<callerNodeId>|<rowVar>", …]  (for hover-linking)
+function drawEdges(){
+ svg.setAttribute('width',8000);svg.setAttribute('height',5000);
+ let defs='<defs>',stubs='',fwd='',ret='',labels='';GORIG=[];
+ groupEdges().forEach((g,i)=>{
+   const a=nodes[g.src],b=nodes[g.dst];if(!a||!b)return;
+   const gc='ge ge'+i;                       // linking hook: every part of this group carries ge<i>
+   GORIG[i]=g.items.map(e=>g.src+'|'+e.rowVar);
+   // variable spotlight hook: which vars this bundle carries (produced results + argument tokens)
+   const gvars=new Set();
+   g.items.forEach(e=>{if(e.rowVar&&e.rowVar!=='return')gvars.add(e.rowVar);});
+   (g.label.match(/[A-Za-z_][A-Za-z0-9_]*/g)||[]).forEach(t=>gvars.add(t));
+   const dv=gvars.size?' data-vars="'+esc([...gvars].join(' '))+'"':'';
+   // each call's own origin row (var-coloured) so you see exactly which line(s) make the call
+   const origins=g.items.map(e=>({y:e.rowVar?anchorRow(a,e.rowVar):a.y+34,col:e.color||'var(--edge)'}));
+   const rx=a.x+a.el.offsetWidth, ry=origins.reduce((s,o)=>s+o.y,0)/origins.length;
+   const jx=origins.length>1?rx+26:rx;        // manifold junction: stubs fan in here, one arrow leaves
+   // stubs: from each call line at the box edge, curving into the shared junction
+   if(origins.length>1)[...new Map(origins.map(o=>[o.y,o])).values()].forEach(o=>{
+     stubs+='<path class="'+gc+'"'+dv+' d="M'+rx+','+o.y+' C'+(rx+14)+','+o.y+' '+(jx-10)+','+ry+' '+jx+','+ry+'" fill="none" stroke="'+o.col+'" stroke-width="1.6" opacity="0.8"/>';
+   });
+   const n=g.items.length;
+   // a bundle feeds several differently-coloured vars, so its forward line is neutral; a lone call keeps its var colour
+   const col=g.plain?'var(--model)':(n===1?(g.items[0].color||'var(--edge)'):'var(--edge)');
+   const fx=b.x, fy=b.y+22, fdx=Math.max(40,(fx-jx)/2), fc1=jx+fdx, fc2=fx-fdx;
+   defs+='<marker id="mf'+i+'" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 z" fill="'+col+'"/></marker>';
+   fwd+='<path class="'+gc+'"'+dv+' d="M'+jx+','+ry+' C'+fc1+','+ry+' '+fc2+','+fy+' '+fx+','+fy+'" fill="none" stroke="'+col+'" stroke-width="'+(g.plain?1.5:2.2)+'" '+(g.plain?'stroke-dasharray="4 4"':'')+' marker-end="url(#mf'+i+')" opacity="0.92"/>';
+   // produced variables passed as arguments → dashed "slot" pills docking into the callee
+   const argToks=(g.label.match(/[A-Za-z_][A-Za-z0-9_]*/g)||[]);
+   const consumed=[...new Set(argToks.filter(t=>pvcolor[t]))];
+   const allConsumed=argToks.length>0 && argToks.every(t=>pvcolor[t]);
+   if(g.label && !allConsumed){const m=bez(jx,ry,fc1,ry,fc2,fy,fx,fy,0.5);const badge=n>1?' <tspan fill="var(--muted)" font-weight="700">×'+n+'</tspan>':'';labels+='<text data-g="'+i+'"'+dv+' x="'+m[0]+'" y="'+(m[1]-5)+'" class="'+gc+' elab" text-anchor="middle" fill="'+col+'">'+argTspans(g.label,col)+badge+'</text>';}
+   consumed.forEach((v,k)=>{const pw=Math.max(30,v.length*7+16);labels+=pill(fx-pw/2-5,fy+k*21,v,pvcolor[v]||'var(--edge)',true,i,dv);});
+   // return arrow: callee (lower-left) -> back to the caller row, listing every distinct result var.
+   if(!g.plain){
+     const seen=new Set();
+     const rvars=g.items.filter(e=>e.rowVar && e.rowVar!=='·' && !seen.has(e.rowVar) && seen.add(e.rowVar));
+     if(rvars.length){
+       const rcol=(rvars.length===1&&rvars[0].rowVar==='return')?'var(--accent)':col;
+       const sx=b.x, sy=b.y+Math.min(b.el.offsetHeight-12,50), ex=rx, ey=ry+12;
+       const rdx=Math.max(40,(sx-ex)/2), rc1=sx-rdx, rc2=ex+rdx;
+       defs+='<marker id="mr'+i+'" markerWidth="7" markerHeight="7" refX="5.5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 z" fill="'+rcol+'"/></marker>';
+       ret+='<path class="'+gc+'"'+dv+' d="M'+sx+','+sy+' C'+rc1+','+(sy+26)+' '+rc2+','+(ey+26)+' '+ex+','+ey+'" fill="none" stroke="'+rcol+'" stroke-width="1.7" stroke-dasharray="2 3" marker-end="url(#mr'+i+')" opacity="0.85"/>';
+       const rets=[...new Set(g.items.map(e=>e.ret).filter(Boolean))];
+       const typ=rets.length===1?esc(rets[0]):'';
+       const m=bez(sx,sy,rc1,sy+26,rc2,ey+26,ex,ey,0.5);
+       // small type note above, then a value PILL per produced variable (it "travels" back to the caller)
+       if(typ)labels+='<text data-g="'+i+'"'+dv+' x="'+m[0]+'" y="'+(m[1]+2)+'" class="'+gc+' elab ret" text-anchor="middle" fill="var(--muted)">'+typ+' →</text>';
+       rvars.forEach((e,k)=>{const fin=e.rowVar==='return';labels+=pill(m[0],m[1]+18+k*21,fin?'response':e.rowVar,fin?'var(--accent)':(e.color||rcol),false,i,dv);});
+     }
+   }
+ });
+ svg.innerHTML=defs+'</defs>'+stubs+fwd+ret+labels;
+}
+// hover-linking: a call line ↔ its (possibly bundled) arrow. Delegated, so it survives every redraw.
+function setLink(gis){
+ svg.classList.toggle('linking',gis&&gis.length>0);
+ svg.querySelectorAll('.ge.on').forEach(el=>el.classList.remove('on'));
+ world.querySelectorAll('.step.hl').forEach(el=>el.classList.remove('hl'));
+ (gis||[]).forEach(gi=>{
+   svg.querySelectorAll('.ge'+gi).forEach(el=>el.classList.add('on'));
+   (GORIG[gi]||[]).forEach(k=>{const[nid,rv]=k.split('|');const card=world.querySelector('.node[data-id="'+nid+'"]');if(card)card.querySelectorAll('.step').forEach(st=>{if(st.dataset.rowvar===rv)st.classList.add('hl');});});
+ });
+}
+world.addEventListener('mouseover',e=>{if(e.target.closest('[data-var]'))return;const st=e.target.closest('.step[data-rowvar]');if(!st)return;const card=st.closest('.node');if(!card)return;const key=card.dataset.id+'|'+st.dataset.rowvar;const gis=GORIG.map((o,i)=>o&&o.includes(key)?i:-1).filter(i=>i>=0);if(gis.length)setLink(gis);});
+world.addEventListener('mouseout',e=>{if(e.target.closest('.step[data-rowvar]'))setLink([]);});
+svg.addEventListener('mouseover',e=>{const t=e.target.closest('[data-g]');if(t)setLink([+t.dataset.g]);});
+svg.addEventListener('mouseout',e=>{if(e.target.closest('[data-g]'))setLink([]);});
+
+// variable spotlight: hover any variable → it lights up everywhere (chips, code tokens, and every
+// arrow that carries it), while the rest fades. This is the "trace this value" view.
+function setSpot(v){
+ const on=!!v;
+ world.classList.toggle('spot',on); svg.classList.toggle('spot',on);
+ world.querySelectorAll('.vhot').forEach(e=>e.classList.remove('vhot'));
+ svg.querySelectorAll('.vhot').forEach(e=>e.classList.remove('vhot'));
+ if(!on)return;
+ const q=(window.CSS&&CSS.escape)?CSS.escape(v):v.replace(/"/g,'');
+ world.querySelectorAll('[data-var="'+q+'"]').forEach(e=>e.classList.add('vhot'));
+ svg.querySelectorAll('[data-vars~="'+q+'"]').forEach(e=>e.classList.add('vhot'));
+}
+world.addEventListener('mouseover',e=>{const t=e.target.closest('[data-var]');if(t)setSpot(t.dataset.var);});
+world.addEventListener('mouseout',e=>{const t=e.target.closest('[data-var]');if(t)setSpot(null);});
+
+// click a step row (top summary) → scroll the code block below to that exact call site & flash it
+world.addEventListener('click',e=>{
+ const st=e.target.closest('.step[data-callee]');
+ if(!st||e.target.closest('[data-var]'))return;
+ const pre=st.closest('.node').querySelector('pre.code');if(!pre)return;
+ const tgt=[...pre.querySelectorAll('.call')].find(c=>c.textContent===st.dataset.callee);
+ if(!tgt)return;
+ tgt.scrollIntoView({block:'center',behavior:'smooth'});
+ tgt.classList.remove('callflash');void tgt.offsetWidth;tgt.classList.add('callflash');
+ setTimeout(()=>tgt.classList.remove('callflash'),1600);
+});
+
+// changed-node navigator (opt-in): step through the changed nodes of the current endpoint
+function setupChgNav(){
+ chgList=(curEp&&curEp.nodes||[]).filter(n=>n.changed&&nodes[n.id]).map(n=>n.id)
+   .sort((a,b)=>(nodes[a].def.col-nodes[b].def.col)||(nodes[a].y-nodes[b].y));
+ chgIdx=-1;
+ const nav=$('#chgnav');
+ if(!chgNavOn||!chgList.length){nav.hidden=true;return;}
+ nav.hidden=false; updateChgLabel();
+}
+function updateChgLabel(){$('#chglabel').textContent=(chgIdx>=0?(chgIdx+1)+'/'+chgList.length:chgList.length)+' changed';}
+function gotoChg(delta){
+ if(!chgList.length)return;
+ chgIdx=chgIdx<0?(delta>0?0:chgList.length-1):(chgIdx+delta+chgList.length)%chgList.length;
+ updateChgLabel(); focusNode(nodes[chgList[chgIdx]]);
+}
+$('#chgnext').onclick=()=>gotoChg(1);
+$('#chgprev').onclick=()=>gotoChg(-1);
+$('#chgtoggle').onclick=()=>{chgNavOn=!chgNavOn;$('#chgtoggle').classList.toggle('on',chgNavOn);setupChgNav();};
+window.addEventListener('keydown',e=>{if(chgNavOn&&e.key==='Enter'&&!e.target.closest('input,textarea')){e.preventDefault();gotoChg(e.shiftKey?-1:1);}});
+
+// review mode: manually check flows off as reviewed (persisted; never auto-marked on visit)
+function updateRevProgress(){
+ const total=side.querySelectorAll('.ep').length;
+ const done=side.querySelectorAll('.ep.reviewed').length;
+ $('#revtoggle').textContent='✓ Review'+(document.body.classList.contains('review')?' '+done+'/'+total:'');
+}
+$('#revtoggle').onclick=()=>{document.body.classList.toggle('review');$('#revtoggle').classList.toggle('on',document.body.classList.contains('review'));updateRevProgress();};
+$('#help').onclick=(e)=>{e.stopPropagation();const p=$('#helppop');p.hidden=!p.hidden;$('#help').classList.toggle('on',!p.hidden);};
+document.addEventListener('click',e=>{if(!e.target.closest('#helppop,#help')){$('#helppop').hidden=true;$('#help').classList.remove('on');}});
+
+// ── request/response models: chips in the header → a slide-out field drawer (no graph clutter) ──
+function modelChips(ep){
+ const chip=(name,kind)=>{const m=(ep.models||{})[name]||{};return '<span class="mchip'+(m.changed?' chg':'')+'" data-model="'+esc(name)+'"><span class="k">'+kind+'</span>'+esc(name)+'</span>';};
+ const h=(ep.reqModels||[]).map(n=>chip(n,'req')).join('')+(ep.respModels||[]).map(n=>chip(n,'resp')).join('');
+ return h?'<div class="mchips">'+h+'</div>':'';
+}
+let mstack=[];
+function openModel(name,push){
+ const ep=curEp,m=ep&&(ep.models||{})[name],dr=$('#drawer');
+ if(!m){dr.hidden=true;return;}
+ if(push!==false)mstack.push(name);
+ const back=mstack.length>1?'<div class="dcrumb" data-back="1">‹ '+esc(mstack[mstack.length-2])+'</div>':'';
+ const linkify=t=>esc(t||'').replace(/[A-Za-z_][A-Za-z0-9_]*/g,w=>(ep.models&&ep.models[w])?'<span class="lnk" data-model="'+w+'">'+w+'</span>':w);
+ const fields=(m.fields||[]).map(f=>'<div class="fld"><span class="fname">'+esc(f.name)+(f.optional?' <span class="fopt">opt</span>':'')+'</span><span class="ftype">'+linkify(f.type)+'</span></div>').join('')||'<div class="dsub">no annotated fields</div>';
+ const nest=(m.nested||[]).length?'<div class="dnest">nested: '+m.nested.map(n=>'<span class="lnk" data-model="'+esc(n)+'" style="cursor:pointer;text-decoration:underline dotted">'+esc(n)+'</span>').join(', ')+'</div>':'';
+ dr.innerHTML='<h3>'+esc(name)+(m.changed?' <span class="chgbadge">CHANGED</span>':'')+'<button class="dx" data-close="1">×</button></h3><div class="dsub">'+esc(m.sub||'')+'</div>'+back+fields+nest;
+ dr.hidden=false;
+}
+function closeDrawer(){const dr=$('#drawer');if(dr){dr.hidden=true;}mstack=[];}
+$('#epinfo').addEventListener('click',e=>{const c=e.target.closest('.mchip');if(c){mstack=[];openModel(c.dataset.model);}});
+$('#drawer').addEventListener('click',e=>{
+ if(e.target.closest('[data-close]'))return closeDrawer();
+ if(e.target.closest('[data-back]')){mstack.pop();return openModel(mstack[mstack.length-1],false);}
+ const l=e.target.closest('[data-model]');if(l)openModel(l.dataset.model);
+});
+
+let drag=null, edgeRaf=0;
+function scheduleEdges(){if(edgeRaf)return;edgeRaf=requestAnimationFrame(()=>{edgeRaf=0;drawEdges();});}
+function makeDraggable(card,nd,handle){
+ handle.addEventListener('pointerdown',e=>{if(e.target.closest('.codebtn'))return;drag={nd,sx:e.clientX,sy:e.clientY,ox:nd.x,oy:nd.y};dragMoved=false;card.style.zIndex=10;card.dataset.dragging='1';e.stopPropagation();e.preventDefault();});
+}
+let pan=false,px,py,vx,vy;
+stage.addEventListener('pointerdown',e=>{if(e.target.closest('.node'))return;pan=true;px=e.clientX;py=e.clientY;vx=view.x;vy=view.y;});
+window.addEventListener('pointermove',e=>{
+ if(drag){const dx=(e.clientX-drag.sx)/view.s,dy=(e.clientY-drag.sy)/view.s;if(Math.abs(dx)+Math.abs(dy)>3)dragMoved=true;drag.nd.x=drag.ox+dx;drag.nd.y=drag.oy+dy;place(drag.nd);scheduleEdges();return;}
+ if(pan){view.x=vx+(e.clientX-px);view.y=vy+(e.clientY-py);applyView();}
+});
+window.addEventListener('pointerup',()=>{if(drag){drag.nd.el.style.zIndex=2;delete drag.nd.el.dataset.dragging;setTimeout(()=>dragMoved=false,0);}drag=null;pan=false;});
+// click a highlighted call name in the code → glide to that function's node and flash it
+function focusNode(nd){
+ if(!nd)return;
+ const r=stage.getBoundingClientRect();
+ const cx=nd.x+nd.el.offsetWidth/2, h=nd.el.offsetHeight*view.s;
+ view.x=r.width/2-cx*view.s;
+ // center the box if it fits; if it's taller than the viewport, pin its top with a margin
+ view.y=(h<r.height-40) ? r.height/2-(nd.y+nd.el.offsetHeight/2)*view.s : 40-nd.y*view.s;
+ world.style.transition='transform .5s cubic-bezier(.2,.7,.2,1)';
+ applyView();
+ setTimeout(()=>{world.style.transition='';},520);
+ nd.el.classList.remove('flash'); void nd.el.offsetWidth; nd.el.classList.add('flash');
+ setTimeout(()=>nd.el.classList.remove('flash'),2000);
+}
+world.addEventListener('click',e=>{const c=e.target.closest&&e.target.closest('.call[data-target]');
+ if(!c)return;e.stopPropagation();focusNode(nodes[c.dataset.target]);});
+// scroll = smooth zoom toward the cursor; pan is done by dragging empty canvas
+function zoomAt(cx,cy,factor){
+ const r=stage.getBoundingClientRect();const mx=cx-r.left,my=cy-r.top;
+ const ns=Math.max(0.2,Math.min(2.5,view.s*factor));const k=ns/view.s;
+ view.x=mx-(mx-view.x)*k;view.y=my-(my-view.y)*k;view.s=ns;applyView();
+}
+stage.addEventListener('wheel',e=>{
+ // let a scrollable code block handle its own wheel (read code without zooming the canvas)
+ const pre=e.target.closest&&e.target.closest('pre.code');
+ if(pre&&(pre.scrollHeight>pre.clientHeight||pre.scrollWidth>pre.clientWidth))return;
+ e.preventDefault();
+ const dy=e.deltaY*(e.deltaMode===1?16:1);
+ zoomAt(e.clientX,e.clientY,Math.exp(-dy*0.0015));  // exp = smooth, direction-correct at any speed
+},{passive:false});
+$('#zin').onclick=()=>{const r=stage.getBoundingClientRect();zoomAt(r.left+r.width/2,r.top+r.height/2,1.15);};
+$('#zout').onclick=()=>{const r=stage.getBoundingClientRect();zoomAt(r.left+r.width/2,r.top+r.height/2,1/1.15);};
+$('#zfit').onclick=fit;
+function fit(){let maxX=0,maxY=0;Object.values(nodes).forEach(n=>{maxX=Math.max(maxX,n.x+n.el.offsetWidth);maxY=Math.max(maxY,n.y+n.el.offsetHeight);});const r=stage.getBoundingClientRect();if(!maxX||!maxY||!r.width){view.s=1;view.x=20;view.y=20;applyView();return;}const s=Math.min(1,(r.width-40)/maxX,(r.height-60)/maxY);view.s=Math.max(0.35,s||1);view.x=20;view.y=20;applyView();}
+function setBodies(show){world.querySelectorAll('.node').forEach(card=>{const b=card.querySelector('.nbody');b.style.display=show?'flex':'none';card.querySelector('.ncaret').textContent=show?'▾':'▸';});relayout();}
+function setCode(show){world.querySelectorAll('.node').forEach(card=>{const pre=card.querySelector('pre.code');if(!pre)return;pre.style.display=show?'block':'none';card.classList.toggle('wide',show);const b=card.querySelector('.codebtn');if(b)b.textContent=show?'▾ hide code':'⟨⟩ view code';});relayout();}
+$('#expandAll').onclick=()=>setCode(true);
+$('#foldAll').onclick=()=>setCode(false);
+function renderLegend(varColor){const box=$('#legend');const items=Object.entries(varColor).slice(0,10);
+ const row=(v,c)=>'<div class="row"><span class="dot" style="background:'+c+'"></span><span style="color:'+c+';font:600 11px var(--mono)">'+esc(v)+'</span></div>';
+ const inputs=legendInputs.length?'<b style="display:block;margin-top:6px">Inputs</b>'+legendInputs.map(([v,c])=>row(v,c)).join(''):'';
+ box.innerHTML='<b>Produced values</b>'+items.map(([v,c])=>row(v,c)).join('')+inputs+'<div class="row" style="margin-top:5px"><span class="dot" style="background:var(--edge)"></span>call chain</div><div style="margin-top:4px;border-top:1px solid var(--line);padding-top:5px"><b>solid →</b> args sent in · <b>dashed →</b> value returned (<i>type</i> → variable).</div>';}
+
+const root=document.documentElement;
+$('#theme').onclick=()=>{const cur=root.getAttribute('data-theme')||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light');root.setAttribute('data-theme',cur==='dark'?'light':'dark');if(curEp)drawEdges();};
+
+const side=$('#side');
+let curGroup=null;
+graph.endpoints.forEach((ep,i)=>{
+ if(ep.group && ep.group!==curGroup){curGroup=ep.group;side.appendChild(el('div','grp',esc(curGroup)));}
+ else if(!ep.group && curGroup===null){curGroup='';side.appendChild(el('div','grp','Endpoints'));}
+ const nchg=(ep.nodes||[]).filter(n=>n.changed).length;
+ const d=el('div','ep'+(nchg?' haschg':'')+(reviewed.has(ep.id)?' reviewed':''));
+ d.innerHTML='<span class="m '+ep.method.toUpperCase()+'">'+esc(ep.method)+'</span><span class="eptext"><div class="t">'+esc(ep.title)+(nchg?' <span class="chgdot" title="'+nchg+' changed">●</span>':'')+'</div><div class="p">'+esc(ep.path)+'</div></span><button class="revchk" title="mark reviewed">✓</button>';
+ d.onclick=()=>{side.querySelectorAll('.ep').forEach(x=>x.classList.remove('on'));d.classList.add('on');build(ep);};
+ d.querySelector('.revchk').onclick=(e)=>{e.stopPropagation();const on=d.classList.toggle('reviewed');on?reviewed.add(ep.id):reviewed.delete(ep.id);saveReviewed(reviewed);updateRevProgress();};
+ side.appendChild(d); if(i===0)d.classList.add('on');
+});
+updateRevProgress();
+applyView();
+requestAnimationFrame(()=>{build(graph.endpoints[0]);requestAnimationFrame(()=>{layout();initView();});});
+let ridle;window.addEventListener('resize',()=>{clearTimeout(ridle);ridle=setTimeout(drawEdges,120);});
+</script>

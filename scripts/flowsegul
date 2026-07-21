@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# flowsegul — one-word interactive call-flow explorer.
+#   flowsegul            # visualize every FastAPI route across your Python repos
+#   flowsegul --changed  # only what changed on the current branch(es) vs main
+#   flowsegul --entries foo bar        # specific functions
+# Any flowsegul_gen.py flag is passed through (--base, --depth, --repo, --workspace, --title, --out).
+set -euo pipefail
+# resolve through symlinks (this script is symlinked onto PATH) to find flowsegul_gen.py next to it
+src="${BASH_SOURCE[0]}"
+while [ -h "$src" ]; do
+  dir="$(cd -P "$(dirname "$src")" && pwd)"
+  src="$(readlink "$src")"
+  [ "${src#/}" = "$src" ] && src="$dir/$src"
+done
+here="$(cd -P "$(dirname "$src")" && pwd)"
+out="${FLOWSEGUL_OUT:-$(mktemp -t flowsegul).html}"
+
+# only inject a default --out if the user didn't pass one
+case " $* " in *" --out "*) out="";; esac
+
+python3 "$here/flowsegul_gen.py" ${out:+--out "$out"} "$@"
+
+# figure out the path we wrote (respect an explicit --out)
+path="$out"
+if [ -z "$path" ]; then
+  for ((i=1;i<=$#;i++)); do [ "${!i}" = "--out" ] && { j=$((i+1)); path="${!j}"; }; done
+fi
+if [ -n "$path" ]; then
+  echo "flowsegul → $path"
+  command -v open >/dev/null 2>&1 && open "$path" || true
+fi
