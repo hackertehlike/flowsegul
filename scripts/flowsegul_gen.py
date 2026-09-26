@@ -143,6 +143,38 @@ def one_line(s, limit=140):
     return s[:limit] + ('…' if len(s) > limit else '')
 
 
+def http_status(node):
+    """Status code of an `HTTPException(404, …)` / `HTTPException(status_code=status.HTTP_404_…)`
+    call, else None."""
+    if not isinstance(node, ast.Call):
+        return None
+    cand = [k.value for k in node.keywords if k.arg == 'status_code'] + list(node.args[:1])
+    for v in cand:
+        if isinstance(v, ast.Constant) and isinstance(v.value, int):
+            return v.value
+        m = re.search(r'(\d{3})', unparse(v))
+        if m:
+            return int(m.group(1))
+    return None
+
+
+def status_in(fn):
+    """The status an exception handler answers with, e.g. `JSONResponse(status_code=400, …)`."""
+    for n in ast.walk(fn):
+        if isinstance(n, ast.Call):
+            st = http_status(n) if any(k.arg == 'status_code' for k in n.keywords) else None
+            if st:
+                return st
+    return None
+
+
+def exc_name(node):
+    """`raise ValueError(...)` / `raise errors.NotFound` -> 'ValueError' / 'NotFound'."""
+    if isinstance(node, ast.Call):
+        node = node.func
+    return unparse(node).split('.')[-1] if node is not None else ''
+
+
 def model_fields(cls):
     """`name: type [= default]` class attributes of a ClassDef (Pydantic/dataclass field shape)."""
     out = []
@@ -195,6 +227,10 @@ class Index:
         self.facts_cache = {}  # qual -> value_facts (memoized)
         self.file_src = {}     # rel path -> exact source it was parsed from
         self.models = {}       # class name -> {code, file, lineno} (request/response schemas etc.)
+        self.bases = {}        # class name -> [base class names], to match `except Base` to a subclass
+        self.app_handlers = {} # exception name -> status (or None) from @app.exception_handler(...)
+        self.raise_cache = {}  # qual -> own raise statements (filled by steps_for)
+        self.esc_cache = {}    # qual -> errors that can leave the function (see escapes)
         self.layers = load_config(repo).get('layers') or {}
         for f in files:
             self._index_file(f)
@@ -265,16 +301,45 @@ class Index:
                     prefix = prefixes.get(var, '')
                     self.routes.append((qual, method, prefix + path, prefix))
 
+        self._exception_handlers(tree)
         for n in tree.body:
             if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 add(n, None)
             elif isinstance(n, ast.ClassDef):
+                self.bases[n.name] = [unparse(b).split('.')[-1] for b in n.bases]
                 self.models[n.name] = {'name': n.name, 'file': rel, 'lineno': n.lineno,
                                        'code': ast.get_source_segment(src, n) or '',
                                        'fields': model_fields(n)}
                 for m in n.body:
                     if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef)):
                         add(m, n.name)
+
+    def _exception_handlers(self, tree):
+        """`@app.exception_handler(ValueError)` and `app.add_exception_handler(ValueError, fn)`: the
+        app turns those errors into a response, so they don't end up as a 500."""
+        fns = {n.name: n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+        for fn in fns.values():
+            for dec in fn.decorator_list:
+                if (isinstance(dec, ast.Call) and getattr(dec.func, 'attr', '') == 'exception_handler'
+                        and dec.args):
+                    self.app_handlers[unparse(dec.args[0]).split('.')[-1]] = status_in(fn)
+        for n in ast.walk(tree):
+            if (isinstance(n, ast.Call) and getattr(n.func, 'attr', '') == 'add_exception_handler'
+                    and len(n.args) >= 2):
+                h = fns.get(unparse(n.args[1]))
+                self.app_handlers[unparse(n.args[0]).split('.')[-1]] = status_in(h) if h else None
+
+    def is_sub(self, t, base, seen=None):
+        """Is exception class `t` the class `base` or derived from it (as far as the repo shows)?"""
+        if t == base:
+            return True
+        seen = seen or set()
+        for b in self.bases.get(t, []):
+            if b not in seen:
+                seen.add(b)
+                if self.is_sub(b, base, seen):
+                    return True
+        return False
 
     @staticmethod
     def _route(dec):
@@ -644,7 +709,8 @@ def steps_for(info, idx):
     cache = idx.steps_cache
     if info['qual'] in cache:
         return cache[info['qual']]
-    out, assigned = [], []
+    out, assigned, raises = [], [], []
+    catching = []   # stack of enclosing try blocks: [[(exception names, status or None, re-raises)]]
     src = idx.file_src.get(info['file'], '')
     caller_cls = info.get('cls')
     caller_qual = info['qual']
@@ -684,6 +750,7 @@ def steps_for(info, idx):
                                 + ', '.join(f'{k.arg}={unparse(k.value)}' for k in call.keywords), 60),
                 'ret': one_line(idx.funcs[qual]['returns'], 46), 'uses': uses, '_qual': qual,
                 'bind': bindings_for(call, idx.funcs[qual]),
+                '_catch': [h for blk in catching for h in blk],
             })
             first = False
         for qual in refs:
@@ -711,17 +778,84 @@ def steps_for(info, idx):
                 emit('·', [it.context_expr for it in s.items], s.items[0].context_expr)
                 walk(s.body)
             elif isinstance(s, ast.Try):
+                catching.append([handler_info(h) for h in s.handlers])
                 walk(s.body)
+                catching.pop()
                 for h in s.handlers:
                     walk(h.body)
                 walk(s.orelse); walk(s.finalbody)
             elif isinstance(s, ast.Expr):
                 emit('·', [s.value], s)
             else:  # raise, assert, etc. — no nested statement bodies to recurse into
+                if isinstance(s, ast.Raise) and s.exc is not None:
+                    try:
+                        seg = ast.get_source_segment(src, s)
+                    except Exception:
+                        seg = None
+                    raises.append({'t': exc_name(s.exc), 'status': http_status(s.exc),
+                                   'text': one_line(seg or unparse(s), 90),
+                                   '_catch': [h for blk in catching for h in blk]})
                 emit('·', [s], s)
 
     walk(info['node'].body)
     cache[info['qual']] = out
+    idx.raise_cache[info['qual']] = raises
+    return out
+
+
+def handler_info(h):
+    """One `except` clause: (names it catches, status it answers with, whether it raises on)."""
+    if h.type is None:
+        names = ['*']
+    elif isinstance(h.type, ast.Tuple):
+        names = [unparse(e).split('.')[-1] for e in h.type.elts]
+    else:
+        names = [unparse(h.type).split('.')[-1]]
+    status, reraises = None, False
+    for n in ast.walk(ast.Module(body=h.body, type_ignores=[])):
+        if isinstance(n, ast.Raise):
+            st = http_status(n.exc) if n.exc is not None else None
+            if st:
+                status = status or st
+            else:
+                reraises = True   # `raise` / `raise OtherError`: the error keeps going
+    return (names, status, reraises)
+
+
+def caught_by(t, handlers, idx):
+    """The handler that stops error `t`, or None if it keeps going up."""
+    for names, status, reraises in handlers:
+        if any(n in ('*', 'Exception', 'BaseException') or idx.is_sub(t, n) for n in names):
+            return None if reraises and not status else (names, status, reraises)
+    return None
+
+
+def escapes(qual, idx, _stack=None):
+    """Errors that can leave `qual`: its own uncaught `raise`s, plus whatever its callees let out
+    that no `except` around the call stops. Each is (type, status or None, origin qual, raise text)."""
+    if qual in idx.esc_cache:
+        return idx.esc_cache[qual]
+    stack = _stack or set()
+    if qual in stack:          # recursion: don't loop
+        return []
+    stack.add(qual)
+    info = idx.funcs[qual]
+    steps = steps_for(info, idx)
+    out = []
+    for r in idx.raise_cache.get(qual, []):
+        if not caught_by(r['t'], r['_catch'], idx):
+            out.append((r['t'], r['status'], qual, r['text']))
+    for st in steps:
+        cq = st.get('_qual')
+        if not cq or cq not in idx.funcs:
+            continue
+        for e in escapes(cq, idx, stack):
+            if not caught_by(e[0], st.get('_catch', []), idx):
+                out.append(e)
+    stack.discard(qual)
+    out = list(dict.fromkeys(out))
+    if not _stack or len(stack) == 0:
+        idx.esc_cache[qual] = out
     return out
 
 
@@ -854,8 +988,41 @@ def field_use(entry_qual, order, flow, facts, idx, nid):
     return use
 
 
+def app_status(t, idx):
+    """Status an app-level exception handler gives error `t`: an int, 0 if handled with an unknown
+    status, None if no handler covers it."""
+    for name, st in idx.app_handlers.items():
+        if idx.is_sub(t, name):
+            return st or 0
+    return None
+
+
+def statuses_for(entry_qual, idx, changed_q):
+    """What the route can answer with: its success status, every HTTPException status reachable,
+    statuses app-level handlers give, and 500 for errors nothing catches. `new` marks answers
+    that come from a changed function."""
+    node = idx.funcs[entry_qual]['node']
+    ok = 200
+    for dec in node.decorator_list:
+        if isinstance(dec, ast.Call):
+            st = next((http_status(dec) for k in dec.keywords if k.arg == 'status_code'), None)
+            ok = st or ok
+    out = {str(ok): {'code': str(ok), 'kind': 'ok', 'types': [], 'new': False}}
+    for t, st, origin, text in escapes(entry_qual, idx):
+        if st:
+            code, kind = str(st), ('bad' if st >= 500 else 'http')
+        else:
+            a = app_status(t, idx)
+            code, kind = ((str(a) if a else 'handled'), 'http') if a is not None else ('500', 'bad')
+        o = out.setdefault(code, {'code': code, 'kind': kind, 'types': [], 'new': False})
+        if t not in o['types']:
+            o['types'].append(t)
+        o['new'] = o['new'] or origin in changed_q
+    return sorted(out.values(), key=lambda o: (o['kind'] != 'ok', o['code']))
+
+
 def build_endpoint(entry_qual, idx, meta, depth, tag, changed_q=frozenset(), changed_m=frozenset(),
-                   diffs=None):
+                   diffs=None, used_by=None):
     """BFS the call tree from entry_qual into an endpoint spec, ids/fnKeys namespaced by `tag`.
 
     Nodes whose qual is in `changed_q` (or model name in `changed_m`) are flagged changed=True and
@@ -883,9 +1050,21 @@ def build_endpoint(entry_qual, idx, meta, depth, tag, changed_q=frozenset(), cha
     for q in order:
         info = idx.funcs[q]
         steps = []
-        for s in steps_for(info, idx):
-            s = {k: v for k, v in s.items() if k != '_qual'}
+        for s0 in steps_for(info, idx):
+            s = {k: v for k, v in s0.items() if not k.startswith('_')}
             s['target'] = f"{tag}__{s['target']}"
+            # errors the callee lets out: stopped by an `except` around this call, or passing through
+            esc, caught = [], []
+            for t, st, origin, text in escapes(s0['_qual'], idx):
+                h = caught_by(t, s0.get('_catch', []), idx)
+                if h:
+                    caught.append([t, h[1] or ''])
+                elif not st and app_status(t, idx) is None and t not in esc:
+                    esc.append(t)
+            if esc:
+                s['esc'] = esc
+            if caught:
+                s['caught'] = [list(x) for x in dict.fromkeys(map(tuple, caught))]
             steps.append(s)
         n = {
             'id': nid(q), 'fnKey': fk(q), 'col': col[q], 'entry': q == entry_qual,
@@ -900,6 +1079,15 @@ def build_endpoint(entry_qual, idx, meta, depth, tag, changed_q=frozenset(), cha
             n['recv'] = recv[q]
         if facts[q]['reads']:
             n['reads'] = facts[q]['reads']
+        rs = [{'t': r['t'], 'text': r['text'],
+               'esc': not r['status'] and app_status(r['t'], idx) is None
+                      and not caught_by(r['t'], r['_catch'], idx)}
+              for r in idx.raise_cache.get(q, [])]
+        if rs:
+            n['raises'] = rs
+        ub = (used_by or {}).get(q, [])
+        if len(ub) > 1:
+            n['usedBy'] = ub
         if q in diffs:
             n['base'] = diffs[q]['base']; n['diff'] = diffs[q]['diff']; n['isnew'] = diffs[q]['new']
         nodes.append(n)
@@ -945,6 +1133,7 @@ def build_endpoint(entry_qual, idx, meta, depth, tag, changed_q=frozenset(), cha
         'inputs': inputs, 'nodes': nodes, 'modelEdges': [],
         'reqModels': req_names, 'respModels': resp_names, 'models': models_reg,
         'fieldUse': field_use(entry_qual, order, flow, facts, idx, nid),
+        'statuses': statuses_for(entry_qual, idx, changed_q) if meta.get('route') else [],
     }
 
 
@@ -1044,7 +1233,14 @@ def process_repo(repo, args):
             return reach, True
         return reach, False
 
-    build = lambda q, meta: build_endpoint(q, idx, meta, args.depth, tag, changed_q, changed_m, diffs)
+    # which routes reach each function (unbounded depth), for "used by N routes"
+    route_reach = {q: reachable_quals(q, idx, 10 ** 6) for q, *_ in idx.routes}
+    used_by = {}
+    for q, m, p, pre in idx.routes:
+        for f in route_reach[q]:
+            used_by.setdefault(f, []).append(f'{m} {p}')
+    build = lambda q, meta: build_endpoint(q, idx, meta, args.depth, tag, changed_q, changed_m, diffs,
+                                           used_by)
     rendered_quals = lambda e: {n['fnKey'].split('::', 1)[1] for n in e['nodes']
                                 if not n['fnKey'].split('::', 1)[1].startswith('model:')}
     del_code = {}  # code entries for synthetic DELETED nodes (no HEAD source to look up)
@@ -1056,8 +1252,21 @@ def process_repo(repo, args):
         endpoints = [build(q, {'method': m, 'path': p, 'prefix': pre, 'route': True})
                      for q, m, p, pre in idx.routes]
     else:  # --changed: routes whose flow was changed somehow, then a coverage pass for the rest
+        hit = [(q, m, p, pre) for q, m, p, pre in idx.routes if flow_touches_changed(q)[1]]
         endpoints = [build(q, {'method': m, 'path': p, 'prefix': pre, 'route': True})
-                     for q, m, p, pre in idx.routes if flow_touches_changed(q)[1]]
+                     for q, m, p, pre in hit]
+        # edited vs only affected: a route is edited if its handler changed, or it reaches a changed
+        # function no other route reaches. The rest only reach changed code shared with an edited
+        # route; they go in their own group so a reviewer sees what else the change touches.
+        hitq = {h[0] for h in hit}
+        routes_of = lambda f: {r for r in hitq if f in route_reach[r]}
+        edited = {r for r in hitq if r in changed_q
+                  or any(routes_of(f) == {r} for f in route_reach[r] & changed_q)}
+        if edited:
+            for e, (q, *_rest) in zip(endpoints, hit):
+                if q not in edited:
+                    e['affected'] = True
+                    e['group'] = f'{tag} · affected, not edited'
         # coverage guarantee: every changed function must appear as a node in ≥1 chart. Any changed
         # def not actually rendered (e.g. deeper than --depth, or reached only by non-route code)
         # becomes its own root chart, so nothing in the diff is invisible.
@@ -1169,7 +1378,7 @@ def generate(args, repos, log=True):
         eps, code = process_repo(repo, args)
         all_eps += eps; all_code.update(code)
     # routes first, then the "not reached from a route" / migrations groups; same groups contiguous
-    all_eps.sort(key=lambda e: (bool(e.get('other')), e.get('group', '')))
+    all_eps.sort(key=lambda e: (bool(e.get('other')), bool(e.get('affected')), e.get('group', '')))
     return all_eps, all_code
 
 

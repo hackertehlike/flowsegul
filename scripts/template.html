@@ -154,7 +154,7 @@ kbd{font:600 10.5px/1 var(--mono);padding:3px 5px;border-radius:5px;border:1px s
 .tb .cnt{font:700 10.5px/1 var(--mono);padding:2px 5px;border-radius:9px;background:var(--chg);color:#fff}
 
 /* tooltips (data-tip), CSS-only so they stay out of the DOM logic */
-#tip{position:fixed;z-index:60;background:#161a26;color:#f4f5f9;font:500 11.5px/1.3 var(--sans);padding:6px 9px;border-radius:7px;white-space:nowrap;box-shadow:var(--shadow);opacity:0;transform:translateY(-2px);transition:opacity .12s,transform .12s;pointer-events:none}
+#tip{position:fixed;z-index:60;background:#161a26;color:#f4f5f9;font:500 11.5px/1.3 var(--sans);padding:6px 9px;border-radius:7px;white-space:pre;box-shadow:var(--shadow);opacity:0;transform:translateY(-2px);transition:opacity .12s,transform .12s;pointer-events:none}
 #tip.on{opacity:1;transform:none;pointer-events:auto}
 
 .main{flex:1;display:flex;min-height:0}
@@ -229,6 +229,26 @@ body.review .revbar{display:block}
 #edges.spot .ge{opacity:.07}
 #edges.spot .vhot{opacity:1}
 [data-var]{cursor:pointer}
+/* errors: a red squiggle under code that can fail, green when a caller handles it; hover one to
+   light up where that error travels (rows, arrow labels, status chips) and fade the rest */
+.sq,.sqok{text-decoration:underline wavy var(--del);text-decoration-thickness:1px;text-underline-offset:3px;text-decoration-skip-ink:none;cursor:default}
+.sqok{text-decoration-color:var(--ok)}
+.step.raise{background:transparent;border-left-color:var(--del)}
+.step.raise.handled{border-left-color:var(--line2)}
+.ub{flex:none;font:600 10px/1 var(--mono);color:var(--muted);background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:3px 5px;margin-left:6px;vertical-align:1px;cursor:default;white-space:nowrap}
+.stchips{display:flex;gap:4px;flex:none}
+.stc{position:relative;font:700 11px/1 var(--mono);border-radius:6px;padding:4px 6px;border:1px solid var(--line);color:var(--ink2);background:var(--panel2);cursor:default}
+.stc.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 40%,var(--line))}
+.stc.bad{color:#fff;background:var(--del);border-color:var(--del)}
+.stc.new::after{content:'';position:absolute;top:-3px;right:-3px;width:7px;height:7px;border-radius:50%;background:var(--chg);border:1.5px solid var(--panel)}
+#world.errfocus .node:not(.errhot){opacity:.35;transition:opacity .12s}
+#world.errfocus .errhot .step:not(.errhot){opacity:.45}
+.errhot.sq,.errhot.sqok,.step.errhot{text-decoration-thickness:2px}
+#edges.errfocus .ge{opacity:.08}
+#edges .errlab{opacity:1}
+#edges.errfocus .errlab:not(.errhot){opacity:.15}
+#edges .errpath{opacity:0;transition:opacity .12s}
+#edges.errfocus .errpath.errhot{opacity:1;stroke-dasharray:6 4;animation:flow .6s linear infinite}
 
 .node{position:absolute;width:320px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);z-index:2;transition:box-shadow .18s,border-color .18s}
 .node:hover{box-shadow:var(--shadow-lg)}
@@ -605,7 +625,7 @@ function build(ep){
    card.style.animationDelay=Math.min(idx*35,300)+'ms';
    const head=el('div','nhead');
    const badge=n.changed?'<span class="chgbadge'+(n.deleted?' del':n.isnew?' new':'')+'">'+(n.deleted?'DELETED':n.isnew?'NEW':'CHANGED')+'</span>':'';
-   head.innerHTML='<span class="lay '+esc(n.layer)+'">'+esc(n.layer)+'</span><span class="ntitle">'+titleHtml(n.title)+badge+'<div class="nsub">'+esc(n.sub||'')+'</div></span><button class="ncaret" title="collapse">'+ICON_CARET+'</button>';
+   head.innerHTML='<span class="lay '+esc(n.layer)+'">'+esc(n.layer)+'</span><span class="ntitle">'+titleHtml(n.title)+badge+(n.usedBy?'<span class="ub" data-tip="'+esc(n.usedBy.join('\n'))+'">'+n.usedBy.length+' routes</span>':'')+'<div class="nsub">'+esc(n.sub||'')+'</div></span><button class="ncaret" title="collapse">'+ICON_CARET+'</button>';
    card.appendChild(head);
    const body=el('div','nbody');
    // one row per statement; extra calls in the same statement have no expr — they still get an
@@ -614,6 +634,10 @@ function build(ep){
    const nodeVars=nodeVarsFor(n);
    const ins=renderIns(n,nodeVars);if(ins)body.appendChild(ins);
    (n.steps||[]).forEach(s=>{if(s.expr==='')return;const row=renderStep(s,nodeVars);if(s.target&&nameById[s.target])row.dataset.callee=nameById[s.target];body.appendChild(row);});
+   // raise lines: red when nothing on the way to the route handles the error
+   (n.raises||[]).forEach(r=>{const m=/^raise\s+/.test(r.text)?r.text.replace(/^raise\s+/,''):r.text;
+     const row=el('div','step raise'+(r.esc?'':' handled'),'<span class="kw">raise</span> '+(r.esc?'<span class="sq" data-err="'+esc(r.t)+'" data-tip="'+esc(r.t)+'">'+esc(m)+'</span>':esc(m)));
+     row.dataset.err=r.t;body.appendChild(row);});
    if(c.code||n.diff||n.base!=null){   // deleted nodes have no HEAD code but do have a removal diff
      const pre=el('pre','code');
      const flags=diffFlags(n.diff||'');
@@ -651,7 +675,7 @@ function build(ep){
  });
 
  // edges: every node's steps that target another node
- ep.nodes.forEach(n=>{(n.steps||[]).forEach(s=>{if(s.target&&nodes[s.target])edges.push({src:n.id,dst:s.target,color:(s.var&&s.var!=='return')?varColor[s.var]:'var(--edge)',rowVar:s.var,label:s.arg||'',ret:s.ret||'',bind:s.bind||[],keys:edgeKeys(n.id,s)});});});
+ ep.nodes.forEach(n=>{(n.steps||[]).forEach(s=>{if(s.target&&nodes[s.target])edges.push({src:n.id,dst:s.target,color:(s.var&&s.var!=='return')?varColor[s.var]:'var(--edge)',rowVar:s.var,label:s.arg||'',ret:s.ret||'',bind:s.bind||[],keys:edgeKeys(n.id,s),esc:s.esc||[],caught:s.caught||[]});});});
  // schema edges: only the response shape (dashed). The request model is shown as a node but not
  // wired with an arrow — it's the input type, not a call, so an arrow would just be documentation.
  (ep.modelEdges||[]).forEach(m=>{if(m.kind==='resp'&&nodes[m.src]&&nodes[m.dst])
@@ -659,10 +683,18 @@ function build(ep){
 
  layout();
  closeDrawer();
- $('#epinfo').innerHTML='<span class="m '+esc(ep.method.toUpperCase())+'">'+esc(ep.method)+'</span><span class="path" title="'+esc(ep.path)+'">'+esc(ep.path)+'</span><span class="sum" title="'+esc(ep.summary||'')+'">'+esc(ep.summary||'')+'</span>'+modelChips(ep);
+ $('#epinfo').innerHTML='<span class="m '+esc(ep.method.toUpperCase())+'">'+esc(ep.method)+'</span><span class="path" title="'+esc(ep.path)+'">'+esc(ep.path)+'</span><span class="sum" title="'+esc(ep.summary||'')+'">'+esc(ep.summary||'')+'</span>'+modelChips(ep)+statusChips(ep);
  renderLegend(varColor);
  fit(false);
  setupChgNav();
+}
+
+// what the route can answer: the success status, HTTP errors it raises on purpose, and 500 for an
+// error nothing handles. A dot marks a response this change introduced.
+function statusChips(ep){
+ if(!(ep.statuses||[]).length)return '';
+ return '<span class="stchips">'+ep.statuses.map(s=>'<span class="stc '+esc(s.kind)+(s.new?' new':'')+'" data-st="'+esc(s.code)+'"'
+   +(s.types.length?' data-err="'+esc(s.types.join(' '))+'" data-tip="'+esc(s.types.join('\n'))+'"':'')+'>'+esc(s.code)+'</span>').join('')+'</span>';
 }
 
 function setNodeCode(card,show,pre,btn){
@@ -716,6 +748,9 @@ function renderStep(s,nv){
    if(w&&nv[w]&&src[m.index-1]!=='.'){const t=fieldTail(src,re.lastIndex);re.lastIndex+=t.length;expr+=vchip(w,nv[w],t,w+t);}
    else expr+=esc(m[0]);
  }
+ // an error this call can let through gets a red squiggle; one handled right here gets a green one
+ if(s.esc&&s.esc.length)expr='<span class="sq" data-err="'+esc(s.esc.join(' '))+'" data-tip="'+esc(s.esc.join(' · '))+'">'+expr+'</span>';
+ else if(s.caught&&s.caught.length)expr='<span class="sqok" data-err="'+esc(s.caught.map(c=>c[0]).join(' '))+'" data-st="'+esc(String(s.caught[0][1]||''))+'" data-tip="'+esc(s.caught.map(c=>c[0]+' → '+(c[1]||'handled')).join(' · '))+'">'+expr+'</span>';
  row.innerHTML=label+expr;
  row.dataset.rowvar=s.var;
  return row;
@@ -810,6 +845,15 @@ function drawEdges(){
    // a value that lands under another name says so: subtotal → total
    const renamed=v=>{for(const e of g.items)for(const b of e.bind||[])if(b.from===v&&!b.path&&b.p!==v)return v+' → '+b.p;return v;};
    consumed.forEach((v,k)=>{const t=renamed(v),pw=Math.max(30,t.length*7+16);labels+=pill(fx-pw/2-5,fy+k*21,t,pvcolor[v]||'var(--edge)',true,i,dv);});
+   // errors crossing this call: red = let through to the caller, green = the caller handles it
+   const escT=[...new Set([].concat(...g.items.map(e=>e.esc||[])))];
+   const cgt=[...new Map([].concat(...g.items.map(e=>e.caught||[])).map(c=>[c[0],c])).values()];
+   let errAt=null;   // where the error label sits: under the return arrow's pills, else under the call's label
+   const errLabels=(x,y)=>{
+     let k=0;
+     if(escT.length)labels+='<text class="errlab elab" data-err="'+esc(escT.join(' '))+'" data-tip="'+esc(escT.join('\n'))+'" x="'+x+'" y="'+(y+14*k++)+'" text-anchor="middle" fill="var(--del)">'+esc(escT.join(', '))+'</text>';
+     cgt.forEach(c=>{labels+='<text class="errlab elab" data-err="'+esc(c[0])+'" data-st="'+esc(String(c[1]||''))+'" x="'+x+'" y="'+(y+14*k++)+'" text-anchor="middle" fill="var(--ok)">'+esc(c[0]+' → '+(c[1]||'handled'))+'</text>';});
+   };
    // return arrow: callee (lower-left) -> back to the caller row, listing every distinct result var.
    if(!g.plain){
      const seen=new Set();
@@ -826,7 +870,14 @@ function drawEdges(){
        // small type note above, then a value PILL per produced variable (it "travels" back to the caller)
        if(typ)labels+='<text data-g="'+i+'"'+dv+' x="'+m[0]+'" y="'+(m[1]+2)+'" class="'+gc+' elab ret" text-anchor="middle" fill="var(--muted)">'+typ+' →</text>';
        rvars.forEach((e,k)=>{const fin=e.rowVar==='return';labels+=pill(m[0],m[1]+18+k*21,fin?'response':e.rowVar,fin?'var(--accent)':(e.color||rcol),false,i,dv);});
+       errAt=[m[0],m[1]+18+rvars.length*21+4];
+       if(escT.length||cgt.length)ret+='<path class="errpath" data-err="'+esc(escT.concat(cgt.map(c=>c[0])).join(' '))+'" d="M'+sx+','+sy+' C'+rc1+','+(sy+26)+' '+rc2+','+(ey+26)+' '+ex+','+ey+'" fill="none" stroke="'+(escT.length?'var(--del)':'var(--ok)')+'" stroke-width="2.4"/>';
      }
+   }
+   if(escT.length||cgt.length){
+     if(!errAt){const m=bez(jx,ry,fc1,ry,fc2,fy,fx,fy,0.5);errAt=[m[0],m[1]+12];
+       ret+='<path class="errpath" data-err="'+esc(escT.concat(cgt.map(c=>c[0])).join(' '))+'" d="M'+jx+','+ry+' C'+fc1+','+ry+' '+fc2+','+fy+' '+fx+','+fy+'" fill="none" stroke="'+(escT.length?'var(--del)':'var(--ok)')+'" stroke-width="2.4"/>';}
+     errLabels(errAt[0],errAt[1]);
    }
  });
  svg.innerHTML=defs+'</defs>'+stubs+fwd+ret+labels;
@@ -847,6 +898,24 @@ world.addEventListener('mouseover',e=>{if(e.target.closest('[data-var]'))return;
 world.addEventListener('mouseout',e=>{if(e.target.closest('.step[data-rowvar]'))setLink([]);});
 svg.addEventListener('mouseover',e=>{const t=e.target.closest('[data-g]');if(t)setLink([+t.dataset.g]);});
 svg.addEventListener('mouseout',e=>{if(e.target.closest('[data-g]'))setLink([]);});
+
+// error focus: hover a squiggle, an error label on an arrow or a status chip → everything that
+// error touches stays lit (rows, arrow labels, the arrow it travels back along, the route's status)
+function errMatch(e,H){
+ if(H.st&&e.dataset.st===H.st)return true;
+ return (e.dataset.err||'').split(' ').some(x=>x&&H.t.includes(x));
+}
+function setErr(src){
+ const on=!!src;
+ [world,svg,$('#epinfo')].forEach(r=>r.classList.toggle('errfocus',on));
+ document.querySelectorAll('.errhot').forEach(e=>e.classList.remove('errhot'));
+ if(!on)return;
+ const H={t:(src.dataset.err||'').split(' ').filter(Boolean),st:src.dataset.st||''};
+ document.querySelectorAll('#world [data-err],#edges [data-err],#epinfo [data-err],#epinfo [data-st]').forEach(e=>{if(errMatch(e,H)){e.classList.add('errhot');
+   const st=e.closest('.step');if(st)st.classList.add('errhot');const card=e.closest('.node');if(card)card.classList.add('errhot');}});
+}
+document.addEventListener('mouseover',e=>{const t=e.target.closest&&e.target.closest('.sq,.sqok,.errlab,.stc[data-err],.step.raise');if(t)setErr(t);});
+document.addEventListener('mouseout',e=>{const t=e.target.closest&&e.target.closest('.sq,.sqok,.errlab,.stc[data-err],.step.raise');if(t&&!(e.relatedTarget&&t.contains(e.relatedTarget)))setErr(null);});
 
 // variable spotlight: hover any variable → it lights up everywhere (chips, code tokens, and every
 // arrow that carries it), while the rest fades. This is the "trace this value" view.
