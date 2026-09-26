@@ -77,6 +77,12 @@ Run `flowsegul --help` for the full list.
 - **Color-coded data flow** — each produced variable gets one consistent color across its chip, its
   arrows, and every line of source that touches it. Solid arrows = arguments in; dashed = value
   returned (labeled `type → variable`).
+- **Values followed across calls** — a parameter takes the colour of what its caller passed, so
+  `apply_coupon(subtotal)` shows its `total` parameter as the caller's `subtotal`. Each box lists
+  what its parameters received (`total ← subtotal`) and which fields it reads (`payload` reads
+  `.coupon`, `.items`). Hovering a value lights it wherever it goes, with parts of it (`payload.items`)
+  outlined dashed. The request model's panel says which function reads each field, and which fields
+  nothing reads.
 - **Change detection** (`--changed`) — per-node Diff / New / Old toggle, a **Changes** navigator
   (`N` / `Shift+N`), and deleted defs shown as removal diffs.
 - **Review mode** — tick endpoints off as reviewed with a progress bar (persisted in localStorage).
