@@ -213,7 +213,9 @@ body.review .revbar{display:block}
 .codebtn{display:inline-flex;align-items:center;gap:5px;font:600 11px/1 var(--sans);color:var(--muted);background:none;border:1px solid var(--line);border-radius:6px;padding:5px 8px;cursor:pointer;transition:all .12s}
 .codebtn:hover{border-color:var(--accent);color:var(--accent)}
 .codebtn svg{width:12px;height:12px}
-pre.code{margin:2px 0 0;padding:11px 13px;background:var(--panel2);border:1px solid var(--line);border-radius:9px;font:12px/1.6 var(--mono);overflow:auto;max-height:62vh;white-space:pre;tab-size:4;color:var(--ink2)}
+pre.code{margin:2px 0 0;padding:11px 13px;background:var(--panel2);border:1px solid var(--line);border-radius:9px;font:12px/1.6 var(--mono);overflow:hidden auto;max-height:62vh;white-space:pre-wrap;overflow-wrap:anywhere;tab-size:4;color:var(--ink2)}
+/* one block per line, no sideways scrolling: long lines wrap and hang 2ch past that line's own indent */
+pre.code .dl{display:block;padding-left:calc(var(--ind,0ch) + 2ch);text-indent:calc(-1 * (var(--ind,0ch) + 2ch))}
 pre.code[hidden]{display:none}
 pre.code .kw{color:var(--kw)}pre.code .str{color:var(--str)}pre.code .com{color:var(--com);font-style:italic}
 pre.code .def{color:var(--def);font-weight:600}pre.code .num{color:var(--num)}pre.code .self{color:var(--self)}
@@ -222,8 +224,7 @@ pre.code .var{border-radius:3px;padding:0 2px;font-weight:600}
 pre.code .lvar{color:color-mix(in srgb,var(--ink) 45%,var(--muted));font-weight:500}
 pre.code .call{font-weight:600;text-decoration:underline dotted;text-decoration-thickness:1.5px;text-underline-offset:3px;cursor:pointer}
 pre.code .call:hover{text-decoration-style:solid;text-decoration-thickness:2px}
-pre.code.diff{white-space:pre}
-pre.code.diff .dl{display:block;padding:0 4px;margin:0 -4px;border-radius:2px}
+pre.code.diff .dl{border-radius:2px;margin:0 -4px;padding-right:4px;padding-left:calc(var(--ind,0ch) + 2ch + 4px)}
 pre.code.diff .dadd{background:#16a34a1f;box-shadow:inset 2px 0 #16a34a}
 pre.code.diff .ddel{background:#e5484d1f;box-shadow:inset 2px 0 #e5484d}
 pre.code.diff .dhunk{color:var(--def);font-weight:600}
@@ -248,6 +249,10 @@ pre.code.diff .dfile{color:var(--muted)}
 .dock button{width:30px;height:30px;border-radius:8px;border:0;background:none;color:var(--ink2);cursor:pointer;display:grid;place-items:center;padding:0}
 .dock button:hover{background:var(--panel2)}
 .dock button svg{width:16px;height:16px}
+.dock .wheelseg{margin:0;padding:2px;border:0;background:var(--panel2)}
+.dock .wheelseg .segb{display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 9px;width:auto}
+.dock .wheelseg .segb svg{width:13px;height:13px}
+.dock .dsep{width:1px;height:18px;background:var(--line);margin:0 3px}
 .dock .pct{font:600 11px var(--mono);color:var(--muted);min-width:44px;text-align:center;cursor:pointer;border-radius:6px;padding:8px 0;border:0;background:none}
 .dock .pct:hover{background:var(--panel2);color:var(--ink)}
 .minimap{right:14px;bottom:14px;width:200px;height:128px;overflow:hidden;cursor:pointer;padding:0}
@@ -345,6 +350,8 @@ body.nomap .minimap{display:none}
    <div class="float chgnav" id="chgnav" hidden><button id="chgprev" data-tip="Previous  (⇧N)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 10 4-4 4 4"/></svg></button><span id="chglabel"></span><button id="chgnext" data-tip="Next  (N)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 6 4 4 4-4"/></svg></button></div>
    <details class="float legend" id="legend"></details>
    <div class="float dock">
+    <span class="seg scrollseg wheelseg" role="group" aria-label="Scroll wheel"><button class="segb" data-mode="pan" data-tip="Scroll wheel pans  (W)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v12M2 8h12M8 2 6.3 3.7M8 2l1.7 1.7M8 14l-1.7-1.7M8 14l1.7-1.7M2 8l1.7-1.7M2 8l1.7 1.7M14 8l-1.7-1.7M14 8l-1.7 1.7"/></svg>Pan</button><button class="segb" data-mode="zoom" data-tip="Scroll wheel zooms  (W)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3M5 7h4M7 5v4"/></svg>Zoom</button></span>
+    <span class="dsep"></span>
     <button id="zout" data-tip="Zoom out  (−)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3.5 8h9"/></svg></button>
     <button class="pct" id="zpct" data-tip="Reset to 100%  (0)">100%</button>
     <button id="zin" data-tip="Zoom in  (+)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3.5 8h9M8 3.5v9"/></svg></button>
@@ -375,9 +382,10 @@ body.nomap .minimap{display:none}
   <div class="kr"><span>Mark current reviewed</span><span><kbd>X</kbd></span></div>
   <div class="kr"><span>Sidebar / minimap</span><span><kbd>[</kbd><kbd>M</kbd></span></div>
   <div class="kr"><span>Theme</span><span><kbd>T</kbd></span></div>
+  <div class="kr"><span>Scroll wheel: pan ⇄ zoom</span><span><kbd>W</kbd></span></div>
   <h5>Canvas</h5>
-  <div class="how">Scroll or drag empty space to pan. Pinch or hold <kbd>Ctrl</kbd>/<kbd>⌘</kbd> while scrolling to zoom. Drag a box by its header to move it. Click or drag the minimap to jump.</div>
-  <div class="kr"><span>Scroll wheel</span><span class="seg" id="scrollseg"><button class="segb" data-mode="pan">Pans</button><button class="segb" data-mode="zoom">Zooms</button></span></div>
+  <div class="how">Scroll or drag empty space to pan. Pinch or hold <kbd>Ctrl</kbd>/<kbd>⌘</kbd> while scrolling to zoom. With a mouse, flip the Pan / Zoom switch in the bottom-left bar (or press <kbd>W</kbd>) to zoom with the wheel. Drag a box by its header to move it. Click or drag the minimap to jump.</div>
+  <div class="kr"><span>Scroll wheel</span><span class="seg scrollseg" id="scrollseg"><button class="segb" data-mode="pan">Pans</button><button class="segb" data-mode="zoom">Zooms</button></span></div>
  </div>
 </div></div>
 <div id="tip" role="tooltip"></div>
@@ -423,7 +431,7 @@ function hlDiff(diff,vars,calls,locals){
    const cls=add?'dadd':del?'ddel':'';
    // keep the +/-/space marker literal, syntax-highlight the code after it (same var colours as New/Old)
    const marker=(add||del||ctx)?l[0]:'';
-   return '<span class="dl '+cls+'">'+esc(marker)+(hl(marker?l.slice(1):l,vars,calls,locals)||' ')+'</span>';
+   return lineBlock(esc(marker)+(hl(marker?l.slice(1):l,vars,calls,locals)||' '),cls,marker?l.slice(1):l,marker?1:0);
  }).join('');
 }
 
@@ -445,9 +453,24 @@ function diffFlags(diff){
 
 // full source, syntax-highlighted, with the diffed lines tinted (cls = dadd on new side, ddel on old side)
 function hlSide(src,vars,flags,cls,calls,locals){
- return String(src).split('\n').map((line,i)=>
-   '<span class="dl'+(flags.has(i+1)?' '+cls:'')+'">'+(hl(line,vars,calls,locals)||' ')+'</span>').join('');
+ return codeLines(src,vars,calls,locals,i=>flags.has(i+1)?cls:'');
 }
+// Highlight the whole source once (so multi-line strings stay coloured), then cut it into one block
+// per line. hl() emits flat spans, so a span crossing a newline is closed and reopened on the next line.
+// Each line carries its own indent so wrapped continuation lines hang under the code, not at column 0.
+function codeLines(src,vars,calls,locals,clsOf){
+ src=String(src==null?'':src);
+ const raw=src.split('\n'),html=hl(src,vars,calls,locals),out=[];
+ let cur='',open='';
+ html.split(/(<span[^>]*>|<\/span>)/).forEach(t=>{
+   if(t.startsWith('<span')){open=t;cur+=t;}
+   else if(t==='</span>'){open='';cur+=t;}
+   else t.split('\n').forEach((p,k)=>{if(k){if(open)cur+='</span>';out.push(cur);cur=open;}cur+=p;});
+ });
+ out.push(cur);
+ return out.map((l,i)=>lineBlock(l||' ',clsOf?clsOf(i):'',raw[i]||'',0)).join('');
+}
+function lineBlock(inner,cls,rawLine,extra){const ind=rawLine.match(/^\s*/)[0].replace(/\t/g,'    ').length+(extra||0);return '<span class="dl'+(cls?' '+cls:'')+'" style="--ind:'+ind+'ch">'+inner+'</span>';}
 
 const stage=$('#stage'), world=$('#world'), svg=$('#edges');
 let view={x:40,y:20,s:1};
@@ -505,7 +528,7 @@ function build(ep){
      const flags=diffFlags(n.diff||'');
      const lset=new Set(n.locals||[]);
      const paint=(mode)=>{
-       if(mode==='Plain'){pre.className='code';pre.innerHTML=hl(c.code,codeVars,callMarks,lset);return;}
+       if(mode==='Plain'){pre.className='code';pre.innerHTML=codeLines(c.code,codeVars,callMarks,lset);return;}
        pre.className='code diff';
        if(mode==='Diff')pre.innerHTML=hlDiff(n.diff||'',codeVars,callMarks,lset);
        else if(mode==='Old')pre.innerHTML=hlSide(n.base||'',codeVars,flags.oldRemoved,'ddel',callMarks,lset);
@@ -836,8 +859,8 @@ stage.addEventListener('wheel',e=>{
  applyView();
 },{passive:false});
 let scrollMode=store.get('scroll','pan');
-function setScrollMode(m){scrollMode=m;store.set('scroll',m);document.querySelectorAll('#scrollseg .segb').forEach(b=>b.classList.toggle('on',b.dataset.mode===m));}
-document.querySelectorAll('#scrollseg .segb').forEach(b=>b.onclick=()=>setScrollMode(b.dataset.mode));
+function setScrollMode(m){scrollMode=m;store.set('scroll',m);document.querySelectorAll('.scrollseg .segb').forEach(b=>b.classList.toggle('on',b.dataset.mode===m));}
+document.querySelectorAll('.scrollseg .segb').forEach(b=>b.onclick=()=>setScrollMode(b.dataset.mode));
 setScrollMode(scrollMode);
 $('#zin').onclick=()=>zoomCenter(1.2);
 $('#zout').onclick=()=>zoomCenter(1/1.2);
@@ -986,6 +1009,7 @@ window.addEventListener('keydown',e=>{
  else if(k==='r'||k==='R'){toggleReview();}
  else if(k==='x'||k==='X'){const c=epEls.find(x=>x.ep===curEp);if(c){if(!document.body.classList.contains('review'))toggleReview();markReviewed(c.ep,c.d);}}
  else if(k==='m'||k==='M'){toggleMap();}
+ else if(k==='w'||k==='W'){setScrollMode(scrollMode==='zoom'?'pan':'zoom');}
  else if(k==='['){toggleSide();}
  else if(k==='t'||k==='T'){$('#theme').click();}
 });
