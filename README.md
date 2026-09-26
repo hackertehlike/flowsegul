@@ -43,7 +43,7 @@ their own entry, with their `op.*` operations listed and the file diff.
 ### Code outside controller → service → repository
 
 Each box is labelled by what kind of code it is, going by file and folder names:
-controller, service, repository, model, schema, factory, util, task, external (clients,
+controller, service, repository, dependency (`deps.py`), model, schema, factory, util, task, external (clients,
 integrations), config and migration. Code that fits none of these is labelled with its folder name,
 e.g. `domain` or `billing`. To name things your own way, add a `.flowsegul.json` at the repo root:
 
@@ -83,9 +83,16 @@ Run `flowsegul --help` for the full list.
   `.coupon`, `.items`). Hovering a value lights it wherever it goes, with parts of it (`payload.items`)
   outlined dashed. The request model's panel says which function reads each field, and which fields
   nothing reads.
+- **Full route paths** — prefixes from `APIRouter(prefix=…)` and `include_router(…, prefix=…)`
+  (also a constant or `settings.API_V1_STR`) are joined into the path. FastAPI dependencies
+  (`Depends(get_current_user)`, `Annotated[…, Depends(…)]`) are drawn as calls.
 - **Change detection** (`--changed`) — per-node Diff / New / Old toggle, a **Changes** navigator
-  (`N` / `Shift+N`), and deleted defs shown as removal diffs.
+  (`N` / `Shift+N`), and deleted defs shown as removal diffs. Decorator edits count, and so do
+  edits to a module-level name a function reads (`LIMIT = 500`): that function's diff opens with
+  the line. New files you haven't `git add`ed, deleted files, and module-level code no function
+  reads (`app.include_router(…)`) are shown too.
 - **Review mode** — tick endpoints off as reviewed with a progress bar (persisted in localStorage).
+  A tick belongs to the code you reviewed: when that route's code changes, it clears.
 - **Keyboard first** — `/` filters endpoints, `J`/`K` moves between them, `F` fits, `?` lists the rest.
   Light and dark themes follow your system, with a toggle.
 

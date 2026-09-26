@@ -537,10 +537,13 @@ function hlDiff(diff,vars,calls,locals){
 function diffFlags(diff){
  const newAdded=new Set(), oldRemoved=new Set();
  if(!diff)return {newAdded,oldRemoved};
- let oln=0,nln=0;
+ let oln=0,nln=0,skip=false;
  diff.split('\n').forEach(l=>{
    const h=l.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
-   if(h){oln=+h[1];nln=+h[2];return;}
+   if(h){oln=+h[1];nln=+h[2];skip=false;return;}
+   // `@@ orders.py:6 @@`: a module-level line this function reads, not a line of the function itself
+   if(l.startsWith('@@'))skip=true;
+   if(skip)return;
    if(l.startsWith('+++')||l.startsWith('---'))return;
    if(l.startsWith('+')){newAdded.add(nln++);}
    else if(l.startsWith('-')){oldRemoved.add(oln++);}
@@ -580,6 +583,8 @@ const REVKEY='flowsegul_reviewed';
 function loadReviewed(){try{return new Set(JSON.parse(localStorage.getItem(REVKEY)||'[]'));}catch(e){return new Set();}}
 function saveReviewed(s){try{localStorage.setItem(REVKEY,JSON.stringify([...s]));}catch(e){}}
 const reviewed=loadReviewed();
+// a review mark belongs to the code it was given for: new commits to that route clear it
+const revKey=ep=>ep.id+(ep.sig?'@'+ep.sig:'');
 
 // "Class.method" → dim class, bold method, and let long names break after the dot rather than mid-word
 function titleHtml(t){const i=(t||'').lastIndexOf('.');return i>0?'<span class="cls">'+esc(t.slice(0,i+1))+'</span><wbr>'+esc(t.slice(i+1)):esc(t||'');}
@@ -985,7 +990,7 @@ $('#chgtoggle').onclick=()=>{chgNavOn=!chgNavOn;$('#chgtoggle').classList.toggle
 // review mode: manually check flows off as reviewed (persisted; never auto-marked on visit)
 function updateRevProgress(){
  const total=graph.endpoints.length;
- const done=graph.endpoints.filter(ep=>reviewed.has(ep.id)).length;
+ const done=graph.endpoints.filter(ep=>reviewed.has(revKey(ep))).length;
  const on=document.body.classList.contains('review');
  $('#revlabel').textContent=on?'Review '+done+'/'+total:'Review';
  $('#revcount').textContent=done+' / '+total;
@@ -1165,7 +1170,7 @@ graph.endpoints.forEach((ep,i)=>{
  if(ep.group && ep.group!==curGroup){curGroup=ep.group;const g=el('div','grp',esc(curGroup)+'<span class="gn">'+graph.endpoints.filter(x=>x.group===ep.group).length+'</span>');g.dataset.grp=ep.group;side.appendChild(g);}
  else if(!ep.group && curGroup===null){curGroup='';side.appendChild(el('div','grp','Endpoints'));}
  const nchg=(ep.nodes||[]).filter(n=>n.changed).length; anyChg+=nchg; (ep.nodes||[]).forEach(n=>{if(n.changed)chgFns.add(n.fnKey||n.title);});
- const d=el('div','ep'+(nchg?' haschg':'')+(reviewed.has(ep.id)?' reviewed':''));
+ const d=el('div','ep'+(nchg?' haschg':'')+(reviewed.has(revKey(ep))?' reviewed':''));
  d.tabIndex=0;
  d.innerHTML='<span class="m '+esc(ep.method.toUpperCase())+'">'+esc(ep.method)+'</span><span class="eptext"><div class="t">'+esc(ep.title)+'</div><div class="p">'+esc(ep.path)+'</div></span>'+(nchg?'<span class="chgdot" title="'+nchg+' changed"></span>':'')+'<button class="revchk" title="mark reviewed (X)">✓</button>';
  d.onclick=()=>selectEp(ep,d);
@@ -1173,7 +1178,7 @@ graph.endpoints.forEach((ep,i)=>{
  d.querySelector('.revchk').onclick=(e)=>{e.stopPropagation();markReviewed(ep,d);};
  side.appendChild(d); epEls.push({ep,d});
 });
-function markReviewed(ep,d){const on=d.classList.toggle('reviewed');on?reviewed.add(ep.id):reviewed.delete(ep.id);saveReviewed(reviewed);updateRevProgress();}
+function markReviewed(ep,d){const on=d.classList.toggle('reviewed');on?reviewed.add(revKey(ep)):reviewed.delete(revKey(ep));saveReviewed(reviewed);updateRevProgress();}
 if(anyChg){$('#chgtoggle').hidden=false;$('#chgcount').textContent=chgFns.size;}
 
 // filter: matches title, path, method or group; groups hide when empty
