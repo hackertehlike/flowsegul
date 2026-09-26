@@ -102,6 +102,15 @@ Run `flowsegul --help` for the full list.
 into `scripts/template.html` (a generic, self-contained viewer). No per-PR hand-authoring — it's
 all derived from the source.
 
+## Tests
+
+```sh
+python3 -m unittest discover -s tests -v
+```
+
+A smoke test builds a tiny FastAPI repo, runs the generator in normal and `--changed` modes, and
+checks the HTML it writes. CI runs it on Linux and macOS.
+
 ## Claude Code skill
 
 If you use [Claude Code](https://claude.com/claude-code), `./install.sh --skill` links flowsegul as
