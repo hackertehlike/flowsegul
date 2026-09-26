@@ -775,10 +775,10 @@ function groupEdges(){
  });
  return order;
 }
-let GORIG=[];            // GORIG[groupIndex] = ["<callerNodeId>|<rowVar>", …]  (for hover-linking)
+let GORIG=[],GKEYS=[];            // GORIG[groupIndex] = ["<callerNodeId>|<rowVar>", …]  (for hover-linking)
 function drawEdges(){
  svg.setAttribute('width',8000);svg.setAttribute('height',5000);
- let defs='<defs>',stubs='',fwd='',ret='',labels='';GORIG=[];
+ let defs='<defs>',stubs='',fwd='',ret='',labels='';GORIG=[];GKEYS=[];
  groupEdges().forEach((g,i)=>{
    const a=nodes[g.src],b=nodes[g.dst];if(!a||!b)return;
    const gc='ge ge'+i;                       // linking hook: every part of this group carries ge<i>
@@ -786,6 +786,7 @@ function drawEdges(){
    // variable spotlight hook: which vars this bundle carries (produced results + argument tokens)
    const gkeys=new Set();
    g.items.forEach(e=>(e.keys||[]).forEach(k=>gkeys.add(k)));
+   GKEYS[i]=[...gkeys];
    const dv=gkeys.size?' data-keys="'+esc([...gkeys].join(' '))+'"':'';
    // each call's own origin row (var-coloured) so you see exactly which line(s) make the call
    const origins=g.items.map(e=>({y:e.rowVar?anchorRow(a,e.rowVar):a.y+34,col:e.color||'var(--edge)'}));
@@ -833,6 +834,7 @@ function drawEdges(){
 }
 // hover-linking: a call line ↔ its (possibly bundled) arrow. Delegated, so it survives every redraw.
 function setLink(gis){
+ setSpotH([].concat(...(gis||[]).map(gi=>(GKEYS[gi]||[]).map(splitKey))));
  svg.classList.toggle('linking',gis&&gis.length>0);
  svg.querySelectorAll('.ge.on').forEach(el=>el.classList.remove('on'));
  world.querySelectorAll('.step.hl').forEach(el=>el.classList.remove('hl'));
@@ -851,17 +853,19 @@ svg.addEventListener('mouseout',e=>{if(e.target.closest('[data-g]'))setLink([]);
 // It follows the value, not the name: the argument a caller passes and the parameter it lands in
 // light up together, parts of it (payload → payload.items → items) get a dashed outline, and an
 // unrelated variable that happens to share the name stays dim.
-function setSpot(v,nid,path){
- const on=!!v;
+const splitKey=k=>{const i=k.indexOf('@');return[k.slice(0,i),k.slice(i+1)];};
+function setSpot(v,nid,path){setSpotH(v?(nid?originsOf(nid,v,path):legendOrigins(v)):null);}
+// H: the origins being traced. Hovering an arrow or a call row traces everything that arrow carries.
+function setSpotH(H){
+ const on=!!(H&&H.length);
  world.classList.toggle('spot',on); svg.classList.toggle('spot',on);
  world.querySelectorAll('.vhot').forEach(e=>e.classList.remove('vhot','vpart'));
  svg.querySelectorAll('.vhot').forEach(e=>e.classList.remove('vhot'));
  if(!on)return;
- const H=nid?originsOf(nid,v,path):legendOrigins(v);
  world.querySelectorAll('[data-var]').forEach(e=>{const card=e.closest('.node');if(!card)return;
    const r=relation(originsOf(card.dataset.id,e.dataset.var,e.dataset.path),H);
    if(r){e.classList.add('vhot');if(r===1)e.classList.add('vpart');}});
- svg.querySelectorAll('[data-keys]').forEach(e=>{if(relation(e.dataset.keys.split(' ').map(k=>{const i=k.indexOf('@');return[k.slice(0,i),k.slice(i+1)];}),H))e.classList.add('vhot');});
+ svg.querySelectorAll('[data-keys]').forEach(e=>{if(relation(e.dataset.keys.split(' ').map(splitKey),H))e.classList.add('vhot');});
 }
 // a Key row names a variable without saying which box it's in: take every box that produces it
 function legendOrigins(v){
