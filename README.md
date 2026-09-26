@@ -49,14 +49,18 @@ Run `flowsegul --help` for the full list.
 
 ## What you get
 
-- **Draggable node graph** per endpoint — scroll to zoom, drag to pan.
-- **Inline source** per node, syntax-highlighted, shown by default.
+- **Draggable node graph** per endpoint — opens fitted to the screen; scroll to zoom, drag to pan,
+  minimap to jump around.
+- **Inline source** per node, syntax-highlighted, one click (or `C` for all) away. Changed
+  functions always show their diff.
 - **Color-coded data flow** — each produced variable gets one consistent color across its chip, its
   arrows, and every line of source that touches it. Solid arrows = arguments in; dashed = value
   returned (labeled `type → variable`).
-- **Change detection** (`--changed`) — per-node Diff / New / Old toggle, a `↕ Changes` navigator,
-  and deleted defs shown as removal diffs.
-- **Review mode** — tick nodes as reviewed (persisted in localStorage).
+- **Change detection** (`--changed`) — per-node Diff / New / Old toggle, a **Changes** navigator
+  (`N` / `Shift+N`), and deleted defs shown as removal diffs.
+- **Review mode** — tick endpoints off as reviewed with a progress bar (persisted in localStorage).
+- **Keyboard first** — `/` filters endpoints, `J`/`K` moves between them, `F` fits, `?` lists the rest.
+  Light and dark themes follow your system, with a toggle.
 
 ## How it works
 

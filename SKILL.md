@@ -13,8 +13,8 @@ self-contained viewer. **Do not rebuild the visualizer from scratch — run the 
 
 A single self-contained HTML file: a per-endpoint draggable node graph where each node is a
 function (controller / service / repository / helper layer, color-chipped). Per node it shows the
-data-flow steps (`var = call(args)`) and, on demand, the real source (syntax-highlighted, shown by
-default). Arrows: **solid** = arguments sent into a call; **dashed** = value returned (labeled
+data-flow steps (`var = call(args)`) and, on demand, the real source (syntax-highlighted; hidden by
+default for an overview, `C` shows all; changed functions always show their diff). Arrows: **solid** = arguments sent into a call; **dashed** = value returned (labeled
 `type → variable`). Every produced variable gets one consistent color across its chip, its arrows,
 and every line of source that touches it; request inputs get fixed colors (with repo-layer aliases,
 e.g. `start_date`→`start`).

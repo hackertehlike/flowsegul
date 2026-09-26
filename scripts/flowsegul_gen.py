@@ -20,7 +20,7 @@ Examples:
   # explicit entry functions:
   flowsegul_gen.py --repo ~/proj/be --files src/services/foo.py --entries do_thing --out cf.html
 """
-import argparse, ast, json, os, re, subprocess, sys, tempfile
+import argparse, ast, html, json, os, re, subprocess, sys, tempfile
 
 PALETTE = ['#3b82f6','#0ea5a4','#d97706','#db2777','#16a34a','#7c3aed','#ea580c','#0891b2','#4f46e5','#059669']
 INPUT_PALETTE = ['#e8590c','#1098ad','#9c36b5','#2f9e44','#c2255c','#1971c2']
@@ -815,10 +815,11 @@ def main():
     all_eps.sort(key=lambda e: e.get('group', ''))  # keep same-group endpoints contiguous
 
     blob = json.dumps({'code': all_code, 'graph': {'endpoints': all_eps}}, ensure_ascii=False)
+    blob = blob.replace('</', '<\\/')  # source text may contain "</script>"; keep it inside the JSON
     tpl = open(args.template).read()
     if '__DATA__' not in tpl:
         sys.exit('template missing __DATA__ placeholder')
-    tpl = tpl.replace('<title>KPI Endpoints — Call-Flow Explorer</title>', f'<title>{args.title}</title>', 1)
+    tpl = re.sub(r'<title>.*?</title>', lambda _: f'<title>{html.escape(args.title)}</title>', tpl, count=1)
     open(args.out, 'w').write(tpl.replace('__DATA__', blob))
     groups = {}
     for e in all_eps:
