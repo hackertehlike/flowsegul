@@ -20,15 +20,21 @@ Examples:
   # explicit entry functions:
   flowsegul_gen.py --repo ~/proj/be --files src/services/foo.py --entries do_thing --out cf.html
 """
-import argparse, ast, copy, fnmatch, html, json, os, re, subprocess, sys, tempfile
+import argparse, ast, copy, fnmatch, hashlib, html, json, os, re, subprocess, sys, tempfile
 
 PALETTE = ['#3b82f6','#0ea5a4','#d97706','#db2777','#16a34a','#7c3aed','#ea580c','#0891b2','#4f46e5','#059669']
 INPUT_PALETTE = ['#e8590c','#1098ad','#9c36b5','#2f9e44','#c2255c','#1971c2']
 SKIP_PARAMS = {'self', 'cls', 'db', 'body', 'request', 'session'}
 
 
-_EXCLUDE = ('/.', 'venv', 'node_modules', '__pycache__', '/tests', '/test', '/alembic',
-            '/migrations', '/.git')
+_EXCLUDE_DIRS = {'node_modules', '__pycache__', 'tests', 'test', 'testing', 'alembic', 'migrations'}
+
+
+def _excluded(rel_dir):
+    """Skip hidden folders, virtualenvs, tests and migrations. Only folders *inside* the scanned
+    tree count, so a repo that itself lives under e.g. ~/tests or ~/.projects is still read."""
+    return any(p.startswith('.') or 'venv' in p or p in _EXCLUDE_DIRS
+               for p in rel_dir.replace('\\', '/').split('/') if p and p != '.')
 
 
 def gather_py(paths):
@@ -36,7 +42,7 @@ def gather_py(paths):
     for p in paths:
         if os.path.isdir(p):
             for root, _d, fs in os.walk(p):
-                if any(x in root for x in _EXCLUDE):
+                if _excluded(os.path.relpath(root, p)):
                     continue
                 files += [os.path.join(root, f) for f in fs
                           if f.endswith('.py') and not f.startswith('test_')]
@@ -48,7 +54,7 @@ def gather_py(paths):
 def git(repo, *args):
     try:
         return subprocess.check_output(['git', '-C', repo, *args],
-                                       stderr=subprocess.DEVNULL).decode().strip()
+                                       stderr=subprocess.DEVNULL).decode('utf-8', 'replace').strip()
     except Exception:
         return ''
 
@@ -113,9 +119,10 @@ def changed_rel_files(repo, base, head=None, merge_base=True):
     Exact mode (merge_base=False) diffs `base`..`head` directly."""
     tip = head or 'HEAD'
     mb = diff_base(repo, base, head, merge_base)
-    cmds = [['diff', '--name-only', mb, tip]]
+    cmds = [['diff', '--name-only', '--relative', mb, tip]]
     if head is None and merge_base:
-        cmds += [['diff', '--name-only'], ['diff', '--name-only', '--cached']]
+        cmds += [['diff', '--name-only', '--relative'], ['diff', '--name-only', '--relative', '--cached'],
+                 ['ls-files', '--others', '--exclude-standard']]   # new files not added yet
     names = set()
     for cmd in cmds:
         names |= {n for n in git(repo, *cmd).split('\n') if n.endswith('.py')}
@@ -128,7 +135,7 @@ def ref_py_files(repo, ref, dirs):
     out = git(repo, 'ls-tree', '-r', '--name-only', ref, '--', *rels)
     return [n for n in out.split('\n')
             if n.endswith('.py') and not os.path.basename(n).startswith('test_')
-            and not any(x in '/' + n for x in _EXCLUDE)]
+            and not _excluded(os.path.dirname(n))]
 
 
 def unparse(node):
@@ -232,8 +239,20 @@ class Index:
         self.raise_cache = {}  # qual -> own raise statements (filled by steps_for)
         self.esc_cache = {}    # qual -> errors that can leave the function (see escapes)
         self.layers = load_config(repo).get('layers') or {}
+        self.imports = {}      # rel -> {local name: (module, imported name or None, level)}
+        self.routers = {}      # rel -> {router var: its own APIRouter(prefix=…)}
+        self.includes = []     # (rel, parent expr, child expr, prefix) from `x.include_router(y, prefix=…)`
+        self.attr_types = {}   # class -> [(rel, {attr: type text})] for `self.attr`
+        self.local_types = {}  # qual -> {local name: type text, or '' for a builtin value}
+        self.module_types = {} # rel -> {module-level name: type text}, e.g. `order_service = OrderService()`
+        self._pending = []     # (qual, method, path, rel, router var) until every file's routers are known
+        self.str_consts = {}   # rel -> {NAME: "text"} module-level string constants
+        self.module_values = {}  # rel -> {NAME: value node}, e.g. `CurrentUser = Annotated[User, Depends(…)]`
+        self.skipped = []      # (rel, reason) for files that could not be parsed
+        self.attr_strs = {}    # attr -> {"text", …} string class attributes, e.g. Settings.API_V1_STR
         for f in files:
             self._index_file(f)
+        self._mount_routes()
         self.route_quals = {r[0] for r in self.routes}
 
     def layer(self, qual):
@@ -252,9 +271,10 @@ class Index:
 
     def _read(self, f):
         if self.ref:
-            return git(self.repo, 'show', f'{self.ref}:{self._rel(f)}')
+            return git(self.repo, 'show', f'{self.ref}:./{self._rel(f)}')
         try:
-            return open(f).read()
+            with open(f, encoding='utf-8', errors='replace') as fh:
+                return fh.read()
         except Exception:
             return ''
 
@@ -262,24 +282,54 @@ class Index:
         src = self._read(f)
         if not src:
             return
+        rel = self._rel(f)
         try:
             tree = ast.parse(src)
-        except SyntaxError:
+        except SyntaxError as e:
+            self.skipped.append((rel, f'line {e.lineno}: {e.msg}'))
             return
-        rel = self._rel(f)
         self.file_src[rel] = src
 
         # router var -> prefix, e.g. `router = APIRouter(prefix="/analytics")`
-        prefixes = {}
+        prefixes = self.routers.setdefault(rel, {})
         for n in tree.body:
-            if isinstance(n, ast.Assign) and isinstance(n.value, ast.Call):
-                fn = n.value.func
+            val = n.value if isinstance(n, (ast.Assign, ast.AnnAssign)) else None
+            if isinstance(val, ast.Call):
+                fn = val.func
                 if (getattr(fn, 'id', '') == 'APIRouter' or getattr(fn, 'attr', '') == 'APIRouter'):
-                    pfx = next((unparse(k.value).strip('"\'') for k in n.value.keywords
-                                if k.arg == 'prefix'), '')
-                    for t in n.targets:
+                    pfx = next((k.value for k in val.keywords if k.arg == 'prefix'), None)
+                    for t in (n.targets if isinstance(n, ast.Assign) else [n.target]):
                         if isinstance(t, ast.Name):
                             prefixes[t.id] = pfx
+        strs = self.str_consts.setdefault(rel, {})
+        top_level = set(map(id, tree.body))
+        for n in ast.walk(tree):
+            if (isinstance(n, (ast.Assign, ast.AnnAssign)) and isinstance(n.value, ast.Constant)
+                    and isinstance(n.value.value, str)):
+                for t in (n.targets if isinstance(n, ast.Assign) else [n.target]):
+                    if not isinstance(t, ast.Name):
+                        continue
+                    if id(n) in top_level:
+                        strs[t.id] = n.value.value
+                    else:   # a class attribute such as `API_V1_STR: str = "/api/v1"`
+                        self.attr_strs.setdefault(t.id, set()).add(n.value.value)
+        self.module_values[rel] = {t.id: n.value for n in tree.body if isinstance(n, ast.Assign)
+                                   for t in n.targets if isinstance(t, ast.Name)}
+        self.module_types[rel] = {t.id: _ctor_type(n.value) for n in tree.body if isinstance(n, ast.Assign)
+                                  for t in n.targets if isinstance(t, ast.Name) and _ctor_type(n.value)}
+        imps = self.imports.setdefault(rel, {})
+        for n in ast.walk(tree):
+            if isinstance(n, ast.ImportFrom):
+                for a in n.names:
+                    imps[a.asname or a.name] = (n.module or '', a.name, n.level)
+            elif isinstance(n, ast.Import):
+                for a in n.names:
+                    imps[a.asname or a.name.split('.')[0]] = (a.name if a.asname else a.name.split('.')[0],
+                                                              None, 0)
+            elif (isinstance(n, ast.Call) and getattr(n.func, 'attr', '') == 'include_router'
+                    and n.args):
+                pfx = next((k.value for k in n.keywords if k.arg == 'prefix'), None)
+                self.includes.append((rel, n.func.value, n.args[0], pfx))
 
         def add(node, cls):
             # qual is file-unique (rel::…) so same-named module functions in different files (e.g. a
@@ -287,7 +337,7 @@ class Index:
             qual = f'{rel}::{cls}.{node.name}' if cls else f'{rel}::{node.name}'
             info = {
                 'qual': qual, 'name': node.name, 'cls': cls, 'file': rel,
-                'lineno': node.lineno, 'code': ast.get_source_segment(src, node) or '',
+                'lineno': node.lineno, 'code': def_source(src, node),
                 'returns': unparse(node.returns) if node.returns else '',
                 'params': [a.arg for a in node.args.args if a.arg not in SKIP_PARAMS],
                 'node': node,
@@ -298,8 +348,7 @@ class Index:
                 r = self._route(dec)
                 if r:
                     method, path, var = r
-                    prefix = prefixes.get(var, '')
-                    self.routes.append((qual, method, prefix + path, prefix))
+                    self._pending.append((qual, method, path, rel, var))
 
         self._exception_handlers(tree)
         for n in tree.body:
@@ -308,11 +357,12 @@ class Index:
             elif isinstance(n, ast.ClassDef):
                 self.bases[n.name] = [unparse(b).split('.')[-1] for b in n.bases]
                 self.models[n.name] = {'name': n.name, 'file': rel, 'lineno': n.lineno,
-                                       'code': ast.get_source_segment(src, n) or '',
+                                       'code': def_source(src, n),
                                        'fields': model_fields(n)}
                 for m in n.body:
                     if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef)):
                         add(m, n.name)
+                self.attr_types.setdefault(n.name, []).append((rel, _attr_types(n)))
 
     def _exception_handlers(self, tree):
         """`@app.exception_handler(ValueError)` and `app.add_exception_handler(ValueError, fn)`: the
@@ -343,40 +393,230 @@ class Index:
 
     @staticmethod
     def _route(dec):
-        # @router.post("/path", ...) -> ("POST", "/path", "router")
+        # @router.post("/path", ...) / @router.get(path="/path") / @router.api_route("/p", methods=["GET"])
+        # -> ("POST", "/path", "router")
         if isinstance(dec, ast.Call) and isinstance(dec.func, ast.Attribute):
             m = dec.func.attr.upper()
-            if m in {'GET', 'POST', 'PUT', 'PATCH', 'DELETE'} and dec.args:
-                a0 = dec.args[0]
-                if isinstance(a0, ast.Constant):
-                    var = dec.func.value.id if isinstance(dec.func.value, ast.Name) else ''
-                    return m, a0.value, var
+            if m == 'API_ROUTE':
+                ms = next((k.value for k in dec.keywords if k.arg == 'methods'), None)
+                ms = [e.value for e in getattr(ms, 'elts', []) if isinstance(e, ast.Constant)]
+                m = str(ms[0]).upper() if ms else 'GET'
+            elif m not in {'GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'}:
+                return None
+            a0 = dec.args[0] if dec.args else next((k.value for k in dec.keywords if k.arg == 'path'), None)
+            if isinstance(a0, ast.Constant) and isinstance(a0.value, str):
+                var = dec.func.value.id if isinstance(dec.func.value, ast.Name) else ''
+                return m, a0.value, var
+        return None
+
+    def module_file(self, rel, module, level=0):
+        """The indexed file a module name points at, from file `rel` (`from .x import y` has level 1)."""
+        if level:
+            pkg = os.path.dirname(rel).split('/') if os.path.dirname(rel) else []
+            pkg = pkg[:len(pkg) - (level - 1)] if level > 1 else pkg
+            mod = '/'.join(pkg + ([module.replace('.', '/')] if module else []))
+            cands = [mod + '.py', mod + '/__init__.py']
+            return next((c for c in cands if c in self.file_src), None)
+        tail = module.replace('.', '/')
+        for f in self.file_src:
+            if ('/' + f).endswith('/' + tail + '.py') or ('/' + f).endswith('/' + tail + '/__init__.py'):
+                return f
+        return None
+
+    def _router_ref(self, rel, expr):
+        """(file, var) of the router an expression names: a local router, `from m import router as r`,
+        or `m.router` after `from pkg import m` / `import pkg.m as m`."""
+        imps = self.imports.get(rel, {})
+        if isinstance(expr, ast.Name):
+            if expr.id in self.routers.get(rel, {}):
+                return rel, expr.id
+            if expr.id in imps:
+                mod, name, level = imps[expr.id]
+                f = self.module_file(rel, mod, level)
+                if name and f and name in self.routers.get(f, {}):
+                    return f, name
+            return rel, expr.id            # the app itself (`app = FastAPI()`), or unknown
+        if isinstance(expr, ast.Attribute) and isinstance(expr.value, ast.Name) and expr.value.id in imps:
+            mod, name, level = imps[expr.value.id]
+            f = (self.module_file(rel, '.'.join(x for x in (mod, name) if x), level)
+                 or self.module_file(rel, mod, level))
+            if f:
+                return f, expr.attr
+        return None
+
+    def prefix_text(self, rel, expr):
+        """A router prefix as text: a string, a module constant (`PREFIX`, imported or not), or a
+        settings attribute with one known value (`settings.API_V1_STR`). Unknown → ''."""
+        if expr is None:
+            return ''
+        if isinstance(expr, ast.Constant) and isinstance(expr.value, str):
+            return expr.value
+        if isinstance(expr, ast.Name):
+            if expr.id in self.str_consts.get(rel, {}):
+                return self.str_consts[rel][expr.id]
+            imp = self.imports.get(rel, {}).get(expr.id)
+            f = self.module_file(rel, imp[0], imp[2]) if imp and imp[1] else None
+            return self.str_consts.get(f, {}).get(imp[1], '') if f else ''
+        if isinstance(expr, ast.Attribute):
+            vals = self.attr_strs.get(expr.attr, set())
+            return next(iter(vals)) if len(vals) == 1 else ''
+        if isinstance(expr, ast.JoinedStr):
+            return ''.join(v.value if isinstance(v, ast.Constant) else
+                           self.prefix_text(rel, v.value) for v in expr.values)
+        return ''
+
+    def _mount_routes(self):
+        """Full route paths: `app.include_router(orders.router, prefix="/api")` puts "/api" in front of
+        every route of that router, through any number of routers included in routers."""
+        parent, key_rel = {}, {}
+        for rel, pexpr, cexpr, pfx in self.includes:
+            child, par = self._router_ref(rel, cexpr), self._router_ref(rel, pexpr)
+            if child and par and child not in parent:
+                parent[child] = (par, pfx)
+                key_rel[child] = rel     # the file the include_router call is in
+
+        def mount(key, seen=()):
+            if key not in parent or key in seen:
+                return ''
+            par, pfx = parent[key]
+            return (mount(par, seen + (key,)) + own(par) + self.prefix_text(key_rel[key], pfx))
+
+        own = lambda k: self.prefix_text(k[0], self.routers.get(k[0], {}).get(k[1]))
+        full = [(qual, method, path, mount((rel, var)) + own((rel, var)))
+                for qual, method, path, rel, var in self._pending]
+        # group by what tells routers apart: drop the part every route shares (e.g. "/api/v1")
+        common = os.path.commonprefix([p for *_, p in full]) if full else ''
+        if not all(p == common or p.startswith(common + '/') for *_, p in full):
+            common = common[:common.rfind('/')] if '/' in common else ''
+        for qual, method, path, prefix in full:
+            self.routes.append((qual, method, prefix + path, prefix[len(common):]))
+
+    def method_of(self, cls, name, seen=None):
+        """Qual of method `name` on class `cls` or the nearest base class that defines it."""
+        seen = seen or set()
+        if cls in seen:
+            return None
+        seen.add(cls)
+        q = next((q for q in self.by_method.get(name, []) if self.funcs[q]['cls'] == cls), None)
+        if q:
+            return q
+        for b in self.bases.get(cls, []):
+            q = self.method_of(b, name, seen)
+            if q:
+                return q
+        return None
+
+    def _type_class(self, text):
+        """The indexed class a type annotation / constructor names ('Optional[OrderRepo]' -> 'OrderRepo'),
+        '' when it names only builtins (dict, list[int], str), or None when it says nothing."""
+        if text is None:
+            return None
+        names = re.findall(r'[A-Za-z_][A-Za-z0-9_]*', text)
+        cls = next((t for t in names if t in self.bases), None)
+        if cls:
+            return cls
+        return '' if names and all(t in _BUILTIN_TYPES for t in names) else None
+
+    def _types_in(self, qual):
+        if qual not in self.local_types:
+            self.local_types[qual] = _local_types(self.funcs[qual]['node'])
+        return self.local_types[qual]
+
+    def receiver_class(self, recv, caller_cls, caller_qual):
+        """What class the object before `.method()` is: from an annotation, `x = Cls(...)`,
+        `self.x = Cls(...)` in the class, or `Cls().method()`. '' = a builtin value (dict, str, …),
+        None = unknown."""
+        caller_rel = caller_qual.split('::', 1)[0] if caller_qual else ''
+        if isinstance(recv, ast.Name):
+            if recv.id in self.bases:
+                return recv.id                      # Cls.static_method()
+            local = self._types_in(caller_qual).get(recv.id) if caller_qual else None
+            if local is None:
+                local = self.module_types.get(caller_rel, {}).get(recv.id)
+            imp = self.imports.get(caller_rel, {}).get(recv.id)
+            if local is None and imp and imp[1]:    # from m import order_service
+                f = self.module_file(caller_rel, imp[0], imp[2])
+                local = self.module_types.get(f, {}).get(imp[1])
+            return self._type_class(local)
+        if (isinstance(recv, ast.Attribute) and isinstance(recv.value, ast.Name)
+                and recv.value.id == 'self' and caller_cls):
+            for c in [caller_cls] + self.bases.get(caller_cls, []):
+                t = next((v[recv.attr] for r, v in self.attr_types.get(c, [])
+                          if recv.attr in v and (r == caller_rel or c != caller_cls)), None)
+                if t is not None:
+                    return self._type_class(t)
+            return None
+        if isinstance(recv, ast.Call):
+            return self._type_class(unparse(recv.func))
+        if isinstance(recv, (ast.Dict, ast.List, ast.Set, ast.Tuple, ast.Constant, ast.JoinedStr,
+                             ast.ListComp, ast.DictComp, ast.SetComp)):
+            return ''
         return None
 
     def resolve(self, call, caller_cls=None, caller_qual=None):
         """Return the qual of an in-scope function this Call targets, else None.
 
-        `self.x()` / `cls.x()` resolve only to a method `x` on the caller's own class. For
-        `module.x()`, a candidate defined in a file named after the module (`usage_service.x` →
-        usage_service.py) wins — this disambiguates name collisions such as a controller route and
-        a service function both named `get_usage_overview`. Self-resolution is avoided when possible.
+        `self.x()` / `cls.x()` resolve to a method `x` on the caller's own class or a base class.
+        `obj.x()` goes to the class `obj` is known to be (annotation, `obj = Cls()`, `self.obj = Cls()`);
+        when that's a builtin (a dict's `.get`) it is not one of ours. For `module.x()`, a candidate
+        defined in a file named after the module (`usage_service.x` → usage_service.py) wins. Unknown
+        receivers fall back to a name match (`order_repo.get` → OrderRepository.get), then to the
+        only candidate. A bare `x()` goes to a module function: same file first, then the import.
         """
         fn = call.func
+        caller_rel = caller_qual.split('::', 1)[0] if caller_qual else ''
         if isinstance(fn, ast.Attribute):
             recv, name = fn.value, fn.attr
             if isinstance(recv, ast.Name) and recv.id in ('self', 'cls'):
-                caller_rel = caller_qual.split('::', 1)[0] if caller_qual else ''
-                q = f'{caller_rel}::{caller_cls}.{name}'
-                return q if caller_cls and q in self.funcs else None
-            cands = self.by_method.get(name, []) + self.by_simple.get(name, [])
+                return self.method_of(caller_cls, name) if caller_cls else None
+            if (isinstance(recv, ast.Call) and isinstance(recv.func, ast.Name)
+                    and recv.func.id == 'super' and caller_cls):
+                for b in self.bases.get(caller_cls, []):
+                    q = self.method_of(b, name)
+                    if q:
+                        return q
+                return None
+            # `queries.get_user(…)` inside `UsersRepository.get_user` is another object's method
+            # (a wrapper), not a call to itself: that recursion would go through `self.`
+            cands = [q for q in self.by_method.get(name, []) + self.by_simple.get(name, [])
+                     if q != caller_qual]
+            if not cands:
+                return None
+            rc = self.receiver_class(recv, caller_cls, caller_qual)
+            if rc == '':
+                return None
+            if rc:
+                return self.method_of(rc, name)
             if isinstance(recv, ast.Name):  # module alias hint, e.g. usage_service.get_x
-                pref = [q for q in cands
-                        if os.path.basename(self.funcs[q]['file'])[:-3] == recv.id]
+                imp = self.imports.get(caller_rel, {}).get(recv.id)
+                f = self.module_file(caller_rel, '.'.join(x for x in imp[:2] if x), imp[2]) if imp else None
+                pref = [q for q in cands if self.funcs[q]['file'] == f
+                        or os.path.basename(self.funcs[q]['file'])[:-3] == recv.id]
                 if pref:
                     cands = pref
+                elif imp and not f and not (imp[1] and self.module_file(caller_rel, imp[0], imp[2])):
+                    return None             # `requests.get`, `json.loads`: a library, not our code
+            if len(cands) > 1:  # several classes define it: pick by the receiver's name
+                hint = _norm(unparse(recv).split('.')[-1])
+                pref = [q for q in cands if hint and self.funcs[q]['cls']
+                        and hint in _norm(self.funcs[q]['cls'])]
+                if len(pref) == 1:
+                    return pref[0]
+            if name in _BUILTIN_METHODS and not any(
+                    isinstance(recv, ast.Name) and os.path.basename(self.funcs[q]['file'])[:-3] == recv.id
+                    for q in cands):
+                return None   # `.get()`, `.items()`, `.append()` on something we can't place
         elif isinstance(fn, ast.Name):
             name = fn.id
-            cands = self.by_simple.get(name, []) + self.by_method.get(name, [])
+            cands = list(self.by_simple.get(name, []))
+            imp = self.imports.get(caller_rel, {}).get(name)
+            if imp and imp[1]:                    # from m import real_name as name
+                f = self.module_file(caller_rel, imp[0], imp[2])
+                cands = [q for q in self.by_simple.get(imp[1], []) if self.funcs[q]['file'] == f] or \
+                    self.by_simple.get(imp[1], []) or cands
+            else:
+                same = [q for q in cands if self.funcs[q]['file'] == caller_rel]
+                cands = same or cands
         else:
             return None
         if caller_qual and len(cands) > 1:  # don't resolve to yourself if there's an alternative
@@ -384,10 +624,95 @@ class Index:
         return cands[0] if cands else None
 
 
+_BUILTIN_TYPES = {'dict', 'Dict', 'list', 'List', 'set', 'Set', 'tuple', 'Tuple', 'str', 'int',
+                  'float', 'bool', 'bytes', 'Optional', 'Any', 'Mapping', 'Sequence', 'Iterable',
+                  'None', 'defaultdict', 'OrderedDict', 'Counter', 'deque', 'frozenset', 'Union'}
+_BUILTIN_METHODS = {'get', 'items', 'keys', 'values', 'append', 'extend', 'insert', 'pop', 'remove',
+                    'update', 'add', 'discard', 'clear', 'copy', 'setdefault', 'split', 'join',
+                    'strip', 'replace', 'format', 'lower', 'upper', 'startswith', 'endswith',
+                    'encode', 'decode', 'count', 'index', 'sort', 'find'}
+
+
+def _norm(s):
+    return re.sub(r'[^a-z0-9]', '', (s or '').lower())
+
+
+def _ctor_type(value):
+    """Type text a value clearly has: `Cls(...)` -> 'Cls', a literal -> 'dict'/'list'/…, else None."""
+    if isinstance(value, ast.Await):
+        return None
+    if isinstance(value, ast.Call):
+        return unparse(value.func)
+    kinds = {ast.Dict: 'dict', ast.DictComp: 'dict', ast.List: 'list', ast.ListComp: 'list',
+             ast.Set: 'set', ast.SetComp: 'set', ast.Tuple: 'tuple', ast.JoinedStr: 'str'}
+    for k, v in kinds.items():
+        if isinstance(value, k):
+            return v
+    if isinstance(value, ast.Constant) and value.value is not None:
+        return type(value.value).__name__
+    return None
+
+
+def _local_types(fn):
+    """{name: type text} for a function's annotated parameters and `x = Cls(...)` / `x: T` locals.
+    A name assigned two different kinds of value is dropped (unknown)."""
+    out, clash = {}, set()
+    a = fn.args
+    for arg in [*getattr(a, 'posonlyargs', []), *a.args, *a.kwonlyargs]:
+        if arg.annotation is not None:
+            out[arg.arg] = unparse(arg.annotation)
+    for n in ast.walk(fn):
+        t = None
+        if isinstance(n, ast.AnnAssign) and isinstance(n.target, ast.Name):
+            name, t = n.target.id, unparse(n.annotation)
+        elif isinstance(n, ast.Assign) and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name):
+            name, t = n.targets[0].id, _ctor_type(n.value)
+            if t is None:
+                clash.add(name)
+                continue
+        else:
+            continue
+        if name in out and out[name] != t:
+            clash.add(name)
+        out.setdefault(name, t)
+    return {k: v for k, v in out.items() if k not in clash}
+
+
+def _attr_types(cls):
+    """{attr: type text} for a class: `attr: T` in its body, and `self.attr = Cls(...)` or
+    `self.attr = param` (param annotated) in its methods."""
+    out = {}
+    for m in cls.body:
+        if isinstance(m, ast.AnnAssign) and isinstance(m.target, ast.Name):
+            out[m.target.id] = unparse(m.annotation)
+    for m in cls.body:
+        if not isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        params = {x.arg: unparse(x.annotation) for x in m.args.args + m.args.kwonlyargs if x.annotation}
+        for n in ast.walk(m):
+            tgt = val = None
+            if isinstance(n, ast.Assign) and len(n.targets) == 1:
+                tgt, val = n.targets[0], n.value
+            elif isinstance(n, ast.AnnAssign):
+                tgt, val = n.target, None
+                if (isinstance(tgt, ast.Attribute) and isinstance(tgt.value, ast.Name)
+                        and tgt.value.id == 'self'):
+                    out.setdefault(tgt.attr, unparse(n.annotation))
+                continue
+            if not (isinstance(tgt, ast.Attribute) and isinstance(tgt.value, ast.Name)
+                    and tgt.value.id == 'self'):
+                continue
+            t = params.get(val.id) if isinstance(val, ast.Name) else _ctor_type(val)
+            if t is not None:
+                out.setdefault(tgt.attr, t)
+    return out
+
+
 # Kinds of code beyond controller → service → repository, recognised by file or folder name.
 # Checked against the file's own name first, then its folders from the innermost outwards, so
 # `services/utils.py` is a util and `utils/service_client.py` is a service. First hit wins.
 _KIND_EXACT = {
+    'dependency': {'deps', 'dependencies', 'dependency'},   # FastAPI Depends(...) providers
     'controller': {'api', 'rest', 'routes', 'routers', 'router', 'endpoints', 'views', 'handlers'},
     'repository': {'persistence', 'dao', 'daos', 'db', 'crud', 'queries', 'store', 'stores', 'db_access'},
     'model': {'models', 'model', 'entities', 'entity', 'orm', 'tables', 'domain_models'},
@@ -486,8 +811,18 @@ def local_names(node):
     return sorted(names)
 
 
+def def_source(src, node):
+    """Source of a def/class including its decorators, so `@router.get("/a")` → `("/b")` or a new
+    `status_code=` counts as a change to that function."""
+    seg = ast.get_source_segment(src, node) or ''
+    decs = [ast.get_source_segment(src, d) for d in getattr(node, 'decorator_list', [])]
+    return ''.join('@' + d + '\n' for d in decs if d) + seg
+
+
 def funcs_in_source(src):
-    """{qual: source_segment} for every function, method, and class ('model:Name') in `src`."""
+    """{qual: source_segment} for every function, method, and class ('model:Name') in `src`, plus
+    module-level code: 'top:NAME' for each `NAME = …` and 'top:*' for other statements (setup calls
+    like `app.include_router(…)`). Imports and the module docstring are left out."""
     out = {}
     try:
         tree = ast.parse(src)
@@ -495,15 +830,32 @@ def funcs_in_source(src):
         return out
 
     def add(node, cls):
-        out[f'{cls}.{node.name}' if cls else node.name] = ast.get_source_segment(src, node) or ''
-    for n in tree.body:
+        out[f'{cls}.{node.name}' if cls else node.name] = def_source(src, node)
+    rest = []
+    for i, n in enumerate(tree.body):
         if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
             add(n, None)
         elif isinstance(n, ast.ClassDef):
-            out['model:' + n.name] = ast.get_source_segment(src, n) or ''
+            out['model:' + n.name] = def_source(src, n)
             for m in n.body:
                 if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     add(m, n.name)
+        elif isinstance(n, (ast.Import, ast.ImportFrom)):
+            continue
+        elif i == 0 and isinstance(n, ast.Expr) and isinstance(n.value, ast.Constant):
+            continue                                   # module docstring
+        else:
+            targets = (n.targets if isinstance(n, ast.Assign) else
+                       [n.target] if isinstance(n, (ast.AnnAssign, ast.AugAssign)) else [])
+            names = [t.id for t in targets if isinstance(t, ast.Name)]
+            seg = ast.get_source_segment(src, n) or ''
+            if names and len(names) == len(targets):
+                key = 'top:' + names[0]
+                out[key] = (out[key] + '\n' + seg) if key in out else seg
+            else:
+                rest.append(seg)
+    if rest:
+        out['top:*'] = '\n'.join(rest)
     return out
 
 
@@ -517,6 +869,10 @@ def def_linenos(src):
     for n in tree.body:
         if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
             out[n.name] = n.lineno
+        elif isinstance(n, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+            for t in (n.targets if isinstance(n, ast.Assign) else [n.target]):
+                if isinstance(t, ast.Name):
+                    out.setdefault('top:' + t.id, n.lineno)
         elif isinstance(n, ast.ClassDef):
             out['model:' + n.name] = n.lineno
             for m in n.body:
@@ -525,21 +881,85 @@ def def_linenos(src):
     return out
 
 
-def changed_defs(idx, repo, base, ref, changed_files, merge_base=True):
-    """(changed function quals, changed model names, {key: {base, diff, new}}, deleted) for defs
+def _names_used(node):
+    return {n.id for n in ast.walk(node) if isinstance(n, ast.Name)}
+
+
+def _body_lines(diff):
+    """A unified diff without its ---/+++/@@ header lines."""
+    return [l for l in diff.split('\n') if not l.startswith(('---', '+++', '@@'))]
+
+
+def changed_defs(idx, repo, base, ref, changed_files, merge_base=True, dirs=()):
+    """(changed function quals, changed model names, {key: {base, diff, new}}, deleted, top) for defs
     whose source differs from `base`. `deleted` maps key → {name, file, lineno, base, diff, is_model}
-    for defs that existed at base but were removed on the branch (no surviving node in HEAD)."""
+    for defs that existed at base but were removed on the branch (no surviving node in HEAD), including
+    every def of a deleted file.
+
+    Module-level changes count too: a function that reads a changed `NAME = …` is marked changed, and
+    its diff opens with that line's change (a hunk headed `@@ file.py:line @@`). Module-level changes
+    no function reads (`app.include_router(…)`, a new setting) come back in `top` as {rel: {…}}."""
     import difflib
     mb = diff_base(repo, base, ref, merge_base)
-    quals, models, info, deleted = set(), set(), {}, {}
-    for rel in changed_files:
+    quals, models, info, deleted, top = set(), set(), {}, {}, {}
+    context = {}   # qual -> [(hunk header, diff body lines)] from module-level names it reads
+    udiff = lambda a, b, fa, fb, n: '\n'.join(difflib.unified_diff(
+        a.splitlines(), b.splitlines(), fromfile=fa, tofile=fb, lineterm='', n=n))
+    for rel in sorted(changed_files):
         head_src = idx.file_src.get(rel)
         if head_src is None:
-            continue  # changed file outside the indexed source
-        base_src = git(repo, 'show', f'{mb}:{rel}')
+            gone = (not git(repo, 'ls-tree', ref, '--', rel) if ref
+                    else not os.path.exists(os.path.join(repo, rel)))
+            inside = any((rel + '/').startswith(os.path.relpath(d, repo).rstrip('/') + '/')
+                         or os.path.relpath(d, repo) == '.' for d in dirs)
+            if not (gone and inside and not _excluded(os.path.dirname(rel))
+                    and not os.path.basename(rel).startswith('test_')):
+                continue  # changed file outside the indexed source
+            head_src = ''  # the whole file was deleted: every def in it is a deletion
+        base_src = git(repo, 'show', f'{mb}:./{rel}')
         base_map = funcs_in_source(base_src)
         head_map = funcs_in_source(head_src)
+        if base_src and not base_map and head_map:
+            try:
+                ast.parse(base_src)
+            except SyntaxError as e:   # base uses syntax this Python can't read: match defs by text
+                print(f'  {rel} at {base}: can\'t parse it (line {e.lineno}); only exact matches count '
+                      f'as unchanged', file=sys.stderr)
+                base_map = {k: v for k, v in head_map.items() if v and v in base_src}
+        base_lns, head_lns = def_linenos(base_src), def_linenos(head_src)
+        fname = rel.split('/')[-1]
+        left = []   # module-level changes nothing here reads
+        for key in sorted(set(base_map) | set(head_map)):
+            if not key.startswith('top:'):
+                continue
+            bsrc, hsrc = base_map.get(key, ''), head_map.get(key, '')
+            body = _body_lines(udiff(bsrc, hsrc, 'a', 'b', 100000))
+            if bsrc == hsrc or not any(l[:1] in '+-' for l in body):
+                continue
+            lineno = head_lns.get(key) or base_lns.get(key) or 1
+            name = key[4:]
+            users = []
+            if name != '*':
+                users = [q for q, f in idx.funcs.items() if f['file'] == rel and name in _names_used(f['node'])]
+                for other, imps in idx.imports.items():   # `from this_module import NAME` elsewhere
+                    for local, (mod, nm, lvl) in imps.items():
+                        if nm == name and other != rel and idx.module_file(other, mod, lvl) == rel:
+                            users += [q for q, f in idx.funcs.items()
+                                      if f['file'] == other and local in _names_used(f['node'])]
+            if users:
+                for q in users:   # (in a new file its readers are all new code: shown whole already)
+                    if base_src:
+                        context.setdefault(q, []).append((f'@@ {fname}:{lineno} @@', body))
+            else:
+                left.append((lineno, body))
+        if left:
+            left.sort()
+            top[rel] = {'file': rel, 'lineno': left[0][0], 'base': base_src,
+                        'diff': '\n'.join([f'--- {fname} (base)', f'+++ {fname} (branch)'] +
+                                          [l for ln, body in left for l in [f'@@ {fname}:{ln} @@'] + body])}
         for key, hsrc in head_map.items():
+            if key.startswith('top:'):
+                continue
             bsrc = base_map.get(key)
             if bsrc == hsrc:
                 continue
@@ -548,9 +968,7 @@ def changed_defs(idx, repo, base, ref, changed_files, merge_base=True):
             # line into the next. Full context for a function shows the whole function; a class uses
             # tight context so its Diff shows only the changed methods, not every unchanged one.
             ctx = 3 if key.startswith('model:') else 100000
-            diff = '\n'.join(difflib.unified_diff(
-                (bsrc or '').splitlines(), hsrc.splitlines(),
-                fromfile=f'{name} (base)', tofile=f'{name} (branch)', lineterm='', n=ctx))
+            diff = udiff(bsrc or '', hsrc, f'{name} (base)', f'{name} (branch)', ctx)
             if bsrc is not None and not diff.strip():
                 continue  # only a trailing-whitespace/newline difference — not a real change
             (models.add(name) if key.startswith('model:')
@@ -558,18 +976,31 @@ def changed_defs(idx, repo, base, ref, changed_files, merge_base=True):
             ikey = key if key.startswith('model:') else f'{rel}::{key}'
             info[ikey] = {'base': bsrc or '', 'diff': diff, 'new': bsrc is None}
         # deleted: existed at base, gone from HEAD (no surviving node — walk base, not head)
-        base_lns = def_linenos(base_src)
         for key, bsrc in base_map.items():
-            if key in head_map:
+            if key in head_map or key.startswith('top:'):
                 continue
             name = key[6:] if key.startswith('model:') else key
             ikey = key if key.startswith('model:') else f'{rel}::{key}'
-            diff = '\n'.join(difflib.unified_diff(
-                bsrc.splitlines(), [], fromfile=f'{name} (base)', tofile=f'{name} (deleted)',
-                lineterm='', n=100000))
+            diff = udiff(bsrc, '', f'{name} (base)', f'{name} (deleted)', 100000)
             deleted[ikey] = {'name': name, 'file': rel, 'lineno': base_lns.get(key, 0),
                              'base': bsrc, 'diff': diff, 'is_model': key.startswith('model:')}
-    return quals, models, info, deleted
+    # functions that read a changed module-level name: the name's change leads their diff
+    for q, hunks in context.items():
+        f = idx.funcs[q]
+        own = info.get(q)
+        if own and own['new']:
+            continue
+        name = (f"{f['cls']}." if f['cls'] else '') + f['name']
+        if own:
+            fn_part = [l for l in own['diff'].split('\n') if not l.startswith(('---', '+++'))]
+        else:
+            lines = f['code'].splitlines()
+            fn_part = [f'@@ -1,{len(lines)} +1,{len(lines)} @@'] + [' ' + l for l in lines]
+        diff = '\n'.join([f'--- {name} (base)', f'+++ {name} (branch)'] +
+                         [l for h, body in hunks for l in [h] + body] + fn_part)
+        info[q] = {'base': own['base'] if own else f['code'], 'diff': diff, 'new': False}
+        quals.add(q)
+    return quals, models, info, deleted, top
 
 
 def entry_models(idx, qual):
@@ -714,6 +1145,7 @@ def steps_for(info, idx):
     src = idx.file_src.get(info['file'], '')
     caller_cls = info.get('cls')
     caller_qual = info['qual']
+    own_names = set(local_names(info['node']))
 
     def emit(var, expr_nodes, disp):
         calls = [c for en in expr_nodes for c in ast.walk(en)
@@ -725,11 +1157,11 @@ def steps_for(info, idx):
             for c in ast.walk(en):
                 if isinstance(c, ast.Call):
                     for a in list(c.args) + [k.value for k in c.keywords]:
-                        if isinstance(a, ast.Name):
-                            cand = (idx.by_simple.get(a.id, []) + idx.by_method.get(a.id, []))
-                            cand = [x for x in cand if x != caller_qual]
-                            if cand:
-                                refs.append(cand[0])
+                        # a variable of the caller that shares a function's name is just a value
+                        if isinstance(a, ast.Name) and a.id not in own_names:
+                            q = idx.resolve(ast.Call(func=a, args=[], keywords=[]), caller_cls, caller_qual)
+                            if q and q != caller_qual:
+                                refs.append(q)
         direct_quals = {idx.resolve(c, caller_cls, caller_qual) for c in calls}
         refs = [q for q in dict.fromkeys(refs) if q not in direct_quals]
         if not calls and not refs:
@@ -797,9 +1229,56 @@ def steps_for(info, idx):
                                    '_catch': [h for blk in catching for h in blk]})
                 emit('·', [s], s)
 
+    # FastAPI dependencies run before the body: `user: CurrentUser`, `db = Depends(get_db)`,
+    # `@router.get(…, dependencies=[Depends(auth)])`. Each is a call into our code.
+    for pname, dep in dependencies(info, idx):
+        q = idx.resolve(ast.Call(func=dep.args[0], args=[], keywords=[]), caller_cls, caller_qual)
+        if q and q != caller_qual:
+            out.append({'var': pname or '·', 'expr': one_line(unparse(dep), 60), 'target': nid_for(q),
+                        'arg': '', 'ret': one_line(idx.funcs[q]['returns'], 46), 'uses': [],
+                        '_qual': q, 'dep': True, '_catch': []})
     walk(info['node'].body)
     cache[info['qual']] = out
     idx.raise_cache[info['qual']] = raises
+    return out
+
+
+def _depends_in(node, idx, rel, seen=()):
+    """`Depends(fn)` / `Security(fn)` calls in an annotation or default, following a type alias such
+    as `CurrentUser = Annotated[User, Depends(get_current_user)]` (same file or imported)."""
+    out = []
+    for n in ast.walk(node):
+        if (isinstance(n, ast.Call) and unparse(n.func).split('.')[-1] in ('Depends', 'Security')
+                and n.args):
+            out.append(n)
+        elif isinstance(n, ast.Name) and n.id not in seen:
+            val = idx.module_values.get(rel, {}).get(n.id)
+            src_rel = rel
+            imp = idx.imports.get(rel, {}).get(n.id)
+            if val is None and imp and imp[1]:
+                src_rel = idx.module_file(rel, imp[0], imp[2])
+                val = idx.module_values.get(src_rel, {}).get(imp[1]) if src_rel else None
+            if val is not None:
+                out += _depends_in(val, idx, src_rel, seen + (n.id,))
+    return out
+
+
+def dependencies(info, idx):
+    """[(parameter name or '', Depends(...) call)] for a function's FastAPI dependencies."""
+    fn, rel = info['node'], info['file']
+    a = fn.args
+    pos = [*getattr(a, 'posonlyargs', []), *a.args]
+    defaults = dict(zip([x.arg for x in pos][len(pos) - len(a.defaults):], a.defaults))
+    defaults.update({x.arg: d for x, d in zip(a.kwonlyargs, a.kw_defaults) if d is not None})
+    out = []
+    for arg in pos + a.kwonlyargs:
+        for part in (arg.annotation, defaults.get(arg.arg)):
+            if part is not None:
+                out += [(arg.arg, d) for d in _depends_in(part, idx, rel)]
+    for dec in fn.decorator_list:
+        for k in getattr(dec, 'keywords', []):
+            if k.arg == 'dependencies':
+                out += [('', d) for d in _depends_in(k.value, idx, rel)]
     return out
 
 
@@ -1168,9 +1647,10 @@ def migration_entries(repo, tag, base, ref, changed_files, merge_base, code_out)
     mb = diff_base(repo, base, ref, merge_base)
     out = []
     for rel in sorted(f for f in changed_files if _is_migration(f)):
-        head_src = git(repo, 'show', f'{ref}:{rel}') if ref else (
-            open(os.path.join(repo, rel)).read() if os.path.isfile(os.path.join(repo, rel)) else '')
-        base_src = git(repo, 'show', f'{mb}:{rel}')
+        head_src = git(repo, 'show', f'{ref}:./{rel}') if ref else (
+            open(os.path.join(repo, rel), encoding='utf-8', errors='replace').read()
+            if os.path.isfile(os.path.join(repo, rel)) else '')
+        base_src = git(repo, 'show', f'{mb}:./{rel}')
         if head_src == base_src:
             continue
         deleted = not head_src
@@ -1210,14 +1690,18 @@ def process_repo(repo, args):
 
     files = ref_py_files(repo, ref, dirs) if ref else gather_py(dirs)
     idx = Index(repo, files, ref=ref)
+    for rel, why in idx.skipped:   # say so, rather than silently leave its routes and functions out
+        print(f'  skipped {rel}: can\'t parse it with Python {sys.version_info[0]}.{sys.version_info[1]} '
+              f'({why})', file=sys.stderr)
     if not idx.funcs:
         return [], {}
 
     # function-level change detection (which defs actually differ from base)
-    changed_q, changed_m, diffs, deleted, cf = set(), set(), {}, {}, set()
+    changed_q, changed_m, diffs, deleted, top, cf = set(), set(), {}, {}, {}, set()
     if changed:
         cf = changed_rel_files(repo, base, ref, merge_base=not exact)
-        changed_q, changed_m, diffs, deleted = changed_defs(idx, repo, base, ref, cf, merge_base=not exact)
+        changed_q, changed_m, diffs, deleted, top = changed_defs(idx, repo, base, ref, cf,
+                                                                 merge_base=not exact, dirs=dirs)
 
     def flow_touches_changed(qual):
         """Affected if the endpoint's flow reaches a changed FUNCTION, or its request/response
@@ -1284,12 +1768,17 @@ def process_repo(repo, args):
         # change isn't already a shown method (e.g. an added column, or a *removed* method) gets its
         # own single-node diff chart, so nothing class-level in the diff is invisible either.
         chip_models = set().union(*((e.get('models') or {}).keys() for e in endpoints)) if endpoints else set()
+        class_shown = set(chip_models)   # classes whose own diff is on the page
         for name in sorted(changed_m):
             if name in chip_models or name not in idx.models:
                 continue
-            # skip if a changed METHOD of this class is already drawn (quals are rel::Class.method)
-            if any(q in shown and q.split('::', 1)[-1].startswith(name + '.') for q in changed_q):
+            # skip if a changed METHOD of this class is already drawn (quals are rel::Class.method),
+            # unless the class also lost a method: only the class diff shows that removal
+            lost = any(not dd['is_model'] and dd['name'].split('.')[0] == name for dd in deleted.values())
+            if not lost and any(q in shown and q.split('::', 1)[-1].startswith(name + '.')
+                                for q in changed_q):
                 continue
+            class_shown.add(name)
             m = idx.models[name]
             node = {'id': f'{tag}__model_{nid_for(name)}', 'fnKey': f'{tag}::model:{name}',
                     'col': 0, 'entry': True, 'changed': True, 'title': name,
@@ -1307,7 +1796,7 @@ def process_repo(repo, args):
         # each as its own DELETED node showing the removal diff.
         for ikey, dd in deleted.items():
             # a removed METHOD of a class that still exists is already shown by that class's diff node
-            if not dd['is_model'] and '.' in dd['name'] and dd['name'].split('.')[0] in idx.models:
+            if not dd['is_model'] and '.' in dd['name'] and dd['name'].split('.')[0] in class_shown:
                 continue
             nidd, fkey = f'{tag}__del_{nid_for(ikey)}', f'{tag}::del:{ikey}'
             node = {'id': nidd, 'fnKey': fkey, 'col': 0, 'entry': True, 'changed': True,
@@ -1321,12 +1810,33 @@ def process_repo(repo, args):
                 'path': dd['name'], 'title': dd['name'], 'summary': 'deleted definition',
                 'inputs': [], 'nodes': [node], 'modelEdges': [], 'reqModels': [], 'respModels': [],
                 'models': {}})
+        # module-level changes no function reads (router setup, settings): one node per file
+        for rel, t in sorted(top.items()):
+            fname = rel.split('/')[-1]
+            nidt, fkey = f'{tag}__top_{nid_for(rel)}', f'{tag}::top:{rel}'
+            node = {'id': nidt, 'fnKey': fkey, 'col': 0, 'entry': True, 'changed': True,
+                    'layer': layer_of(rel, idx.layers), 'title': fname, 'sub': f'{fname}:{t["lineno"]}',
+                    'steps': [], 'base': t['base'], 'diff': t['diff'], 'isnew': False}
+            del_code[fkey] = {'file': rel, 'lineno': t['lineno'], 'name': fname, 'cls': None,
+                              'code': idx.file_src.get(rel, '')}
+            endpoints.append({
+                'id': nidt, 'group': f'{tag} · not reached from a route', 'method': 'mod', 'other': True,
+                'path': fname, 'title': fname, 'summary': 'module-level code',
+                'inputs': [], 'nodes': [node], 'modelEdges': [], 'reqModels': [], 'respModels': [],
+                'models': {}})
         endpoints += migration_entries(repo, tag, base, ref, cf, not exact, del_code)
+    # one handler under two decorators (`@router.get("/")` + `@router.get("")`) is two routes:
+    # give each its own id so the list, the saved position and review marks don't mix them up
+    seen_ids = {}
+    for e in endpoints:
+        k = seen_ids[e['id']] = seen_ids.get(e['id'], 0) + 1
+        if k > 1:
+            e['id'] += f'~{k}'
     code = dict(del_code)
     for e in endpoints:
         for n in e['nodes']:
             q = n['fnKey'].split('::', 1)[1]
-            if q.startswith('del:') or q.startswith('mig:'):
+            if q.startswith(('del:', 'mig:', 'top:')):
                 continue  # DELETED / migration node — code already provided by del_code
             if q.startswith('model:'):
                 m = idx.models[q.split('model:', 1)[1]]
@@ -1336,6 +1846,11 @@ def process_repo(repo, args):
                 info = idx.funcs[q]
                 code[n['fnKey']] = {'file': info['file'], 'lineno': info['lineno'],
                                     'name': info['name'], 'cls': info['cls'], 'code': info['code']}
+    for e in endpoints:   # fingerprint of the code a review of this route covers
+        h = hashlib.sha1(tag.encode())
+        for n in e['nodes']:
+            h.update((n.get('diff') or code.get(n['fnKey'], {}).get('code') or '').encode('utf-8', 'replace'))
+        e['sig'] = h.hexdigest()[:10]
     return endpoints, code
 
 
@@ -1387,7 +1902,8 @@ def render(args, repos, eps, code, serve=False):
                 refs=list_refs(repos[0]) if repos else {})
     blob = json.dumps({'code': code, 'graph': {'endpoints': eps}, 'meta': meta}, ensure_ascii=False)
     blob = blob.replace('</', '<\\/')  # source text may contain "</script>"; keep it inside the JSON
-    tpl = open(args.template).read()
+    with open(args.template, encoding='utf-8') as f:
+        tpl = f.read()
     if '__DATA__' not in tpl:
         sys.exit('template missing __DATA__ placeholder')
     tpl = re.sub(r'<title>.*?</title>', lambda _: f'<title>{html.escape(args.title)}</title>', tpl, count=1)
@@ -1439,7 +1955,11 @@ def serve(args, repos):
                 if u.path != '/':
                     return self.send(404, 'not found', 'text/plain')
                 a = args_for(q)
-                key = (a.changed, a.base, a.branch, a.commit_from, a.commit_to)
+                # key on the commits the names point at now: a branch that got new commits since
+                # the last visit must be regenerated, not served from the cache
+                shas = tuple(git(r, 'rev-parse', '--verify', '--quiet', f'{x}^{{commit}}') if x else ''
+                             for r in repos for x in (a.base, a.branch, a.commit_from, a.commit_to))
+                key = (a.changed, a.base, a.branch, a.commit_from, a.commit_to, shas)
                 with lock:
                     if q.get('refresh') or key not in cache:
                         # the working tree moves under us, so only cache ranges between fixed refs
@@ -1511,7 +2031,8 @@ def main():
     if not all_eps:
         hint = ' changed on this branch' if (args.changed or args.commit_from) else ''
         sys.exit(f'No entries found{hint} across: {", ".join(os.path.basename(r) for r in repos)}.')
-    open(args.out, 'w').write(render(args, repos, all_eps, all_code))
+    with open(args.out, 'w', encoding='utf-8') as f:
+        f.write(render(args, repos, all_eps, all_code))
     groups = {}
     for e in all_eps:
         groups[e['group']] = groups.get(e['group'], 0) + 1
