@@ -1303,6 +1303,98 @@ def dependencies(info, idx):
     return out
 
 
+# ── what a request must look like to reach a route: its query string ──
+_SCALAR_WORDS = {'str', 'int', 'float', 'bool', 'None', 'Optional', 'Union', 'List', 'list', 'set', 'Set',
+                 'tuple', 'Tuple', 'Sequence', 'Literal', 'typing', 'UUID', 'uuid', 'date', 'datetime',
+                 'time', 'timedelta', 'Decimal', 'decimal', 'EmailStr', 'AnyUrl', 'HttpUrl', 'Any'}
+_PARAM_KINDS = ('Query', 'Body', 'Form', 'File', 'Header', 'Cookie', 'Path')
+
+
+def _param_kind(ann, default):
+    """(`Query`/`Body`/… or None, that call) from `x: int = Query(1)` or `x: Annotated[int, Query()]`."""
+    for part in (default, ann):
+        if part is None:
+            continue
+        calls = [part] if isinstance(part, ast.Call) else []
+        if isinstance(part, ast.Subscript) and unparse(part.value).split('.')[-1] == 'Annotated':
+            sl = part.slice
+            calls = [e for e in (sl.elts if isinstance(sl, ast.Tuple) else [sl])[1:] if isinstance(e, ast.Call)]
+        for c in calls:
+            k = unparse(c.func).split('.')[-1]
+            if k in _PARAM_KINDS:
+                return k, c
+    return None, None
+
+
+def query_params(info, idx, path, depth=0):
+    """({key: required}, open) for the query string a route reads, through its dependencies.
+    `open` when it can read keys it doesn't name (a `Request` parameter, or a query model), so
+    nothing can be said about extra keys a caller sends. A parameter whose type we can't tell
+    (a class from a library, an alias we can't follow) counts as an optional key, never a required one."""
+    fn, rel = info['node'], info['file']
+    a = fn.args
+    pos = [*getattr(a, 'posonlyargs', []), *a.args]
+    defaults = dict(zip([x.arg for x in pos][len(pos) - len(a.defaults):], a.defaults))
+    defaults.update({x.arg: d for x, d in zip(a.kwonlyargs, a.kw_defaults) if d is not None})
+    in_path = set(re.findall(r'{(\w+)', path))
+    out, open_ = {}, False
+    deps = dependencies(info, idx)
+    dep_names = {n for n, _ in deps if n}
+    for _, d in deps:
+        q = idx.resolve(ast.Call(func=d.args[0], args=[], keywords=[]), info['cls'], info['qual'])
+        if q and depth < 3 and q in idx.funcs:
+            sub, o = query_params(idx.funcs[q], idx, path, depth + 1)
+            for k, req in sub.items():
+                out[k] = out.get(k, False) or req
+            open_ = open_ or o
+    for arg in pos + a.kwonlyargs:
+        name, ann, dflt = arg.arg, arg.annotation, defaults.get(arg.arg)
+        if name in ('self', 'cls') or name in in_path or name in dep_names:
+            continue
+        ann_s = unparse(ann) if ann is not None else ''
+        words = set(re.findall(r'[A-Za-z_]\w*', re.sub(r'(["\']).*?\1', '', ann_s)))
+        kind, call = _param_kind(ann, dflt)
+        if words & {'Request', 'WebSocket', 'HTTPConnection'}:
+            open_ = True
+            continue
+        if words & {'Response', 'BackgroundTasks', 'SecurityScopes', 'UploadFile'} or kind in _PARAM_KINDS[1:]:
+            continue
+        if models_in(ann_s, idx):
+            if kind == 'Query':          # a Pydantic model read from the query string
+                open_ = True
+            continue                     # otherwise it's the request body
+        key = name
+        if call is not None:
+            alias = next((k.value for k in call.keywords if k.arg == 'alias'), None)
+            if isinstance(alias, ast.Constant) and isinstance(alias.value, str):
+                key = alias.value
+        if call is not None and call is not dflt:      # Annotated[int, Query()]: the default is the `= …`
+            has_default = dflt is not None
+        elif call is not None:                         # = Query(10) / Query(default=10) / Query(...)
+            first = call.args[0] if call.args else next((k.value for k in call.keywords if k.arg == 'default'), None)
+            has_default = first is not None and not (isinstance(first, ast.Constant) and first.value is Ellipsis)
+            if next((k for k in call.keywords if k.arg == 'default_factory'), None):
+                has_default = True
+        else:
+            has_default = dflt is not None
+        # only a plain value type is surely a query key; a class we can't see may be a dependency
+        sure = not ann_s or words <= _SCALAR_WORDS or kind == 'Query'
+        out[key] = out.get(key, False) or (sure and not has_default)
+    return out, open_
+
+
+def route_facts(qual, idx, path, method):
+    """How a request reaches this route: FastAPI tries routes in the order they were added, and
+    that order is only known for sure within one file."""
+    info = idx.funcs[qual]
+    q, open_ = query_params(info, idx, path)
+    order = next((i for i, r in enumerate(idx.routes) if r[0] == qual and r[1] == method and r[2] == path), 0)
+    out = {'file': info['file'], 'line': info['lineno'], 'order': order, 'query': q}
+    if open_:
+        out['open'] = True
+    return out
+
+
 def handler_info(h):
     """One `except` clause: (names it catches, status it answers with, whether it raises on)."""
     if h.type is None:
@@ -1634,6 +1726,7 @@ def build_endpoint(entry_qual, idx, meta, depth, tag, changed_q=frozenset(), cha
         'reqModels': req_names, 'respModels': resp_names, 'models': models_reg,
         'fieldUse': field_use(entry_qual, order, flow, facts, idx, nid),
         'statuses': statuses_for(entry_qual, idx, changed_q) if meta.get('route') else [],
+        **({'route': route_facts(entry_qual, idx, meta['path'], meta['method'])} if meta.get('route') else {}),
     }
 
 
@@ -1954,19 +2047,123 @@ def run_react(root, tag):
 
 def merge_react(parts):
     """One React map from several apps (ids are already namespaced by tag)."""
-    out = {'version': 1, 'units': [], 'rows': {}, 'states': [], 'actions': [], 'apps': []}
+    out = {'version': 1, 'units': [], 'rows': {}, 'states': [], 'actions': [], 'apps': [], 'http': {}}
     for p in parts:
-        out['units'] += p['units']; out['rows'].update(p['rows'])
+        out['units'] += p['units']; out['rows'].update(p['rows']); out['http'].update(p.get('http') or {})
         out['states'] += p['states']; out['actions'] += p['actions']
         out['apps'].append({'root': p.get('label') or p.get('root'), 'stats': p.get('stats', {})})
     return out
 
 
+# ── frontend requests → backend routes ──
+_LOCAL_HOSTS = re.compile(r'^(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]|backend|api|server)(:\d+)?$', re.I)
+
+
+def _segs(p):
+    return [s for s in p.strip('/').split('/')] if p.strip('/') else []
+
+
+def _seg_match(call, route):
+    """A call's segments against a route's: a `{param}` takes one segment of anything, a value
+    known only at run time (`{}`) only fills a `{param}` (it's unlikely to be the literal "me")."""
+    if len(call) != len(route):
+        if route and re.fullmatch(r'\{\w+:path\}', route[-1]) and len(call) >= len(route):
+            call = call[:len(route) - 1] + ['/'.join(call[len(route) - 1:])]
+        else:
+            return False
+    for c, r in zip(call, route):
+        if re.fullmatch(r'\{[^}]*\}', r):
+            continue
+        if c != r:
+            return False
+    return True
+
+
+def _specific(route_path):
+    return sum(1 for s in _segs(route_path) if not s.startswith('{'))
+
+
+def link_http(eps, react):
+    """Match each request the frontend makes to the route FastAPI sends it to, and mark what
+    won't work: no such route, a wrong method, a route declared earlier that catches it, query
+    keys the route doesn't read or requires. Writes `ln` on each request and `callers` on each route."""
+    routes = [e for e in eps if e.get('route') and e.get('method', 'fn') != 'fn']
+    http = (react or {}).get('http') or {}
+    if not routes or not http:
+        return
+    for e in routes:
+        e['callers'] = []
+    rtag = lambda e: (e['id'].split('__', 1)[0], e['route']['file'])
+    for hid, h in http.items():
+        if h.get('unres'):
+            h['ln'] = {'st': 'unres'}
+            continue
+        if h.get('host') and not _LOCAL_HOSTS.match(h['host']):
+            h['ln'] = {'st': 'ext'}      # someone else's API
+            continue
+        cands = [h['alt'], h['p']] if h.get('alt') else [h['p']]
+        slash = False
+        hits = []
+        for cand in cands:
+            cs = _segs(cand)
+            hits = [e for e in routes if _seg_match(cs, _segs(e['path']))]
+            if hits:
+                # FastAPI answers a missing or extra trailing slash with a redirect
+                exact = [e for e in hits if cand.endswith('/') == e['path'].endswith('/')]
+                hits = exact or hits
+                slash = not exact
+                break
+        if not hits and h.get('lead'):
+            # `${API_URL}/items`: the server's own prefix may sit in API_URL; a unique tail match will do
+            cs = _segs(h['p'])
+            tail = [e for e in routes if len(_segs(e['path'])) > len(cs) and _seg_match(cs, _segs(e['path'])[-len(cs):])] if cs else []
+            if len({e['path'] for e in tail}) == 1:
+                hits = tail
+        if not hits:
+            h['ln'] = {'st': 'unres'} if (h.get('lead') or h.get('host')) else {'st': 'noroute'}
+            continue
+        same = [e for e in hits if e['method'].upper() == h['m'] or h['m'] == '?']
+        if not same:
+            want = sorted({e['method'].upper() for e in hits})
+            h['ln'] = {'st': 'method', 'to': hits[0]['id'], 'want': want}
+            if not h.get('inner') and h.get('row'):
+                hits[0]['callers'].append(h['row'])
+            continue
+        # the route meant is the most specific one; FastAPI takes the first one declared that matches
+        meant = max(same, key=lambda e: (_specific(e['path']), -e['route']['order']))
+        first = min(same, key=lambda e: e['route']['order'])
+        ln = {'st': 'ok', 'to': meant['id']}
+        if first is not meant and rtag(first) == rtag(meant) and first['route']['order'] < meant['route']['order']:
+            ln = {'st': 'shadow', 'to': first['id'], 'meant': meant['id']}
+        if slash:
+            ln['slash'] = True
+        # query keys are checked against the route the call means
+        target = meant
+        rq = target['route']['query']
+        if 'q' in h and not h.get('qx'):
+            sent = set(h['q'])
+            if not target['route'].get('open'):
+                extra = sorted(k for k in sent if k not in rq)
+                if extra:
+                    ln['extra'] = extra
+            miss = sorted(k for k, req in rq.items() if req and k not in sent)
+            if miss:
+                ln['miss'] = miss
+        h['ln'] = ln
+        # a route lists the calls that reach it (a shadowed call reaches the route declared first)
+        if not h.get('inner') and h.get('row'):
+            next(e for e in same if e['id'] == ln['to'])['callers'].append(h['row'])
+    for e in routes:
+        if not e['callers']:
+            e['nocaller'] = True
+
+
 def react_for_repo(repo, args, have_routes, log=True):
-    """React map for a repo: always with --react, or on its own when it has .tsx and no FastAPI routes."""
+    """React map for a repo: always with --react, and on its own when it has .tsx files (a
+    full-stack repo gets both, so each frontend request can link to its route)."""
     explicit = args.react is not None
     diffing = bool(args.changed or args.commit_from or args.branch)
-    if not explicit and (have_routes or diffing or not has_tsx(repo)):
+    if not explicit and (diffing or not has_tsx(repo)):
         return None
     if explicit and diffing and log:
         print('  note: React mode reads the working tree as it is; --changed/--branch/--from apply to routes only.',
@@ -2008,7 +2205,9 @@ def generate(args, repos, log=True):
         react_parts += parts or []
     # routes first, then the "not reached from a route" / migrations groups; same groups contiguous
     all_eps.sort(key=lambda e: (bool(e.get('other')), bool(e.get('affected')), e.get('group', '')))
-    return all_eps, all_code, (merge_react(react_parts) if react_parts else None)
+    react = merge_react(react_parts) if react_parts else None
+    link_http(all_eps, react)
+    return all_eps, all_code, react
 
 
 def render(args, repos, eps, code, serve=False, react=None):
@@ -2138,7 +2337,8 @@ def main():
     ap.add_argument('--react', nargs='?', const='', default=None, metavar='DIR',
                     help='also map the React + TypeScript app (optionally only the folder DIR inside '
                     'the repo): user actions, what they set, what reruns. Needs Node.js and the '
-                    '"typescript" package. On by default for a repo with .tsx files and no FastAPI routes.')
+                    '"typescript" package. On by default for a repo with .tsx files; with FastAPI routes too, '
+                    'each request links to the route it reaches.')
     args = ap.parse_args()
 
     repos = args.repos or discover_repos(args.workspace or auto_workspace())

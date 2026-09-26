@@ -5,7 +5,7 @@
 #   flowsegul --entries foo bar        # specific functions
 #   flowsegul serve      # same, but served locally so the page can switch branches / commits itself
 #   flowsegul --react [DIR]            # React/TSX: what each click, keystroke or page load sets off
-#                                      # (automatic for a repo with .tsx and no FastAPI routes; needs node + typescript)
+#                                      # (automatic for a repo with .tsx files; needs node + typescript)
 # Any flowsegul_gen.py flag is passed through (--base, --depth, --repo, --workspace, --title, --out, --react).
 set -euo pipefail
 # resolve through symlinks (this script is symlinked onto PATH) to find flowsegul_gen.py next to it
