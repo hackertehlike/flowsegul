@@ -49,8 +49,8 @@ Run `flowsegul --help` for the full list.
 
 ## What you get
 
-- **Draggable node graph** per endpoint — opens fitted to the screen; scroll to zoom, drag to pan,
-  minimap to jump around.
+- **Draggable node graph** per endpoint — opens fitted to the screen; scroll or drag to pan, pinch or
+  Ctrl/⌘+scroll to zoom (switchable in the `?` sheet), minimap to jump around.
 - **Inline source** per node, syntax-highlighted, one click (or `C` for all) away. Changed
   functions always show their diff.
 - **Color-coded data flow** — each produced variable gets one consistent color across its chip, its

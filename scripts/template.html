@@ -107,10 +107,8 @@ kbd{font:600 10.5px/1 var(--mono);padding:3px 5px;border-radius:5px;border:1px s
 .tb .cnt{font:700 10.5px/1 var(--mono);padding:2px 5px;border-radius:9px;background:var(--chg);color:#fff}
 
 /* tooltips (data-tip), CSS-only so they stay out of the DOM logic */
-[data-tip]{position:relative}
-[data-tip]:hover::after{content:attr(data-tip);position:absolute;top:calc(100% + 8px);left:50%;transform:translateX(-50%);background:#161a26;color:#f4f5f9;font:500 11px/1.3 var(--sans);padding:5px 8px;border-radius:6px;white-space:nowrap;pointer-events:none;z-index:50;box-shadow:var(--shadow)}
-.dock [data-tip]:hover::after{top:auto;bottom:calc(100% + 8px)}
-.tools>[data-tip]:last-child:hover::after{left:auto;right:0;transform:none}
+#tip{position:fixed;z-index:60;background:#161a26;color:#f4f5f9;font:500 11.5px/1.3 var(--sans);padding:6px 9px;border-radius:7px;white-space:nowrap;box-shadow:var(--shadow);opacity:0;transform:translateY(-2px);transition:opacity .12s,transform .12s;pointer-events:none}
+#tip.on{opacity:1;transform:none;pointer-events:auto}
 
 .main{flex:1;display:flex;min-height:0}
 
@@ -195,6 +193,7 @@ body.review .revbar{display:block}
 .lay.helper{background:var(--l-helper-bg);color:var(--l-helper)}
 .lay.external{background:var(--l-external-bg);color:var(--l-external)}
 .node.model{border-style:dashed}
+.node.external .nhead{background:repeating-linear-gradient(135deg,transparent 0 6px,var(--l-external-bg) 6px 8px)}
 .ntitle{font:600 12.5px/1.3 var(--mono);flex:1;min-width:0;overflow-wrap:anywhere}
 .ntitle .cls{color:var(--muted);font-weight:500}
 .nsub{font:10.5px/1.2 var(--mono);color:var(--faint);margin-top:3px;font-weight:400}
@@ -253,6 +252,8 @@ pre.code.diff .dfile{color:var(--muted)}
 .dock .pct:hover{background:var(--panel2);color:var(--ink)}
 .minimap{right:14px;bottom:14px;width:200px;height:128px;overflow:hidden;cursor:pointer;padding:0}
 .minimap svg{width:100%;height:100%;display:block}
+.minimap{transition:opacity .2s,transform .2s var(--ease)}
+.minimap.idle{opacity:0;transform:translateY(6px);pointer-events:none}
 .minimap .mmn{fill:var(--line2)}
 .minimap .mmn.chg{fill:var(--chg)}
 .minimap .mmn.svc{fill:var(--accent)}
@@ -364,9 +365,9 @@ body.nomap .minimap{display:none}
   <div class="how">Click a row to jump to that call site in the code. Click an underlined call in the code to fly to its box.</div>
   <div class="how">Solid arrows carry arguments in. Dashed arrows carry the typed return value back.</div>
   <h5>Keys</h5>
-  <div class="kr"><span>Filter endpoints</span><span><kbd>/</kbd></span></div>
+  <div class="kr"><span>Filter endpoints</span><span><kbd>/</kbd><kbd>⌘K</kbd></span></div>
   <div class="kr"><span>Next / previous endpoint</span><span><kbd>J</kbd><kbd>K</kbd></span></div>
-  <div class="kr"><span>Fit to screen</span><span><kbd>F</kbd></span></div>
+  <div class="kr"><span>Fit to screen</span><span><kbd>F</kbd><kbd>⇧1</kbd></span></div>
   <div class="kr"><span>Zoom</span><span><kbd>+</kbd><kbd>−</kbd><kbd>0</kbd></span></div>
   <div class="kr"><span>Show / hide all code</span><span><kbd>C</kbd></span></div>
   <div class="kr"><span>Next changed function</span><span><kbd>N</kbd><kbd>⇧N</kbd></span></div>
@@ -375,9 +376,11 @@ body.nomap .minimap{display:none}
   <div class="kr"><span>Sidebar / minimap</span><span><kbd>[</kbd><kbd>M</kbd></span></div>
   <div class="kr"><span>Theme</span><span><kbd>T</kbd></span></div>
   <h5>Canvas</h5>
-  <div class="how">Scroll or pinch to zoom, drag empty space to pan, drag a box by its header to move it. Click the minimap to jump.</div>
+  <div class="how">Scroll or drag empty space to pan. Pinch or hold <kbd>Ctrl</kbd>/<kbd>⌘</kbd> while scrolling to zoom. Drag a box by its header to move it. Click or drag the minimap to jump.</div>
+  <div class="kr"><span>Scroll wheel</span><span class="seg" id="scrollseg"><button class="segb" data-mode="pan">Pans</button><button class="segb" data-mode="zoom">Zooms</button></span></div>
  </div>
 </div></div>
+<div id="tip" role="tooltip"></div>
 <script>
 const DATA = __DATA__;
 const {code, graph} = DATA;
@@ -585,7 +588,12 @@ function layout(){
  const cols=[...new Set(curEp.nodes.map(n=>n.col))].sort((a,b)=>a-b);
  let x=24;
  cols.forEach(col=>{
-   const ids=curEp.nodes.filter(n=>n.col===col).map(n=>n.id);
+   let ids=curEp.nodes.filter(n=>n.col===col).map(n=>n.id);
+   // order the column by the mean height of the caller rows pointing into each box (the barycenter
+   // step of layered layout), so arrows run roughly level and cross less. Stable for ties/roots.
+   const bary={};
+   ids.forEach((id,i)=>{const ys=edges.filter(e=>e.dst===id&&!e.plain&&nodes[e.src]&&nodes[e.src].def.col<col).map(e=>anchorRow(nodes[e.src],e.rowVar));bary[id]=ys.length?ys.reduce((a,b)=>a+b,0)/ys.length:Infinity;});
+   ids=ids.map((id,i)=>[id,i]).sort((a,b)=>(bary[a[0]]-bary[b[0]])||(a[1]-b[1])).map(p=>p[0]);
    let y=padTop, maxW=320;
    ids.forEach(id=>{const nd=nodes[id];nd.x=x;nd.y=y;place(nd);y+=nd.el.offsetHeight+gapY;maxW=Math.max(maxW,nd.el.offsetWidth);});
    x+=maxW+gapX;
@@ -641,7 +649,7 @@ function drawEdges(){
    const n=g.items.length;
    // a bundle feeds several differently-coloured vars, so its forward line is neutral; a lone call keeps its var colour
    const col=g.plain?'var(--model)':(n===1?(g.items[0].color||'var(--edge)'):'var(--edge)');
-   const fx=b.x, fy=b.y+22, fdx=Math.max(40,(fx-jx)/2), fc1=jx+fdx, fc2=fx-fdx;
+   const fx=b.x, fy=b.y+22, fdx=Math.max(30,(fx-jx)*0.36), fc1=jx+fdx, fc2=fx-fdx;
    defs+='<marker id="mf'+i+'" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 z" fill="'+col+'"/></marker>';
    fwd+='<path class="'+gc+'"'+dv+' d="M'+jx+','+ry+' C'+fc1+','+ry+' '+fc2+','+fy+' '+fx+','+fy+'" fill="none" stroke="'+col+'" stroke-width="'+(g.plain?1.5:2.2)+'" '+(g.plain?'stroke-dasharray="4 4"':'')+' marker-end="url(#mf'+i+')" opacity="0.92" stroke-linecap="round"/>';
    // produced variables passed as arguments → dashed "slot" pills docking into the callee
@@ -657,7 +665,7 @@ function drawEdges(){
      if(rvars.length){
        const rcol=(rvars.length===1&&rvars[0].rowVar==='return')?'var(--accent)':col;
        const sx=b.x, sy=b.y+Math.min(b.el.offsetHeight-12,50), ex=rx, ey=ry+12;
-       const rdx=Math.max(40,(sx-ex)/2), rc1=sx-rdx, rc2=ex+rdx;
+       const rdx=Math.max(30,(sx-ex)*0.36), rc1=sx-rdx, rc2=ex+rdx;
        defs+='<marker id="mr'+i+'" markerWidth="7" markerHeight="7" refX="5.5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 z" fill="'+rcol+'"/></marker>';
        ret+='<path class="'+gc+'"'+dv+' d="M'+sx+','+sy+' C'+rc1+','+(sy+26)+' '+rc2+','+(ey+26)+' '+ex+','+ey+'" fill="none" stroke="'+rcol+'" stroke-width="1.7" stroke-dasharray="2 3" marker-end="url(#mr'+i+')" opacity="0.85"/>';
        const rets=[...new Set(g.items.map(e=>e.ret).filter(Boolean))];
@@ -820,9 +828,17 @@ stage.addEventListener('wheel',e=>{
  const pre=e.target.closest&&e.target.closest('pre.code,.float,.drawer');
  if(pre&&(pre.scrollHeight>pre.clientHeight||pre.scrollWidth>pre.clientWidth||!pre.matches('pre')))return;
  e.preventDefault();
- const dy=e.deltaY*(e.deltaMode===1?16:1);
- zoomAt(e.clientX,e.clientY,Math.exp(-dy*(e.ctrlKey?0.01:0.0015)));  // exp = smooth, direction-correct; ctrl = trackpad pinch
+ const m=e.deltaMode===1?16:1, dx=e.deltaX*m, dy=e.deltaY*m;
+ // Figma/FigJam convention: scroll pans (shift = sideways), pinch or ctrl/cmd+scroll zooms.
+ // "Scroll zooms" in the ? sheet flips it for mouse users who prefer the old behaviour.
+ if(e.ctrlKey||e.metaKey||scrollMode==='zoom'){zoomAt(e.clientX,e.clientY,Math.exp(-dy*(e.ctrlKey?0.01:0.0015)));return;}
+ if(e.shiftKey&&!dx){view.x-=dy;}else{view.x-=dx;view.y-=dy;}
+ applyView();
 },{passive:false});
+let scrollMode=store.get('scroll','pan');
+function setScrollMode(m){scrollMode=m;store.set('scroll',m);document.querySelectorAll('#scrollseg .segb').forEach(b=>b.classList.toggle('on',b.dataset.mode===m));}
+document.querySelectorAll('#scrollseg .segb').forEach(b=>b.onclick=()=>setScrollMode(b.dataset.mode));
+setScrollMode(scrollMode);
 $('#zin').onclick=()=>zoomCenter(1.2);
 $('#zout').onclick=()=>zoomCenter(1/1.2);
 $('#zpct').onclick=()=>{const r=stage.getBoundingClientRect();zoomAt(r.left+r.width/2,r.top+r.height/2,1/view.s);};
@@ -861,6 +877,8 @@ function drawMinimap(){
  Object.values(nodes).forEach(n=>{const c=n.def.changed?' chg':n.def.entry?' svc':'';s+='<rect class="mmn'+c+'" x="'+(n.x*k+ox)+'" y="'+(n.y*k+oy)+'" width="'+Math.max(2,n.el.offsetWidth*k)+'" height="'+Math.max(2,n.el.offsetHeight*k)+'" rx="2"/>';});
  s+='<rect class="mmv" x="'+(vx0*k+ox)+'" y="'+(vy0*k+oy)+'" width="'+vw*k+'" height="'+vh*k+'" rx="3"/>';
  ms.innerHTML=s;
+ // a map of something already fully visible is noise: fade it out until the flow overflows
+ box.classList.toggle('idle',b.x0>=vx0&&b.y0>=vy0&&b.x1<=vx0+vw&&b.y1<=vy0+vh);
 }
 function mmJump(e){
  if(!mmT)return;const rb=$('#minimap').getBoundingClientRect(),r=stage.getBoundingClientRect();
@@ -929,8 +947,25 @@ $('#q').addEventListener('keydown',e=>{
 });
 function stepEp(delta){const vis=epEls.filter(x=>!x.d.hidden);if(!vis.length)return;let i=vis.findIndex(x=>x.ep===curEp);i=i<0?0:(i+delta+vis.length)%vis.length;selectEp(vis[i].ep,vis[i].d);}
 
+// ── tooltips: on hover and keyboard focus, stay while hovered, Esc dismisses ──
+{
+ const tip=$('#tip');let owner=null,hideT=0;
+ const show=t=>{clearTimeout(hideT);owner=t;tip.textContent=t.dataset.tip;t.setAttribute('aria-label',t.dataset.tip);
+   const r=t.getBoundingClientRect(),tw=tip.offsetWidth,th=tip.offsetHeight,up=r.bottom+th+12>innerHeight;
+   tip.style.left=Math.max(6,Math.min(innerWidth-tw-6,r.left+r.width/2-tw/2))+'px';
+   tip.style.top=(up?r.top-th-8:r.bottom+8)+'px';tip.classList.add('on');};
+ const hide=()=>{clearTimeout(hideT);hideT=setTimeout(()=>{tip.classList.remove('on');owner=null;},120);};
+ document.addEventListener('pointerover',e=>{const t=e.target.closest&&e.target.closest('[data-tip]');if(t)show(t);else if(e.target.closest&&e.target.closest('#tip'))clearTimeout(hideT);});
+ document.addEventListener('pointerout',e=>{const t=e.target.closest&&e.target.closest('[data-tip],#tip');if(t&&!(e.relatedTarget&&t.contains(e.relatedTarget)))hide();});
+ document.addEventListener('focusin',e=>{const t=e.target.closest&&e.target.closest('[data-tip]');if(t)show(t);});
+ document.addEventListener('focusout',hide);
+ document.addEventListener('pointerdown',()=>{tip.classList.remove('on');});
+ window.addEventListener('keydown',e=>{if(e.key==='Escape'&&tip.classList.contains('on')){tip.classList.remove('on');e.stopImmediatePropagation();}},true);
+}
+
 // ── keyboard ──
 window.addEventListener('keydown',e=>{
+ if((e.metaKey||e.ctrlKey)&&(e.key==='k'||e.key==='K')){e.preventDefault();if(document.body.classList.contains('noside'))toggleSide();$('#q').focus();$('#q').select();return;}
  if(e.metaKey||e.ctrlKey||e.altKey)return;
  const typing=e.target.closest&&e.target.closest('input,textarea,[contenteditable]');
  if(e.key==='Escape'){toggleHelp(false);closeDrawer();return;}
@@ -938,7 +973,7 @@ window.addEventListener('keydown',e=>{
  const k=e.key;
  if(k==='/'){e.preventDefault();if(document.body.classList.contains('noside'))toggleSide();$('#q').focus();$('#q').select();}
  else if(k==='?'){toggleHelp();}
- else if(k==='f'||k==='F'){fit(true);}
+ else if(k==='f'||k==='F'||k==='!'){fit(true);}
  else if(k==='+'||k==='='){zoomCenter(1.2);}
  else if(k==='-'||k==='_'){zoomCenter(1/1.2);}
  else if(k==='0'){$('#zpct').click();}
