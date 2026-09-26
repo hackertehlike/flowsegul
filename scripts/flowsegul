@@ -3,6 +3,7 @@
 #   flowsegul            # visualize every FastAPI route across your Python repos
 #   flowsegul --changed  # only what changed on the current branch(es) vs main
 #   flowsegul --entries foo bar        # specific functions
+#   flowsegul serve      # same, but served locally so the page can switch branches / commits itself
 # Any flowsegul_gen.py flag is passed through (--base, --depth, --repo, --workspace, --title, --out).
 set -euo pipefail
 # resolve through symlinks (this script is symlinked onto PATH) to find flowsegul_gen.py next to it
@@ -13,6 +14,12 @@ while [ -h "$src" ]; do
   [ "${src#/}" = "$src" ] && src="$dir/$src"
 done
 here="$(cd -P "$(dirname "$src")" && pwd)"
+
+# `flowsegul serve [flags]`: local server; the page itself can switch branch / commit / range
+if [ "${1:-}" = "serve" ]; then
+  shift
+  exec python3 "$here/flowsegul_gen.py" --serve "$@"
+fi
 out="${FLOWSEGUL_OUT:-$(mktemp -t flowsegul).html}"
 
 # only inject a default --out if the user didn't pass one

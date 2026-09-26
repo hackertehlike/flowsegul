@@ -20,7 +20,7 @@ Examples:
   # explicit entry functions:
   flowsegul_gen.py --repo ~/proj/be --files src/services/foo.py --entries do_thing --out cf.html
 """
-import argparse, ast, json, os, re, subprocess, sys, tempfile
+import argparse, ast, copy, fnmatch, html, json, os, re, subprocess, sys, tempfile
 
 PALETTE = ['#3b82f6','#0ea5a4','#d97706','#db2777','#16a34a','#7c3aed','#ea580c','#0891b2','#4f46e5','#059669']
 INPUT_PALETTE = ['#e8590c','#1098ad','#9c36b5','#2f9e44','#c2255c','#1971c2']
@@ -143,6 +143,38 @@ def one_line(s, limit=140):
     return s[:limit] + ('…' if len(s) > limit else '')
 
 
+def http_status(node):
+    """Status code of an `HTTPException(404, …)` / `HTTPException(status_code=status.HTTP_404_…)`
+    call, else None."""
+    if not isinstance(node, ast.Call):
+        return None
+    cand = [k.value for k in node.keywords if k.arg == 'status_code'] + list(node.args[:1])
+    for v in cand:
+        if isinstance(v, ast.Constant) and isinstance(v.value, int):
+            return v.value
+        m = re.search(r'(\d{3})', unparse(v))
+        if m:
+            return int(m.group(1))
+    return None
+
+
+def status_in(fn):
+    """The status an exception handler answers with, e.g. `JSONResponse(status_code=400, …)`."""
+    for n in ast.walk(fn):
+        if isinstance(n, ast.Call):
+            st = http_status(n) if any(k.arg == 'status_code' for k in n.keywords) else None
+            if st:
+                return st
+    return None
+
+
+def exc_name(node):
+    """`raise ValueError(...)` / `raise errors.NotFound` -> 'ValueError' / 'NotFound'."""
+    if isinstance(node, ast.Call):
+        node = node.func
+    return unparse(node).split('.')[-1] if node is not None else ''
+
+
 def model_fields(cls):
     """`name: type [= default]` class attributes of a ClassDef (Pydantic/dataclass field shape)."""
     out = []
@@ -192,10 +224,23 @@ class Index:
         self.by_simple = {}    # module func name -> [qual]
         self.routes = []       # (qual, method, path, prefix)
         self.steps_cache = {}  # qual -> steps (memoized)
+        self.facts_cache = {}  # qual -> value_facts (memoized)
         self.file_src = {}     # rel path -> exact source it was parsed from
         self.models = {}       # class name -> {code, file, lineno} (request/response schemas etc.)
+        self.bases = {}        # class name -> [base class names], to match `except Base` to a subclass
+        self.app_handlers = {} # exception name -> status (or None) from @app.exception_handler(...)
+        self.raise_cache = {}  # qual -> own raise statements (filled by steps_for)
+        self.esc_cache = {}    # qual -> errors that can leave the function (see escapes)
+        self.layers = load_config(repo).get('layers') or {}
         for f in files:
             self._index_file(f)
+        self.route_quals = {r[0] for r in self.routes}
+
+    def layer(self, qual):
+        """A route handler is a controller wherever it lives; otherwise go by its file."""
+        if qual in self.route_quals:
+            return 'controller'
+        return layer_of(self.funcs[qual]['file'], self.layers)
 
     def _rel(self, f):
         if self.ref and not os.path.isabs(f):
@@ -256,16 +301,45 @@ class Index:
                     prefix = prefixes.get(var, '')
                     self.routes.append((qual, method, prefix + path, prefix))
 
+        self._exception_handlers(tree)
         for n in tree.body:
             if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 add(n, None)
             elif isinstance(n, ast.ClassDef):
+                self.bases[n.name] = [unparse(b).split('.')[-1] for b in n.bases]
                 self.models[n.name] = {'name': n.name, 'file': rel, 'lineno': n.lineno,
                                        'code': ast.get_source_segment(src, n) or '',
                                        'fields': model_fields(n)}
                 for m in n.body:
                     if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef)):
                         add(m, n.name)
+
+    def _exception_handlers(self, tree):
+        """`@app.exception_handler(ValueError)` and `app.add_exception_handler(ValueError, fn)`: the
+        app turns those errors into a response, so they don't end up as a 500."""
+        fns = {n.name: n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+        for fn in fns.values():
+            for dec in fn.decorator_list:
+                if (isinstance(dec, ast.Call) and getattr(dec.func, 'attr', '') == 'exception_handler'
+                        and dec.args):
+                    self.app_handlers[unparse(dec.args[0]).split('.')[-1]] = status_in(fn)
+        for n in ast.walk(tree):
+            if (isinstance(n, ast.Call) and getattr(n.func, 'attr', '') == 'add_exception_handler'
+                    and len(n.args) >= 2):
+                h = fns.get(unparse(n.args[1]))
+                self.app_handlers[unparse(n.args[0]).split('.')[-1]] = status_in(h) if h else None
+
+    def is_sub(self, t, base, seen=None):
+        """Is exception class `t` the class `base` or derived from it (as far as the repo shows)?"""
+        if t == base:
+            return True
+        seen = seen or set()
+        for b in self.bases.get(t, []):
+            if b not in seen:
+                seen.add(b)
+                if self.is_sub(b, base, seen):
+                    return True
+        return False
 
     @staticmethod
     def _route(dec):
@@ -310,15 +384,67 @@ class Index:
         return cands[0] if cands else None
 
 
-def layer_of(rel):
-    p = rel.lower()
-    if 'controller' in p or '/rest/' in p or '/api/' in p or '/routes' in p:
-        return 'controller'
-    if '/services/' in p or 'service' in os.path.basename(p):
-        return 'service'
-    if 'repositor' in p or 'persistence' in p or '/dao' in p or '/db' in p:
-        return 'repository'
-    return 'helper'
+# Kinds of code beyond controller → service → repository, recognised by file or folder name.
+# Checked against the file's own name first, then its folders from the innermost outwards, so
+# `services/utils.py` is a util and `utils/service_client.py` is a service. First hit wins.
+_KIND_EXACT = {
+    'controller': {'api', 'rest', 'routes', 'routers', 'router', 'endpoints', 'views', 'handlers'},
+    'repository': {'persistence', 'dao', 'daos', 'db', 'crud', 'queries', 'store', 'stores', 'db_access'},
+    'model': {'models', 'model', 'entities', 'entity', 'orm', 'tables', 'domain_models'},
+    'schema': {'schemas', 'schema', 'dto', 'dtos', 'serializers', 'contracts'},
+    'factory': {'factory', 'factories', 'builders', 'builder', 'fixtures', 'seeds'},
+    'util': {'utils', 'util', 'helpers', 'helper', 'common', 'shared', 'tools', 'misc', 'lib'},
+    'task': {'tasks', 'task', 'workers', 'worker', 'jobs', 'job', 'celery', 'consumers', 'cron', 'scheduler'},
+    'external': {'clients', 'client', 'integrations', 'adapters', 'gateways', 'gateway', 'external', 'sdk'},
+    'config': {'config', 'configs', 'settings', 'conf', 'env'},
+    'migration': {'alembic', 'migrations', 'migration'},
+}
+_KIND_SUB = [('controller', 'controller'), ('service', 'service'), ('repositor', 'repository'),
+             ('factor', 'factory'), ('util', 'util'), ('client', 'external')]
+_GENERIC_DIRS = {'src', 'app', 'apps', 'lib', 'pkg', 'core', 'main', 'python', 'code', ''}
+
+
+def _kind_of_token(tok):
+    for kind, names in _KIND_EXACT.items():
+        if tok in names:
+            return kind
+    for sub, kind in _KIND_SUB:
+        if sub in tok:
+            return kind
+    return None
+
+
+def load_config(repo):
+    """Optional `.flowsegul.json` at the repo root: {"layers": {"<glob>": "<label>"}} maps paths
+    (fnmatch on the repo-relative path, e.g. "src/app/core/**") to a layer label of your choosing."""
+    try:
+        with open(os.path.join(repo, '.flowsegul.json')) as f:
+            cfg = json.load(f)
+        return cfg if isinstance(cfg, dict) else {}
+    except Exception:
+        return {}
+
+
+def layer_of(rel, overrides=None):
+    """Layer label for a repo-relative file: a config override, a known kind (controller, service,
+    repository, model, schema, factory, util, task, external, config, migration), or — for code
+    that fits none of them — the name of its folder, so an unfamiliar layout still reads sensibly."""
+    for pat, label in (overrides or {}).items():
+        if fnmatch.fnmatch(rel, pat) or fnmatch.fnmatch(rel, pat.rstrip('/*') + '/*'):
+            return re.sub(r'[^a-z0-9_-]', '-', str(label).lower())[:20] or 'other'
+    parts = rel.lower().replace('\\', '/').split('/')
+    base = parts[-1][:-3] if parts[-1].endswith('.py') else parts[-1]
+    for tok in [base] + parts[-2::-1]:
+        k = _kind_of_token(tok)
+        if k:
+            return k
+    folder = next((p for p in parts[-2::-1] if p not in _GENERIC_DIRS), '')
+    return re.sub(r'[^a-z0-9_-]', '-', folder)[:20] or 'module'
+
+
+# sidebar badge for entries that are not HTTP routes
+_KIND_BADGE = {'util': 'util', 'factory': 'fact', 'model': 'class', 'schema': 'class',
+               'migration': 'mig', 'task': 'task', 'external': 'ext', 'config': 'cfg'}
 
 
 def nid_for(qual):
@@ -467,13 +593,124 @@ def reachable_quals(entry, idx, depth):
     return seen
 
 
+def _chain(node):
+    """('payload', '.items') for a Name/Attribute chain like `payload.items`, else None."""
+    attrs = []
+    while isinstance(node, ast.Attribute):
+        attrs.append(node.attr)
+        node = node.value
+    if isinstance(node, ast.Name):
+        return node.id, ''.join('.' + a for a in reversed(attrs))
+    return None
+
+
+def param_names(node):
+    a = node.args
+    return [x.arg for x in [*getattr(a, 'posonlyargs', []), *a.args, *a.kwonlyargs]
+            if x.arg not in ('self', 'cls')]
+
+
+def value_facts(info, idx):
+    """What one function does with the values it holds, for tracing data across calls. Memoized.
+
+    aliases: {local: (name, path)} for locals that are just another name for part of a value:
+             `items = payload.items`, `for i in items` (i is an element of items: path '[]').
+    reads:   {param: sorted paths} fields a parameter is read at, e.g. payload → ['.coupon', '.items'],
+             following aliases (so `i.quantity` in `for i in items` is items → '[].quantity').
+    whole:   {param: [callee]} a parameter handed whole to code flowsegul can't see into, so any of
+             its fields may be used there.
+    """
+    cache = idx.facts_cache
+    if info['qual'] in cache:
+        return cache[info['qual']]
+    fn = info['node']
+    params = set(param_names(fn))
+    aliases = {}
+    for n in ast.walk(fn):
+        if isinstance(n, ast.Assign) and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name):
+            c = _chain(n.value)
+            if c and c[0] not in ('self', 'cls') and c[0] != n.targets[0].id:
+                aliases[n.targets[0].id] = c
+        elif isinstance(n, (ast.For, ast.AsyncFor, ast.comprehension)) and isinstance(n.target, ast.Name):
+            c = _chain(n.iter)
+            if c and c[0] != n.target.id:
+                aliases[n.target.id] = (c[0], c[1] + '[]')
+
+    def resolve(name, path=''):
+        for _ in range(12):
+            if name in params or name not in aliases:
+                break
+            name, pre = aliases[name]
+            path = pre + path
+        return name, path
+
+    parent = {}
+    for n in ast.walk(fn):
+        for ch in ast.iter_child_nodes(n):
+            parent[ch] = n
+    reads, whole = {}, {}
+    for n in ast.walk(fn):
+        if isinstance(n, ast.Attribute) and not isinstance(parent.get(n), ast.Attribute):
+            c = _chain(n)
+            if not c:
+                continue
+            name, path = c
+            up = parent.get(n)
+            if isinstance(up, ast.Call) and up.func is n:   # payload.items.append(…) reads .items
+                path = path[:path.rfind('.')]
+            root, pre = resolve(name)
+            if root in params and pre + path:
+                reads.setdefault(root, set()).add(pre + path)
+        elif isinstance(n, ast.Call) and not idx.resolve(n, info.get('cls'), info['qual']):
+            callee = unparse(n.func).split('(')[0][-40:]
+            for a in list(n.args) + [k.value for k in n.keywords]:
+                if isinstance(a, ast.Starred):
+                    a = a.value
+                if isinstance(a, ast.Name):
+                    root, pre = resolve(a.id)
+                    if root in params and not pre:
+                        whole.setdefault(root, [])
+                        if callee not in whole[root]:
+                            whole[root].append(callee)
+    out = {'aliases': aliases, 'resolve': resolve, 'params': params,
+           'reads': {k: sorted(v) for k, v in reads.items()}, 'whole': whole}
+    cache[info['qual']] = out
+    return out
+
+
+def bindings_for(call, callee):
+    """[{p: callee param, from: caller name, path, text}] — which argument lands in which parameter.
+    An argument that is a computed expression gets `uses` (the names it's computed from) instead."""
+    params = param_names(callee['node'])
+    pairs = []
+    for i, a in enumerate(call.args):
+        if isinstance(a, ast.Starred) or i >= len(params):
+            break
+        pairs.append((params[i], a))
+    for k in call.keywords:
+        if k.arg and k.arg in params:
+            pairs.append((k.arg, k.value))
+    out = []
+    for p, expr in pairs:
+        b = {'p': p, 'text': one_line(unparse(expr), 40)}
+        c = _chain(expr)
+        if c and c[0] not in ('self', 'cls'):
+            b['from'], b['path'] = c
+        else:
+            b['uses'] = sorted({n.id for n in ast.walk(expr) if isinstance(n, ast.Name)
+                                and n.id not in ('self', 'cls')})[:4]
+        out.append(b)
+    return out
+
+
 def steps_for(info, idx):
     """Ordered data-flow steps: any statement that calls an in-scope function, recursing into
     if/for/while/with/try so calls in conditions and nested blocks are captured too. Memoized."""
     cache = idx.steps_cache
     if info['qual'] in cache:
         return cache[info['qual']]
-    out, assigned = [], []
+    out, assigned, raises = [], [], []
+    catching = []   # stack of enclosing try blocks: [[(exception names, status or None, re-raises)]]
     src = idx.file_src.get(info['file'], '')
     caller_cls = info.get('cls')
     caller_qual = info['qual']
@@ -512,6 +749,8 @@ def steps_for(info, idx):
                                 + (', ' if call.args and call.keywords else '')
                                 + ', '.join(f'{k.arg}={unparse(k.value)}' for k in call.keywords), 60),
                 'ret': one_line(idx.funcs[qual]['returns'], 46), 'uses': uses, '_qual': qual,
+                'bind': bindings_for(call, idx.funcs[qual]),
+                '_catch': [h for blk in catching for h in blk],
             })
             first = False
         for qual in refs:
@@ -539,17 +778,84 @@ def steps_for(info, idx):
                 emit('·', [it.context_expr for it in s.items], s.items[0].context_expr)
                 walk(s.body)
             elif isinstance(s, ast.Try):
+                catching.append([handler_info(h) for h in s.handlers])
                 walk(s.body)
+                catching.pop()
                 for h in s.handlers:
                     walk(h.body)
                 walk(s.orelse); walk(s.finalbody)
             elif isinstance(s, ast.Expr):
                 emit('·', [s.value], s)
             else:  # raise, assert, etc. — no nested statement bodies to recurse into
+                if isinstance(s, ast.Raise) and s.exc is not None:
+                    try:
+                        seg = ast.get_source_segment(src, s)
+                    except Exception:
+                        seg = None
+                    raises.append({'t': exc_name(s.exc), 'status': http_status(s.exc),
+                                   'text': one_line(seg or unparse(s), 90),
+                                   '_catch': [h for blk in catching for h in blk]})
                 emit('·', [s], s)
 
     walk(info['node'].body)
     cache[info['qual']] = out
+    idx.raise_cache[info['qual']] = raises
+    return out
+
+
+def handler_info(h):
+    """One `except` clause: (names it catches, status it answers with, whether it raises on)."""
+    if h.type is None:
+        names = ['*']
+    elif isinstance(h.type, ast.Tuple):
+        names = [unparse(e).split('.')[-1] for e in h.type.elts]
+    else:
+        names = [unparse(h.type).split('.')[-1]]
+    status, reraises = None, False
+    for n in ast.walk(ast.Module(body=h.body, type_ignores=[])):
+        if isinstance(n, ast.Raise):
+            st = http_status(n.exc) if n.exc is not None else None
+            if st:
+                status = status or st
+            else:
+                reraises = True   # `raise` / `raise OtherError`: the error keeps going
+    return (names, status, reraises)
+
+
+def caught_by(t, handlers, idx):
+    """The handler that stops error `t`, or None if it keeps going up."""
+    for names, status, reraises in handlers:
+        if any(n in ('*', 'Exception', 'BaseException') or idx.is_sub(t, n) for n in names):
+            return None if reraises and not status else (names, status, reraises)
+    return None
+
+
+def escapes(qual, idx, _stack=None):
+    """Errors that can leave `qual`: its own uncaught `raise`s, plus whatever its callees let out
+    that no `except` around the call stops. Each is (type, status or None, origin qual, raise text)."""
+    if qual in idx.esc_cache:
+        return idx.esc_cache[qual]
+    stack = _stack or set()
+    if qual in stack:          # recursion: don't loop
+        return []
+    stack.add(qual)
+    info = idx.funcs[qual]
+    steps = steps_for(info, idx)
+    out = []
+    for r in idx.raise_cache.get(qual, []):
+        if not caught_by(r['t'], r['_catch'], idx):
+            out.append((r['t'], r['status'], qual, r['text']))
+    for st in steps:
+        cq = st.get('_qual')
+        if not cq or cq not in idx.funcs:
+            continue
+        for e in escapes(cq, idx, stack):
+            if not caught_by(e[0], st.get('_catch', []), idx):
+                out.append(e)
+    stack.discard(qual)
+    out = list(dict.fromkeys(out))
+    if not _stack or len(stack) == 0:
+        idx.esc_cache[qual] = out
     return out
 
 
@@ -575,8 +881,148 @@ def callers_of(idx, entry_qual, limit=8):
     return out
 
 
+def trace_values(order, entry_qual, idx, nid):
+    """Follow values across the calls of one endpoint.
+
+    Every value gets an origin: the (node id|name) where it first appears, plus the path into it.
+    The entry's parameters and every other function's own locals are origins; a parameter takes
+    the origin of whatever the caller passed, so `apply_coupon(subtotal, payload.coupon)` makes
+    apply_coupon's `total` the caller's `subtotal`, and its `coupon` the entry's `payload` at
+    `.coupon`. Returns ({qual: {name: [[origin, path], …]}}, {qual: [[param, text, caller title]]}).
+    """
+    facts = {q: value_facts(idx.funcs[q], idx) for q in order}
+    origins = {}
+
+    def origin_of(q, name, path=''):
+        root, pre = facts[q]['resolve'](name)
+        base = origins.get((q, root)) or {(f'{nid(q)}|{root}', '')}
+        return {(o, p + pre + path) for o, p in base}
+
+    recv = {}
+    for _ in range(3):  # callers come before callees in BFS order; a few passes settle cycles
+        changed = False
+        for q in order:
+            info = idx.funcs[q]
+            title = (f"{info['cls']}." if info['cls'] else '') + info['name']
+            for st in steps_for(info, idx):
+                cq = st['_qual']
+                if cq not in facts:
+                    continue
+                for b in st.get('bind') or []:
+                    r = recv.setdefault(cq, [])
+                    if [b['p'], b['text'], title] not in r and len(r) < 8:
+                        r.append([b['p'], b['text'], title])
+                    if 'from' not in b:
+                        continue  # computed argument: a new value, its origin is the parameter itself
+                    got = origins.setdefault((cq, b['p']), set())
+                    new = origin_of(q, b['from'], b['path']) - got
+                    if new and len(got) < 8:
+                        got |= new
+                        changed = True
+        if not changed:
+            break
+    flow = {}
+    for q in order:
+        f = facts[q]
+        names = set(f['params']) | set(f['aliases'])
+        out = {}
+        for nm in sorted(names):
+            o = origin_of(q, nm)
+            if o != {(f'{nid(q)}|{nm}', '')}:
+                out[nm] = sorted([list(x) for x in o])[:8]
+        flow[q] = out
+    return flow, recv, facts
+
+
+_PATH_TOK = re.compile(r'\.([A-Za-z_][A-Za-z0-9_]*)|\[\]')
+
+
+def field_use(entry_qual, order, flow, facts, idx, nid):
+    """{model: {field: [function titles]}} for the entry's request models: which function reads
+    which field, following the value through every call. A model handed whole to code flowsegul
+    can't see into is recorded under '*'."""
+    enode = idx.funcs[entry_qual]['node']
+    roots = {}
+    for a in enode.args.args + enode.args.kwonlyargs:
+        ms = models_in(unparse(a.annotation), idx) if a.annotation else []
+        if ms:
+            roots[f'{nid(entry_qual)}|{a.arg}'] = ms[0]
+    use = {}
+
+    def mark(model, path, who):
+        cur = model
+        toks = list(_PATH_TOK.finditer(path))
+        if not toks:
+            use.setdefault(cur, {}).setdefault('*', [])
+            if who not in use[cur]['*']:
+                use[cur]['*'].append(who)
+            return
+        for t in toks:
+            if not t.group(1):
+                continue  # [] — an element of a list keeps the list's model
+            fld = t.group(1)
+            use.setdefault(cur, {}).setdefault(fld, [])
+            if who not in use[cur][fld]:
+                use[cur][fld].append(who)
+            f = next((x for x in idx.models.get(cur, {}).get('fields', []) if x['name'] == fld), None)
+            nxt = models_in(f['type'], idx) if f else []
+            if not nxt:
+                return
+            cur = nxt[0]
+
+    for q in order:
+        info = idx.funcs[q]
+        who = (f"{info['cls']}." if info['cls'] else '') + info['name']
+        own = f'{nid(q)}|'
+        for nm, paths in facts[q]['reads'].items():
+            for o, p in (flow[q].get(nm) or [[own + nm, '']]):
+                if o in roots:
+                    for rp in paths:
+                        mark(roots[o], p + rp, who)
+        for nm, callees in facts[q]['whole'].items():
+            for o, p in (flow[q].get(nm) or [[own + nm, '']]):
+                if o in roots:
+                    # a field handed on (`round(coupon)`) is just read; a whole model handed on may
+                    # have any field read, so say where it went
+                    mark(roots[o], p, who if p else f"{who} → {', '.join(callees[:2])}()")
+    return use
+
+
+def app_status(t, idx):
+    """Status an app-level exception handler gives error `t`: an int, 0 if handled with an unknown
+    status, None if no handler covers it."""
+    for name, st in idx.app_handlers.items():
+        if idx.is_sub(t, name):
+            return st or 0
+    return None
+
+
+def statuses_for(entry_qual, idx, changed_q):
+    """What the route can answer with: its success status, every HTTPException status reachable,
+    statuses app-level handlers give, and 500 for errors nothing catches. `new` marks answers
+    that come from a changed function."""
+    node = idx.funcs[entry_qual]['node']
+    ok = 200
+    for dec in node.decorator_list:
+        if isinstance(dec, ast.Call):
+            st = next((http_status(dec) for k in dec.keywords if k.arg == 'status_code'), None)
+            ok = st or ok
+    out = {str(ok): {'code': str(ok), 'kind': 'ok', 'types': [], 'new': False}}
+    for t, st, origin, text in escapes(entry_qual, idx):
+        if st:
+            code, kind = str(st), ('bad' if st >= 500 else 'http')
+        else:
+            a = app_status(t, idx)
+            code, kind = ((str(a) if a else 'handled'), 'http') if a is not None else ('500', 'bad')
+        o = out.setdefault(code, {'code': code, 'kind': kind, 'types': [], 'new': False})
+        if t not in o['types']:
+            o['types'].append(t)
+        o['new'] = o['new'] or origin in changed_q
+    return sorted(out.values(), key=lambda o: (o['kind'] != 'ok', o['code']))
+
+
 def build_endpoint(entry_qual, idx, meta, depth, tag, changed_q=frozenset(), changed_m=frozenset(),
-                   diffs=None):
+                   diffs=None, used_by=None):
     """BFS the call tree from entry_qual into an endpoint spec, ids/fnKeys namespaced by `tag`.
 
     Nodes whose qual is in `changed_q` (or model name in `changed_m`) are flagged changed=True and
@@ -599,27 +1045,55 @@ def build_endpoint(entry_qual, idx, meta, depth, tag, changed_q=frozenset(), cha
                 col[cq] = col[q] + 1
             if cq not in seen:
                 seen.add(cq); order.append(cq)
+    flow, recv, facts = trace_values(order, entry_qual, idx, nid)
     nodes = []
     for q in order:
         info = idx.funcs[q]
         steps = []
-        for s in steps_for(info, idx):
-            s = {k: v for k, v in s.items() if k != '_qual'}
+        for s0 in steps_for(info, idx):
+            s = {k: v for k, v in s0.items() if not k.startswith('_')}
             s['target'] = f"{tag}__{s['target']}"
+            # errors the callee lets out: stopped by an `except` around this call, or passing through
+            esc, caught = [], []
+            for t, st, origin, text in escapes(s0['_qual'], idx):
+                h = caught_by(t, s0.get('_catch', []), idx)
+                if h:
+                    caught.append([t, h[1] or ''])
+                elif not st and app_status(t, idx) is None and t not in esc:
+                    esc.append(t)
+            if esc:
+                s['esc'] = esc
+            if caught:
+                s['caught'] = [list(x) for x in dict.fromkeys(map(tuple, caught))]
             steps.append(s)
         n = {
             'id': nid(q), 'fnKey': fk(q), 'col': col[q], 'entry': q == entry_qual,
-            'layer': layer_of(info['file']), 'changed': q in changed_q,
+            'layer': idx.layer(q), 'changed': q in changed_q,
             'title': (f"{info['cls']}." if info['cls'] else '') + info['name'],
             'sub': f"{info['file'].split('/')[-1]}:{info['lineno']}", 'steps': steps,
             'locals': local_names(info['node']),
         }
+        if flow.get(q):
+            n['flow'] = flow[q]
+        if recv.get(q):
+            n['recv'] = recv[q]
+        if facts[q]['reads']:
+            n['reads'] = facts[q]['reads']
+        rs = [{'t': r['t'], 'text': r['text'],
+               'esc': not r['status'] and app_status(r['t'], idx) is None
+                      and not caught_by(r['t'], r['_catch'], idx)}
+              for r in idx.raise_cache.get(q, [])]
+        if rs:
+            n['raises'] = rs
+        ub = (used_by or {}).get(q, [])
+        if len(ub) > 1:
+            n['usedBy'] = ub
         if q in diffs:
             n['base'] = diffs[q]['base']; n['diff'] = diffs[q]['diff']; n['isnew'] = diffs[q]['new']
         nodes.append(n)
     # rootless entry (no route reaches it): graft its callers as collapsed "ghost" nodes to the left,
     # so the flow is reconnected without pulling in each caller's whole tree. They're clickable/expandable.
-    if not meta.get('method'):
+    if not meta.get('route'):
         present = {n['id'] for n in nodes}
         for c in callers_of(idx, entry_qual):
             cq, cinfo, src = c['qual'], c['info'], c['step']
@@ -632,7 +1106,7 @@ def build_endpoint(entry_qual, idx, meta, depth, tag, changed_q=frozenset(), cha
                     'ret': src['ret'] if src else '', 'uses': []}
             nodes.append({
                 'id': gid, 'fnKey': fk(cq), 'col': -1, 'entry': False, 'ghost': True,
-                'layer': layer_of(cinfo['file']), 'changed': False,
+                'layer': idx.layer(cq), 'changed': False,
                 'title': (f"{cinfo['cls']}." if cinfo['cls'] else '') + cinfo['name'],
                 'sub': f"{cinfo['file'].split('/')[-1]}:{cinfo['lineno']}", 'steps': [step],
             })
@@ -644,8 +1118,9 @@ def build_endpoint(entry_qual, idx, meta, depth, tag, changed_q=frozenset(), cha
     resp_names = list(dict.fromkeys(models_in(unparse(entry_node.returns) if entry_node.returns else '', idx)))
     models_reg = collect_models(req_names + resp_names, idx, diffs, changed_m)
 
-    cand = [entry_qual] + [q for q in order if col[q] == 1]
-    uniq = list(dict.fromkeys(p for q in cand for p in idx.funcs[q]['params']))[:len(INPUT_PALETTE)]
+    # only the entry's own parameters are inputs; deeper functions take their colour from the
+    # value they were passed (trace_values), so a same-named but unrelated parameter isn't tinted
+    uniq = list(dict.fromkeys(idx.funcs[entry_qual]['params']))[:len(INPUT_PALETTE)]
     inputs = [[p, INPUT_PALETTE[k], []] for k, p in enumerate(uniq)]
     doc = ast.get_docstring(idx.funcs[entry_qual]['node']) or ''
     prefix = meta.get('prefix', '')
@@ -657,7 +1132,68 @@ def build_endpoint(entry_qual, idx, meta, depth, tag, changed_q=frozenset(), cha
         'summary': one_line(doc.split('\n')[0]) if doc else '',
         'inputs': inputs, 'nodes': nodes, 'modelEdges': [],
         'reqModels': req_names, 'respModels': resp_names, 'models': models_reg,
+        'fieldUse': field_use(entry_qual, order, flow, facts, idx, nid),
+        'statuses': statuses_for(entry_qual, idx, changed_q) if meta.get('route') else [],
     }
+
+
+def _is_migration(rel):
+    parts = rel.lower().split('/')
+    return any(p in ('alembic', 'migrations') for p in parts[:-1]) and not parts[-1].startswith('__')
+
+
+def migration_ops(src):
+    """One line per schema operation in upgrade(), e.g. `op.add_column("users", sa.Column("email", …))`."""
+    try:
+        tree = ast.parse(src)
+    except SyntaxError:
+        return []
+    fn = next((n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+               and n.name == 'upgrade'), None)
+    if not fn:
+        return []
+    ops = []
+    for n in ast.walk(fn):
+        if (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                and isinstance(n.func.value, ast.Name) and n.func.value.id in ('op', 'batch_op')):
+            ops.append((n.lineno, one_line(unparse(n), 110)))
+    return [o for _, o in sorted(ops)][:40]
+
+
+def migration_entries(repo, tag, base, ref, changed_files, merge_base, code_out):
+    """Changed Alembic/Django-style migration files: they are never called from a route (and are
+    skipped when indexing), so without this a migration in the diff would be invisible. Each becomes
+    one node: its upgrade() operations as rows, and the whole file as a diff."""
+    import difflib
+    mb = diff_base(repo, base, ref, merge_base)
+    out = []
+    for rel in sorted(f for f in changed_files if _is_migration(f)):
+        head_src = git(repo, 'show', f'{ref}:{rel}') if ref else (
+            open(os.path.join(repo, rel)).read() if os.path.isfile(os.path.join(repo, rel)) else '')
+        base_src = git(repo, 'show', f'{mb}:{rel}')
+        if head_src == base_src:
+            continue
+        deleted = not head_src
+        src = head_src or base_src
+        try:
+            doc = ast.get_docstring(ast.parse(src)) or ''
+        except SyntaxError:
+            doc = ''
+        name = os.path.basename(rel)[:-3]
+        title = one_line(doc.split('\n')[0], 70) if doc else name
+        diff = '\n'.join(difflib.unified_diff(base_src.splitlines(), head_src.splitlines(),
+                                               fromfile=f'{rel} (base)', tofile=f'{rel} (branch)',
+                                               lineterm='', n=3 if base_src and head_src else 100000))
+        nid = f'{tag}__mig_{nid_for(rel)}'
+        fkey = f'{tag}::mig:{rel}'
+        code_out[fkey] = {'file': rel, 'lineno': 1, 'name': name, 'cls': None, 'code': head_src}
+        node = {'id': nid, 'fnKey': fkey, 'col': 0, 'entry': True, 'layer': 'migration',
+                'changed': True, 'deleted': deleted, 'isnew': not base_src, 'title': title,
+                'sub': rel, 'steps': [], 'notes': migration_ops(src), 'base': base_src, 'diff': diff}
+        out.append({'id': nid, 'group': f'{tag} · migrations', 'method': 'mig', 'other': True,
+                    'path': name, 'title': title, 'summary': rel, 'inputs': [], 'nodes': [node],
+                    'modelEdges': [], 'reqModels': [], 'respModels': [], 'models': {}})
+    return out
 
 
 def process_repo(repo, args):
@@ -678,7 +1214,7 @@ def process_repo(repo, args):
         return [], {}
 
     # function-level change detection (which defs actually differ from base)
-    changed_q, changed_m, diffs, deleted = set(), set(), {}, {}
+    changed_q, changed_m, diffs, deleted, cf = set(), set(), {}, {}, set()
     if changed:
         cf = changed_rel_files(repo, base, ref, merge_base=not exact)
         changed_q, changed_m, diffs, deleted = changed_defs(idx, repo, base, ref, cf, merge_base=not exact)
@@ -697,7 +1233,14 @@ def process_repo(repo, args):
             return reach, True
         return reach, False
 
-    build = lambda q, meta: build_endpoint(q, idx, meta, args.depth, tag, changed_q, changed_m, diffs)
+    # which routes reach each function (unbounded depth), for "used by N routes"
+    route_reach = {q: reachable_quals(q, idx, 10 ** 6) for q, *_ in idx.routes}
+    used_by = {}
+    for q, m, p, pre in idx.routes:
+        for f in route_reach[q]:
+            used_by.setdefault(f, []).append(f'{m} {p}')
+    build = lambda q, meta: build_endpoint(q, idx, meta, args.depth, tag, changed_q, changed_m, diffs,
+                                           used_by)
     rendered_quals = lambda e: {n['fnKey'].split('::', 1)[1] for n in e['nodes']
                                 if not n['fnKey'].split('::', 1)[1].startswith('model:')}
     del_code = {}  # code entries for synthetic DELETED nodes (no HEAD source to look up)
@@ -706,11 +1249,24 @@ def process_repo(repo, args):
         endpoints = [build(q, {}) for name in args.entries
                      for q in idx.by_simple.get(name, []) + idx.by_method.get(name, [])]
     elif not changed:
-        endpoints = [build(q, {'method': m, 'path': p, 'prefix': pre})
+        endpoints = [build(q, {'method': m, 'path': p, 'prefix': pre, 'route': True})
                      for q, m, p, pre in idx.routes]
     else:  # --changed: routes whose flow was changed somehow, then a coverage pass for the rest
-        endpoints = [build(q, {'method': m, 'path': p, 'prefix': pre})
-                     for q, m, p, pre in idx.routes if flow_touches_changed(q)[1]]
+        hit = [(q, m, p, pre) for q, m, p, pre in idx.routes if flow_touches_changed(q)[1]]
+        endpoints = [build(q, {'method': m, 'path': p, 'prefix': pre, 'route': True})
+                     for q, m, p, pre in hit]
+        # edited vs only affected: a route is edited if its handler changed, or it reaches a changed
+        # function no other route reaches. The rest only reach changed code shared with an edited
+        # route; they go in their own group so a reviewer sees what else the change touches.
+        hitq = {h[0] for h in hit}
+        routes_of = lambda f: {r for r in hitq if f in route_reach[r]}
+        edited = {r for r in hitq if r in changed_q
+                  or any(routes_of(f) == {r} for f in route_reach[r] & changed_q)}
+        if edited:
+            for e, (q, *_rest) in zip(endpoints, hit):
+                if q not in edited:
+                    e['affected'] = True
+                    e['group'] = f'{tag} · affected, not edited'
         # coverage guarantee: every changed function must appear as a node in ≥1 chart. Any changed
         # def not actually rendered (e.g. deeper than --depth, or reached only by non-route code)
         # becomes its own root chart, so nothing in the diff is invisible.
@@ -718,7 +1274,10 @@ def process_repo(repo, args):
         for q in sorted(changed_q - shown):
             if q not in idx.funcs or q in shown:
                 continue
-            e = build(q, {'groupOverride': f'{tag} ⟂ changed defs (no route)'})
+            kind = idx.layer(q)
+            e = build(q, {'groupOverride': f'{tag} · not reached from a route',
+                          'method': _KIND_BADGE.get(kind, 'fn')})
+            e['other'] = True
             endpoints.append(e)
             shown |= rendered_quals(e)
         # class coverage: a changed class (schema / ORM model) that isn't shown as a chip and whose
@@ -733,13 +1292,14 @@ def process_repo(repo, args):
                 continue
             m = idx.models[name]
             node = {'id': f'{tag}__model_{nid_for(name)}', 'fnKey': f'{tag}::model:{name}',
-                    'col': 0, 'entry': True, 'layer': 'model', 'changed': True, 'title': name,
+                    'col': 0, 'entry': True, 'changed': True, 'title': name,
+                    'layer': (lambda k: k if k in ('model', 'schema') else 'model')(layer_of(m['file'], idx.layers)),
                     'sub': f"{m['file'].split('/')[-1]}:{m['lineno']}", 'steps': []}
             d = diffs.get('model:' + name)
             if d:
                 node['base'] = d['base']; node['diff'] = d['diff']; node['isnew'] = d['new']
             endpoints.append({
-                'id': node['id'], 'group': f'{tag} ⟂ changed defs (no route)', 'method': 'class',
+                'id': node['id'], 'group': f'{tag} · not reached from a route', 'method': 'class', 'other': True,
                 'path': name, 'title': name, 'summary': 'changed class / data model',
                 'inputs': [], 'nodes': [node], 'modelEdges': [], 'reqModels': [], 'respModels': [],
                 'models': collect_models([name], idx, diffs, changed_m)})
@@ -751,22 +1311,23 @@ def process_repo(repo, args):
                 continue
             nidd, fkey = f'{tag}__del_{nid_for(ikey)}', f'{tag}::del:{ikey}'
             node = {'id': nidd, 'fnKey': fkey, 'col': 0, 'entry': True, 'changed': True,
-                    'deleted': True, 'layer': 'model' if dd['is_model'] else 'helper',
+                    'deleted': True, 'layer': 'model' if dd['is_model'] else layer_of(dd['file'], idx.layers),
                     'title': dd['name'], 'sub': f"{dd['file'].split('/')[-1]}:{dd['lineno']}",
                     'steps': [], 'base': dd['base'], 'diff': dd['diff'], 'isnew': False}
             del_code[fkey] = {'file': dd['file'], 'lineno': dd['lineno'], 'name': dd['name'],
                               'cls': None, 'code': ''}
             endpoints.append({
-                'id': nidd, 'group': f'{tag} ⟂ changed defs (no route)', 'method': 'del',
+                'id': nidd, 'group': f'{tag} · not reached from a route', 'method': 'del', 'other': True,
                 'path': dd['name'], 'title': dd['name'], 'summary': 'deleted definition',
                 'inputs': [], 'nodes': [node], 'modelEdges': [], 'reqModels': [], 'respModels': [],
                 'models': {}})
+        endpoints += migration_entries(repo, tag, base, ref, cf, not exact, del_code)
     code = dict(del_code)
     for e in endpoints:
         for n in e['nodes']:
             q = n['fnKey'].split('::', 1)[1]
-            if q.startswith('del:'):
-                continue  # DELETED node — code already provided by del_code
+            if q.startswith('del:') or q.startswith('mig:'):
+                continue  # DELETED / migration node — code already provided by del_code
             if q.startswith('model:'):
                 m = idx.models[q.split('model:', 1)[1]]
                 code[n['fnKey']] = {'file': m['file'], 'lineno': m['lineno'],
@@ -776,6 +1337,141 @@ def process_repo(repo, args):
                 code[n['fnKey']] = {'file': info['file'], 'lineno': info['lineno'],
                                     'name': info['name'], 'cls': info['cls'], 'code': info['code']}
     return endpoints, code
+
+
+def list_refs(repo, limit=40):
+    """Branches, tags and recent commits of `repo`, for the page's Compare picker."""
+    def lines(*a):
+        return [l for l in git(repo, *a).split('\n') if l]
+    cur = git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')
+    heads = lines('for-each-ref', '--sort=-committerdate', '--format=%(refname:short)\t%(committerdate:relative)', 'refs/heads')
+    remotes = lines('for-each-ref', '--sort=-committerdate', '--format=%(refname:short)\t%(committerdate:relative)', 'refs/remotes')
+    tags = lines('for-each-ref', '--sort=-creatordate', '--format=%(refname:short)\t%(creatordate:relative)', 'refs/tags')
+    commits = lines('log', f'-{limit}', '--format=%h\t%s\t%cr\t%an', 'HEAD')
+    split = lambda rows, keys: [dict(zip(keys, r.split('\t'))) for r in rows]
+    return {'current': cur,
+            'branches': split(heads, ('name', 'when')),
+            'remotes': [r for r in split(remotes, ('name', 'when')) if not r['name'].endswith('/HEAD')][:40],
+            'tags': split(tags, ('name', 'when'))[:20],
+            'commits': split(commits, ('sha', 'subject', 'when', 'author'))}
+
+
+def ref_exists(repo, ref):
+    return bool(ref) and not ref.startswith('-') and bool(
+        git(repo, 'rev-parse', '--verify', '--quiet', f'{ref}^{{commit}}'))
+
+
+def range_meta(args):
+    """What this run shows, in the Compare picker's terms: mode all | branch | exact."""
+    if args.commit_from:
+        return {'mode': 'exact', 'base': args.commit_from, 'head': args.commit_to or ''}
+    if args.changed:
+        return {'mode': 'branch', 'base': args.base, 'head': args.branch or ''}
+    return {'mode': 'all', 'base': args.base, 'head': args.branch or ''}
+
+
+def generate(args, repos, log=True):
+    all_eps, all_code = [], {}
+    for repo in repos:
+        if log:
+            print(f'  scanning {os.path.basename(repo)}…', file=sys.stderr, flush=True)
+        eps, code = process_repo(repo, args)
+        all_eps += eps; all_code.update(code)
+    # routes first, then the "not reached from a route" / migrations groups; same groups contiguous
+    all_eps.sort(key=lambda e: (bool(e.get('other')), bool(e.get('affected')), e.get('group', '')))
+    return all_eps, all_code
+
+
+def render(args, repos, eps, code, serve=False):
+    meta = dict(range_meta(args), repos=[os.path.basename(r) for r in repos], serve=serve,
+                refs=list_refs(repos[0]) if repos else {})
+    blob = json.dumps({'code': code, 'graph': {'endpoints': eps}, 'meta': meta}, ensure_ascii=False)
+    blob = blob.replace('</', '<\\/')  # source text may contain "</script>"; keep it inside the JSON
+    tpl = open(args.template).read()
+    if '__DATA__' not in tpl:
+        sys.exit('template missing __DATA__ placeholder')
+    tpl = re.sub(r'<title>.*?</title>', lambda _: f'<title>{html.escape(args.title)}</title>', tpl, count=1)
+    return tpl.replace('__DATA__', blob)
+
+
+def serve(args, repos):
+    """Local-only server so the page can switch what it compares: `/?mode=branch&base=main&head=feat`.
+    Each range is generated on first request and cached; `&refresh=1` rebuilds it."""
+    import http.server, socketserver, threading, urllib.parse, webbrowser
+    cache, lock = {}, threading.Lock()
+
+    def args_for(q):
+        mode = q.get('mode', range_meta(args)['mode'])
+        base = q.get('base', args.commit_from or args.base) or 'main'
+        head = q.get('head', args.commit_to or args.branch or '') or ''
+        for ref in (base, head):
+            if ref and not any(ref_exists(r, ref) for r in repos):
+                raise ValueError(f'unknown ref: {ref}')
+        a = copy.copy(args)
+        a.changed, a.branch, a.commit_from, a.commit_to, a.base = False, head or None, None, None, base
+        if mode == 'branch':
+            a.changed = True
+        elif mode == 'exact':
+            a.commit_from, a.commit_to, a.branch = base, head or None, None
+        return a
+
+    class H(http.server.BaseHTTPRequestHandler):
+        def send(self, status, body, ctype='text/html; charset=utf-8'):
+            data = body.encode('utf-8')
+            self.send_response(status)
+            self.send_header('Content-Type', ctype)
+            self.send_header('Content-Length', str(len(data)))
+            self.send_header('Cache-Control', 'no-store')
+            self.end_headers()
+            self.wfile.write(data)
+
+        def do_GET(self):
+            # only answer to our own origin: stops a page on another site from reading your source
+            # through DNS rebinding (its Host header would name that site, not 127.0.0.1)
+            host = (self.headers.get('Host') or '').split(':')[0]
+            if host not in ('127.0.0.1', 'localhost'):
+                return self.send(403, 'forbidden', 'text/plain')
+            u = urllib.parse.urlparse(self.path)
+            q = {k: v[-1] for k, v in urllib.parse.parse_qs(u.query).items()}
+            try:
+                if u.path == '/api/refs':
+                    return self.send(200, json.dumps(list_refs(repos[0])), 'application/json')
+                if u.path != '/':
+                    return self.send(404, 'not found', 'text/plain')
+                a = args_for(q)
+                key = (a.changed, a.base, a.branch, a.commit_from, a.commit_to)
+                with lock:
+                    if q.get('refresh') or key not in cache:
+                        # the working tree moves under us, so only cache ranges between fixed refs
+                        eps, code = generate(a, repos, log=False)
+                        page = render(a, repos, eps, code, serve=True)
+                        if a.branch or a.commit_to:
+                            cache[key] = page
+                    else:
+                        page = cache[key]
+                self.send(200, page)
+            except ValueError as e:
+                self.send(400, str(e), 'text/plain')
+
+        def log_message(self, fmt, *a):
+            print('  ' + (fmt % a), file=sys.stderr)
+
+    class Server(socketserver.ThreadingMixIn, http.server.HTTPServer):
+        daemon_threads = True
+        allow_reuse_address = True
+
+    try:
+        srv = Server(('127.0.0.1', args.port), H)
+    except OSError:
+        srv = Server(('127.0.0.1', 0), H)  # port taken: let the OS pick one
+    url = f'http://127.0.0.1:{srv.server_address[1]}/'
+    print(f'flowsegul serving {", ".join(os.path.basename(r) for r in repos)} at {url}  (Ctrl+C to stop)')
+    if not args.no_open:
+        threading.Timer(0.3, lambda: webbrowser.open(url)).start()
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        print()
 
 
 def main():
@@ -797,29 +1493,25 @@ def main():
     ap.add_argument('--title', default='Call-Flow Explorer')
     ap.add_argument('--template', default=os.path.join(os.path.dirname(__file__), 'template.html'))
     ap.add_argument('--out', default=os.path.join(tempfile.gettempdir(), 'flowsegul.html'))
+    ap.add_argument('--serve', action='store_true',
+                    help='run a local server instead of writing a file, so the page can switch '
+                    'between branches, commits and ranges itself')
+    ap.add_argument('--port', type=int, default=8765, help='port for --serve (default 8765)')
+    ap.add_argument('--no-open', action='store_true', help='with --serve, do not open a browser')
     args = ap.parse_args()
 
     repos = args.repos or discover_repos(args.workspace or auto_workspace())
     repos = [os.path.abspath(r) for r in repos]
     if not repos:
         sys.exit('No Python repos found. Pass --repo DIR or run from your repos umbrella.')
+    if args.serve:
+        return serve(args, repos)
 
-    all_eps, all_code = [], {}
-    for repo in repos:
-        print(f'  scanning {os.path.basename(repo)}…', file=sys.stderr, flush=True)
-        eps, code = process_repo(repo, args)
-        all_eps += eps; all_code.update(code)
+    all_eps, all_code = generate(args, repos)
     if not all_eps:
         hint = ' changed on this branch' if (args.changed or args.commit_from) else ''
         sys.exit(f'No entries found{hint} across: {", ".join(os.path.basename(r) for r in repos)}.')
-    all_eps.sort(key=lambda e: e.get('group', ''))  # keep same-group endpoints contiguous
-
-    blob = json.dumps({'code': all_code, 'graph': {'endpoints': all_eps}}, ensure_ascii=False)
-    tpl = open(args.template).read()
-    if '__DATA__' not in tpl:
-        sys.exit('template missing __DATA__ placeholder')
-    tpl = tpl.replace('<title>KPI Endpoints — Call-Flow Explorer</title>', f'<title>{args.title}</title>', 1)
-    open(args.out, 'w').write(tpl.replace('__DATA__', blob))
+    open(args.out, 'w').write(render(args, repos, all_eps, all_code))
     groups = {}
     for e in all_eps:
         groups[e['group']] = groups.get(e['group'], 0) + 1
