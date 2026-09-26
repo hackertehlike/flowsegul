@@ -84,9 +84,52 @@ kbd{font:600 10.5px/1 var(--mono);padding:3px 5px;border-radius:5px;border:1px s
 
 .top{display:flex;align-items:center;gap:14px;height:54px;padding:0 12px 0 14px;border-bottom:1px solid var(--line);background:var(--panel);flex:none;z-index:6;position:relative}
 .brand{display:flex;align-items:center;gap:9px;flex:none;width:224px;min-width:0}
+@media (max-width:1180px){.brand{width:auto}.brand h1 small{display:none}}
 .logo{width:26px;height:26px;flex:none;border-radius:8px;background:linear-gradient(135deg,var(--accent),#b05bf0);display:grid;place-items:center;box-shadow:0 2px 8px -2px var(--accent)}
 .brand h1{margin:0;font-size:14px;font-weight:650;letter-spacing:-.015em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .brand h1 small{display:block;font-size:10.5px;font-weight:500;color:var(--muted);letter-spacing:0}
+.rangewrap{position:relative;flex:none}
+.rangebtn{display:inline-flex;align-items:center;gap:7px;height:32px;padding:0 9px 0 10px;border:1px solid var(--line);border-radius:9px;background:var(--panel2);color:var(--ink2);cursor:pointer;font:600 12px/1 var(--mono);max-width:300px;transition:border-color .12s}
+.rangebtn:hover,.rangebtn.on{border-color:var(--accent)}
+.rangebtn svg{width:15px;height:15px;flex:none;color:var(--accent)}
+.rangebtn .chev{width:12px;height:12px;color:var(--muted)}
+.rangebtn span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rangebtn .rl-arrow{color:var(--faint);font-weight:400}
+.rangepop{position:absolute;top:calc(100% + 8px);left:0;width:440px;background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow-lg);padding:14px 16px 14px;z-index:30;animation:pop .18s var(--ease)}
+.rangepop[hidden]{display:none}
+.rp-h{font:650 10.5px/1 var(--sans);letter-spacing:.07em;text-transform:uppercase;color:var(--faint);margin-bottom:8px}
+.rp-mode{display:flex;width:100%;margin:0}
+.rp-mode .segb{flex:1;padding:7px 6px;white-space:nowrap}
+.rp-help{margin:9px 0 12px;color:var(--muted);font-size:12px;min-height:2.9em}
+.rp-row{display:grid;grid-template-columns:70px 1fr;align-items:center;gap:10px;margin-bottom:8px}
+.rp-row[hidden]{display:none}
+.rp-row label{font-size:12px;font-weight:600;color:var(--ink2)}
+.combo{position:relative}
+.combo input{width:100%;height:32px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);padding:0 10px;font:12.5px var(--mono);color:var(--ink);outline:none}
+.combo input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.combo input.bad{border-color:var(--del)}
+.combolist{position:absolute;left:0;right:0;top:calc(100% + 4px);max-height:260px;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow-lg);padding:4px;z-index:31}
+.combolist[hidden]{display:none}
+.combolist h6{margin:6px 8px 3px;font:650 9.5px/1 var(--sans);letter-spacing:.07em;text-transform:uppercase;color:var(--faint)}
+.copt{display:flex;align-items:baseline;gap:8px;padding:6px 8px;border-radius:6px;cursor:pointer;font-size:12px}
+.copt.act,.copt:hover{background:var(--accent-soft)}
+.copt b{font:600 12px var(--mono);color:var(--ink);white-space:nowrap}
+.copt span{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+.copt i{font-style:normal;color:var(--faint);font-size:11px;white-space:nowrap}
+.rp-foot{display:flex;align-items:center;gap:10px;margin-top:12px}
+.rp-note{flex:1;font-size:11.5px;color:var(--muted)}
+.rp-go{height:32px;padding:0 16px;border:0;border-radius:8px;background:var(--accent);color:#fff;font-weight:600;cursor:pointer}
+.rp-go:hover{filter:brightness(1.06)}
+.rp-cmd{margin-top:12px;padding-top:12px;border-top:1px solid var(--line);font-size:12px;color:var(--muted)}
+.rp-cmd[hidden]{display:none}
+.rp-cmdline{display:flex;gap:6px;margin-top:8px}
+.rp-cmdline code{flex:1;font:12px/1.4 var(--mono);background:var(--panel2);border:1px solid var(--line);border-radius:7px;padding:7px 9px;color:var(--ink);overflow-wrap:anywhere}
+.rp-cmdline button{border:1px solid var(--line);background:var(--panel2);border-radius:7px;padding:0 10px;cursor:pointer;font-size:12px}
+.loading{position:fixed;inset:0;z-index:45;display:grid;place-items:center;background:color-mix(in srgb,var(--bg) 70%,transparent);backdrop-filter:blur(2px)}
+.loading[hidden]{display:none}
+.loading div{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 16px;box-shadow:var(--shadow);font-weight:600}
+.loading i{width:16px;height:16px;border-radius:50%;border:2px solid var(--accent-soft);border-top-color:var(--accent);animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
 .crumb{flex:1;min-width:0;display:flex;align-items:center;gap:10px;padding-left:14px;border-left:1px solid var(--line);height:30px}
 .crumb .path{font:600 13px/1.2 var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;min-width:40px}
 .crumb .sum{color:var(--muted);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1 1 0;min-width:0}
@@ -137,6 +180,7 @@ body.noside .side{margin-left:-252px}
 .m.GET{background:var(--m-get-bg);color:var(--m-get)}.m.POST{background:var(--m-post-bg);color:var(--m-post)}
 .m.PUT{background:var(--m-put-bg);color:var(--m-put)}.m.PATCH{background:var(--m-patch-bg);color:var(--m-patch)}
 .m.DELETE{background:var(--m-delete-bg);color:var(--m-delete)}
+.m.DEL{background:var(--m-delete-bg);color:var(--m-delete)}.m.MIG{background:color-mix(in srgb,#be185d 15%,var(--panel));color:color-mix(in srgb,#be185d 80%,var(--ink))}
 .crumb .m{width:auto;padding:4px 6px}
 .nomatch{padding:18px 10px;color:var(--muted);font-size:12.5px;text-align:center}
 /* review mode: check off flows you've already looked at */
@@ -192,6 +236,11 @@ body.review .revbar{display:block}
 .lay.repository{background:var(--l-repository-bg);color:var(--l-repository)}
 .lay.helper{background:var(--l-helper-bg);color:var(--l-helper)}
 .lay.external{background:var(--l-external-bg);color:var(--l-external)}
+.lay.helper,.lay.util{--lc:#0e8a8a}.lay.schema{--lc:#6366f1}.lay.factory{--lc:#c2410c}.lay.task{--lc:#a16207}
+.lay.config{--lc:#64748b}.lay.migration{--lc:#be185d}
+.lay[style],.lay.helper,.lay.util,.lay.schema,.lay.factory,.lay.task,.lay.config,.lay.migration{background:color-mix(in srgb,var(--lc) 15%,var(--panel));color:color-mix(in srgb,var(--lc) 78%,var(--ink))}
+.node.migration{border-style:solid}
+.step.note{border-left-color:color-mix(in srgb,#be185d 55%,var(--line2));color:var(--ink2)}
 .node.model{border-style:dashed}
 .node.external .nhead{background:repeating-linear-gradient(135deg,transparent 0 6px,var(--l-external-bg) 6px 8px)}
 .ntitle{font:600 12.5px/1.3 var(--mono);flex:1;min-width:0;overflow-wrap:anywhere}
@@ -328,6 +377,16 @@ body.nomap .minimap{display:none}
   <span class="logo"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 4c5 0 5 8 10 8" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/><circle cx="3" cy="4" r="2.1" fill="#fff"/><circle cx="13" cy="12" r="2.1" fill="#ffd08a"/></svg></span>
   <h1 id="apptitle">Call-Flow Explorer<small>flowsegul</small></h1>
  </div>
+ <div class="rangewrap"><button class="rangebtn" id="rangebtn" aria-haspopup="dialog" data-tip="What to compare  (G)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="4" cy="4" r="1.8"/><circle cx="4" cy="12" r="1.8"/><circle cx="12" cy="8" r="1.8"/><path d="M4 5.8v4.4M10.2 8H8a4 4 0 0 1-4-3.2"/></svg><span id="rangelabel"></span><svg class="chev" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 6 4 4 4-4"/></svg></button>
+  <div class="rangepop" id="rangepop" hidden role="dialog" aria-label="Compare">
+   <div class="rp-h">Show</div>
+   <div class="seg rp-mode" id="rpmode"><button class="segb" data-mode="all">Everything</button><button class="segb" data-mode="branch">Branch changes</button><button class="segb" data-mode="exact">Commit range</button></div>
+   <p class="rp-help" id="rphelp"></p>
+   <div class="rp-row" id="rpbaserow"><label for="rpbase" id="rpbaselbl">Base</label><div class="combo"><input id="rpbase" autocomplete="off" spellcheck="false"><div class="combolist" hidden></div></div></div>
+   <div class="rp-row"><label for="rphead" id="rpheadlbl">Compare</label><div class="combo"><input id="rphead" autocomplete="off" spellcheck="false" placeholder="working tree"><div class="combolist" hidden></div></div></div>
+   <div class="rp-foot"><span class="rp-note" id="rpnote"></span><button class="rp-go" id="rpgo">Show</button></div>
+   <div class="rp-cmd" id="rpcmd" hidden><div>This is a saved page, so it can't switch on its own. Run this in your repo, or start <code>flowsegul serve</code> to switch from here:</div><div class="rp-cmdline"><code id="rpcmdtext"></code><button id="rpcopy">Copy</button></div></div>
+  </div></div>
  <div class="crumb" id="epinfo"></div>
  <div class="tools">
   <button class="tb" id="codeAll" data-tip="Show / hide all code  (C)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 4.5 2 8l3.5 3.5M10.5 4.5 14 8l-3.5 3.5"/></svg><span class="lbl">Code</span></button>
@@ -346,7 +405,7 @@ body.nomap .minimap{display:none}
  </nav>
  <div class="stage" id="stage">
    <div id="world"><svg id="edges"></svg></div>
-   <div class="empty" id="empty" hidden><div><svg width="64" height="48" viewBox="0 0 64 48" fill="none"><rect x="2" y="6" width="22" height="14" rx="4" stroke="currentColor" stroke-width="1.5"/><rect x="40" y="28" width="22" height="14" rx="4" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 3"/><path d="M24 13c10 0 6 22 16 22" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 3"/></svg><b>Nothing to draw</b>No endpoints were found for this run.</div></div>
+   <div class="empty" id="empty" hidden><div><svg width="64" height="48" viewBox="0 0 64 48" fill="none"><rect x="2" y="6" width="22" height="14" rx="4" stroke="currentColor" stroke-width="1.5"/><rect x="40" y="28" width="22" height="14" rx="4" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 3"/><path d="M24 13c10 0 6 22 16 22" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 3"/></svg><b id="emptyh">Nothing to draw</b><span id="emptyp">No endpoints were found for this run.</span></div></div>
    <div class="float chgnav" id="chgnav" hidden><button id="chgprev" data-tip="Previous  (⇧N)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 10 4-4 4 4"/></svg></button><span id="chglabel"></span><button id="chgnext" data-tip="Next  (N)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 6 4 4 4-4"/></svg></button></div>
    <details class="float legend" id="legend"></details>
    <div class="float dock">
@@ -363,6 +422,7 @@ body.nomap .minimap{display:none}
    <div class="drawer" id="drawer" hidden></div>
  </div>
 </div>
+<div class="loading" id="loading" hidden><div><i></i><span>Building the graph…</span></div></div>
 <div class="scrim" id="helppop" hidden><div class="sheet" role="dialog" aria-label="Shortcuts and tips">
  <h2>How to read this map</h2>
  <p>Each box is a function. Endpoints sit on the left and fan out to whatever they call. Every value keeps one colour everywhere it travels.</p>
@@ -372,6 +432,7 @@ body.nomap .minimap{display:none}
   <div class="how">Click a row to jump to that call site in the code. Click an underlined call in the code to fly to its box.</div>
   <div class="how">Solid arrows carry arguments in. Dashed arrows carry the typed return value back.</div>
   <h5>Keys</h5>
+  <div class="kr"><span>Change what's compared</span><span><kbd>G</kbd></span></div>
   <div class="kr"><span>Filter endpoints</span><span><kbd>/</kbd><kbd>⌘K</kbd></span></div>
   <div class="kr"><span>Next / previous endpoint</span><span><kbd>J</kbd><kbd>K</kbd></span></div>
   <div class="kr"><span>Fit to screen</span><span><kbd>F</kbd><kbd>⇧1</kbd></span></div>
@@ -522,6 +583,7 @@ function build(ep){
    const body=el('div','nbody');
    // one row per statement; extra calls in the same statement have no expr — they still get an
    // arrow (edge), but we don't render a blank duplicate row for them.
+   (n.notes||[]).forEach(t=>body.appendChild(el('div','step note',esc(t))));
    (n.steps||[]).forEach(s=>{if(s.expr==='')return;const row=renderStep(s,varColor);if(s.target&&nameById[s.target])row.dataset.callee=nameById[s.target];body.appendChild(row);});
    if(c.code||n.diff||n.base!=null){   // deleted nodes have no HEAD code but do have a removal diff
      const pre=el('pre','code');
@@ -970,6 +1032,80 @@ $('#q').addEventListener('keydown',e=>{
 });
 function stepEp(delta){const vis=epEls.filter(x=>!x.d.hidden);if(!vis.length)return;let i=vis.findIndex(x=>x.ep===curEp);i=i<0?0:(i+delta+vis.length)%vis.length;selectEp(vis[i].ep,vis[i].d);}
 
+// ── compare picker: everything at a ref, a branch vs its base, or an exact commit range ──
+const META=Object.assign({mode:'all',base:'main',head:'',serve:false,refs:{}},DATA.meta||{});
+let REFS=META.refs||{};
+const MODE_HELP={
+ all:'Every route, as the code stands at the ref you pick. Leave it empty for your working tree.',
+ branch:'Only flows touched by the changes on a branch since it forked from the base, like a pull request.',
+ exact:'Only what changed from one commit to another, compared directly (no merge-base).'};
+function rangeLabel(m){
+ const h=m.head||'working tree';
+ if(m.mode==='all')return '<span>'+esc(h)+'</span>';
+ return '<span>'+esc(m.base)+' <span class="rl-arrow">'+(m.mode==='exact'?'→':'…')+'</span> '+esc(h)+'</span>';
+}
+$('#rangelabel').outerHTML=rangeLabel(META).replace('<span>','<span id="rangelabel">');
+let rpMode=META.mode;
+function setRpMode(m){rpMode=m;document.querySelectorAll('#rpmode .segb').forEach(b=>b.classList.toggle('on',b.dataset.mode===m));
+ $('#rphelp').textContent=MODE_HELP[m];$('#rpbaserow').hidden=m==='all';
+ $('#rpbaselbl').textContent=m==='exact'?'From':'Base';$('#rpheadlbl').textContent=m==='all'?'At':m==='exact'?'To':'Compare';updateCmd();}
+document.querySelectorAll('#rpmode .segb').forEach(b=>b.onclick=()=>setRpMode(b.dataset.mode));
+function shq(s){return /^[\w.\/@:^~+-]+$/.test(s)?s:"'"+s.replace(/'/g,"'\\''")+"'";}
+function cmdFor(mode,base,head){
+ if(mode==='exact')return 'flowsegul --from '+shq(base)+(head?' --to '+shq(head):'');
+ if(mode==='branch')return 'flowsegul --changed'+(base&&base!=='main'?' --base '+shq(base):'')+(head?' --branch '+shq(head):'');
+ return 'flowsegul'+(head?' --branch '+shq(head):'');
+}
+function updateCmd(){const base=$('#rpbase').value.trim(),head=$('#rphead').value.trim();$('#rpcmdtext').textContent=cmdFor(rpMode,base,head);}
+// suggestion list: branches, remote branches, tags and recent commits (with their message)
+function comboOpts(q,forHead){
+ q=q.toLowerCase();const hit=(...xs)=>!q||xs.some(x=>(x||'').toLowerCase().includes(q));const g=[];
+ const sec=(title,rows)=>{if(rows.length)g.push({title,rows:rows.slice(0,12)});};
+ if(forHead&&hit('working tree','uncommitted'))sec('Local',[{v:'',name:'working tree',desc:'including uncommitted edits'}]);
+ sec('Branches',(REFS.branches||[]).filter(r=>hit(r.name)).map(r=>({v:r.name,name:r.name,desc:r.name===REFS.current?'checked out':'',when:r.when})));
+ sec('Remote branches',(REFS.remotes||[]).filter(r=>hit(r.name)).map(r=>({v:r.name,name:r.name,when:r.when})));
+ sec('Tags',(REFS.tags||[]).filter(r=>hit(r.name)).map(r=>({v:r.name,name:r.name,when:r.when})));
+ sec('Recent commits',(REFS.commits||[]).filter(r=>hit(r.sha,r.subject,r.author)).map(r=>({v:r.sha,name:r.sha,desc:r.subject,when:r.when})));
+ return g;
+}
+function setupCombo(inp,forHead){
+ const list=inp.nextElementSibling;let act=-1,items=[];
+ const draw=()=>{document.querySelectorAll('.combolist').forEach(l=>{if(l!==list)l.hidden=true;});const g=comboOpts(inp.value.trim(),forHead);items=[];
+   list.innerHTML=g.map(s=>'<h6>'+esc(s.title)+'</h6>'+s.rows.map(r=>{items.push(r);return '<div class="copt" data-i="'+(items.length-1)+'"><b>'+esc(r.name)+'</b><span>'+esc(r.desc||'')+'</span><i>'+esc(r.when||'')+'</i></div>';}).join('')).join('')||'<div class="copt"><span>No matching refs. Any branch, tag or commit hash works.</span></div>';
+   list.hidden=false;act=-1;};
+ const pick=r=>{inp.value=r.v;list.hidden=true;inp.classList.remove('bad');updateCmd();};
+ // open on click or typing, not on focus, so opening the picker doesn't cover the next field
+ inp.addEventListener('click',draw);inp.addEventListener('input',()=>{draw();updateCmd();});
+ inp.addEventListener('blur',()=>setTimeout(()=>list.hidden=true,150));
+ list.addEventListener('mousedown',e=>{const o=e.target.closest('.copt[data-i]');if(o){e.preventDefault();pick(items[+o.dataset.i]);}});
+ inp.addEventListener('keydown',e=>{
+   const opts=list.querySelectorAll('.copt[data-i]');
+   if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();if(list.hidden)draw();act=Math.max(0,Math.min(opts.length-1,act+(e.key==='ArrowDown'?1:-1)));opts.forEach((o,i)=>o.classList.toggle('act',i===act));if(opts[act])opts[act].scrollIntoView({block:'nearest'});}
+   else if(e.key==='Enter'){e.preventDefault();if(!list.hidden&&act>=0&&items[act])pick(items[act]);else{list.hidden=true;goRange();}}
+   else if(e.key==='Escape'){if(!list.hidden){e.stopPropagation();list.hidden=true;}}
+ });
+}
+setupCombo($('#rpbase'),false);setupCombo($('#rphead'),true);
+function openRange(){const p=$('#rangepop');if(!p.hidden)return closeRange();
+ $('#rpbase').value=META.base||'main';$('#rphead').value=META.head||'';setRpMode(META.mode);
+ $('#rpnote').textContent=META.serve?'':'Saved page: shows the command to run.';$('#rpcmd').hidden=true;
+ $('#rpgo').textContent=META.serve?'Show':'Get command';
+ p.hidden=false;$('#rangebtn').classList.add('on');setTimeout(()=>$(rpMode==='all'?'#rphead':'#rpbase').focus(),0);
+ if(META.serve)fetch('api/refs').then(r=>r.json()).then(r=>{REFS=r;}).catch(()=>{});}
+function closeRange(){$('#rangepop').hidden=true;$('#rangebtn').classList.remove('on');}
+function goRange(){
+ const base=$('#rpbase').value.trim()||'main',head=$('#rphead').value.trim();
+ if(!META.serve){updateCmd();$('#rpcmd').hidden=false;return;}
+ const q=new URLSearchParams({mode:rpMode,base,head});
+ $('#loading').hidden=false;closeRange();
+ location.href='?'+q.toString();
+}
+$('#rangebtn').onclick=e=>{e.stopPropagation();openRange();};
+$('#rpgo').onclick=goRange;
+$('#rpcopy').onclick=()=>{const t=$('#rpcmdtext').textContent;(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>{$('#rpcopy').textContent='Copied';setTimeout(()=>$('#rpcopy').textContent='Copy',1200);}).catch(()=>{const r=document.createRange();r.selectNodeContents($('#rpcmdtext'));getSelection().removeAllRanges();getSelection().addRange(r);});};
+document.addEventListener('pointerdown',e=>{if(!e.target.closest('.rangewrap'))closeRange();});
+window.addEventListener('pageshow',()=>{$('#loading').hidden=true;});
+
 // ── tooltips: on hover and keyboard focus, stay while hovered, Esc dismisses ──
 {
  const tip=$('#tip');let owner=null,hideT=0;
@@ -991,7 +1127,7 @@ window.addEventListener('keydown',e=>{
  if((e.metaKey||e.ctrlKey)&&(e.key==='k'||e.key==='K')){e.preventDefault();if(document.body.classList.contains('noside'))toggleSide();$('#q').focus();$('#q').select();return;}
  if(e.metaKey||e.ctrlKey||e.altKey)return;
  const typing=e.target.closest&&e.target.closest('input,textarea,[contenteditable]');
- if(e.key==='Escape'){toggleHelp(false);closeDrawer();return;}
+ if(e.key==='Escape'){toggleHelp(false);closeDrawer();closeRange();return;}
  if(typing)return;
  const k=e.key;
  if(k==='/'){e.preventDefault();if(document.body.classList.contains('noside'))toggleSide();$('#q').focus();$('#q').select();}
@@ -1009,6 +1145,7 @@ window.addEventListener('keydown',e=>{
  else if(k==='r'||k==='R'){toggleReview();}
  else if(k==='x'||k==='X'){const c=epEls.find(x=>x.ep===curEp);if(c){if(!document.body.classList.contains('review'))toggleReview();markReviewed(c.ep,c.d);}}
  else if(k==='m'||k==='M'){toggleMap();}
+ else if(k==='g'||k==='G'){e.preventDefault();openRange();}
  else if(k==='w'||k==='W'){setScrollMode(scrollMode==='zoom'?'pan':'zoom');}
  else if(k==='['){toggleSide();}
  else if(k==='t'||k==='T'){$('#theme').click();}
@@ -1019,7 +1156,10 @@ if(store.get('nomap',false))toggleMap();
 if(store.get('noside',false))document.body.classList.add('noside');
 updateRevProgress();
 applyView();
-if(!graph.endpoints.length){$('#empty').hidden=false;$('#legend').hidden=true;}
+if(!graph.endpoints.length){
+ $('#empty').hidden=false;$('#legend').hidden=true;
+ if(META.mode!=='all'){$('#emptyh').textContent='No changes here';$('#emptyp').innerHTML='Nothing in <b>'+esc(META.head||'the working tree')+'</b> differs from <b>'+esc(META.base)+'</b>. Pick another range with the button at the top left.';}
+}
 else{
  const last=store.get('ep',null), start=epEls.find(x=>x.ep.id===last)||epEls[0];
  requestAnimationFrame(()=>{selectEp(start.ep,start.d);requestAnimationFrame(()=>{layout();fit(false);});});

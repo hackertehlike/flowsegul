@@ -20,7 +20,7 @@ Examples:
   # explicit entry functions:
   flowsegul_gen.py --repo ~/proj/be --files src/services/foo.py --entries do_thing --out cf.html
 """
-import argparse, ast, html, json, os, re, subprocess, sys, tempfile
+import argparse, ast, copy, fnmatch, html, json, os, re, subprocess, sys, tempfile
 
 PALETTE = ['#3b82f6','#0ea5a4','#d97706','#db2777','#16a34a','#7c3aed','#ea580c','#0891b2','#4f46e5','#059669']
 INPUT_PALETTE = ['#e8590c','#1098ad','#9c36b5','#2f9e44','#c2255c','#1971c2']
@@ -194,8 +194,16 @@ class Index:
         self.steps_cache = {}  # qual -> steps (memoized)
         self.file_src = {}     # rel path -> exact source it was parsed from
         self.models = {}       # class name -> {code, file, lineno} (request/response schemas etc.)
+        self.layers = load_config(repo).get('layers') or {}
         for f in files:
             self._index_file(f)
+        self.route_quals = {r[0] for r in self.routes}
+
+    def layer(self, qual):
+        """A route handler is a controller wherever it lives; otherwise go by its file."""
+        if qual in self.route_quals:
+            return 'controller'
+        return layer_of(self.funcs[qual]['file'], self.layers)
 
     def _rel(self, f):
         if self.ref and not os.path.isabs(f):
@@ -310,15 +318,67 @@ class Index:
         return cands[0] if cands else None
 
 
-def layer_of(rel):
-    p = rel.lower()
-    if 'controller' in p or '/rest/' in p or '/api/' in p or '/routes' in p:
-        return 'controller'
-    if '/services/' in p or 'service' in os.path.basename(p):
-        return 'service'
-    if 'repositor' in p or 'persistence' in p or '/dao' in p or '/db' in p:
-        return 'repository'
-    return 'helper'
+# Kinds of code beyond controller → service → repository, recognised by file or folder name.
+# Checked against the file's own name first, then its folders from the innermost outwards, so
+# `services/utils.py` is a util and `utils/service_client.py` is a service. First hit wins.
+_KIND_EXACT = {
+    'controller': {'api', 'rest', 'routes', 'routers', 'router', 'endpoints', 'views', 'handlers'},
+    'repository': {'persistence', 'dao', 'daos', 'db', 'crud', 'queries', 'store', 'stores', 'db_access'},
+    'model': {'models', 'model', 'entities', 'entity', 'orm', 'tables', 'domain_models'},
+    'schema': {'schemas', 'schema', 'dto', 'dtos', 'serializers', 'contracts'},
+    'factory': {'factory', 'factories', 'builders', 'builder', 'fixtures', 'seeds'},
+    'util': {'utils', 'util', 'helpers', 'helper', 'common', 'shared', 'tools', 'misc', 'lib'},
+    'task': {'tasks', 'task', 'workers', 'worker', 'jobs', 'job', 'celery', 'consumers', 'cron', 'scheduler'},
+    'external': {'clients', 'client', 'integrations', 'adapters', 'gateways', 'gateway', 'external', 'sdk'},
+    'config': {'config', 'configs', 'settings', 'conf', 'env'},
+    'migration': {'alembic', 'migrations', 'migration'},
+}
+_KIND_SUB = [('controller', 'controller'), ('service', 'service'), ('repositor', 'repository'),
+             ('factor', 'factory'), ('util', 'util'), ('client', 'external')]
+_GENERIC_DIRS = {'src', 'app', 'apps', 'lib', 'pkg', 'core', 'main', 'python', 'code', ''}
+
+
+def _kind_of_token(tok):
+    for kind, names in _KIND_EXACT.items():
+        if tok in names:
+            return kind
+    for sub, kind in _KIND_SUB:
+        if sub in tok:
+            return kind
+    return None
+
+
+def load_config(repo):
+    """Optional `.flowsegul.json` at the repo root: {"layers": {"<glob>": "<label>"}} maps paths
+    (fnmatch on the repo-relative path, e.g. "src/app/core/**") to a layer label of your choosing."""
+    try:
+        with open(os.path.join(repo, '.flowsegul.json')) as f:
+            cfg = json.load(f)
+        return cfg if isinstance(cfg, dict) else {}
+    except Exception:
+        return {}
+
+
+def layer_of(rel, overrides=None):
+    """Layer label for a repo-relative file: a config override, a known kind (controller, service,
+    repository, model, schema, factory, util, task, external, config, migration), or — for code
+    that fits none of them — the name of its folder, so an unfamiliar layout still reads sensibly."""
+    for pat, label in (overrides or {}).items():
+        if fnmatch.fnmatch(rel, pat) or fnmatch.fnmatch(rel, pat.rstrip('/*') + '/*'):
+            return re.sub(r'[^a-z0-9_-]', '-', str(label).lower())[:20] or 'other'
+    parts = rel.lower().replace('\\', '/').split('/')
+    base = parts[-1][:-3] if parts[-1].endswith('.py') else parts[-1]
+    for tok in [base] + parts[-2::-1]:
+        k = _kind_of_token(tok)
+        if k:
+            return k
+    folder = next((p for p in parts[-2::-1] if p not in _GENERIC_DIRS), '')
+    return re.sub(r'[^a-z0-9_-]', '-', folder)[:20] or 'module'
+
+
+# sidebar badge for entries that are not HTTP routes
+_KIND_BADGE = {'util': 'util', 'factory': 'fact', 'model': 'class', 'schema': 'class',
+               'migration': 'mig', 'task': 'task', 'external': 'ext', 'config': 'cfg'}
 
 
 def nid_for(qual):
@@ -609,7 +669,7 @@ def build_endpoint(entry_qual, idx, meta, depth, tag, changed_q=frozenset(), cha
             steps.append(s)
         n = {
             'id': nid(q), 'fnKey': fk(q), 'col': col[q], 'entry': q == entry_qual,
-            'layer': layer_of(info['file']), 'changed': q in changed_q,
+            'layer': idx.layer(q), 'changed': q in changed_q,
             'title': (f"{info['cls']}." if info['cls'] else '') + info['name'],
             'sub': f"{info['file'].split('/')[-1]}:{info['lineno']}", 'steps': steps,
             'locals': local_names(info['node']),
@@ -619,7 +679,7 @@ def build_endpoint(entry_qual, idx, meta, depth, tag, changed_q=frozenset(), cha
         nodes.append(n)
     # rootless entry (no route reaches it): graft its callers as collapsed "ghost" nodes to the left,
     # so the flow is reconnected without pulling in each caller's whole tree. They're clickable/expandable.
-    if not meta.get('method'):
+    if not meta.get('route'):
         present = {n['id'] for n in nodes}
         for c in callers_of(idx, entry_qual):
             cq, cinfo, src = c['qual'], c['info'], c['step']
@@ -632,7 +692,7 @@ def build_endpoint(entry_qual, idx, meta, depth, tag, changed_q=frozenset(), cha
                     'ret': src['ret'] if src else '', 'uses': []}
             nodes.append({
                 'id': gid, 'fnKey': fk(cq), 'col': -1, 'entry': False, 'ghost': True,
-                'layer': layer_of(cinfo['file']), 'changed': False,
+                'layer': idx.layer(cq), 'changed': False,
                 'title': (f"{cinfo['cls']}." if cinfo['cls'] else '') + cinfo['name'],
                 'sub': f"{cinfo['file'].split('/')[-1]}:{cinfo['lineno']}", 'steps': [step],
             })
@@ -660,6 +720,65 @@ def build_endpoint(entry_qual, idx, meta, depth, tag, changed_q=frozenset(), cha
     }
 
 
+def _is_migration(rel):
+    parts = rel.lower().split('/')
+    return any(p in ('alembic', 'migrations') for p in parts[:-1]) and not parts[-1].startswith('__')
+
+
+def migration_ops(src):
+    """One line per schema operation in upgrade(), e.g. `op.add_column("users", sa.Column("email", …))`."""
+    try:
+        tree = ast.parse(src)
+    except SyntaxError:
+        return []
+    fn = next((n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+               and n.name == 'upgrade'), None)
+    if not fn:
+        return []
+    ops = []
+    for n in ast.walk(fn):
+        if (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                and isinstance(n.func.value, ast.Name) and n.func.value.id in ('op', 'batch_op')):
+            ops.append((n.lineno, one_line(unparse(n), 110)))
+    return [o for _, o in sorted(ops)][:40]
+
+
+def migration_entries(repo, tag, base, ref, changed_files, merge_base, code_out):
+    """Changed Alembic/Django-style migration files: they are never called from a route (and are
+    skipped when indexing), so without this a migration in the diff would be invisible. Each becomes
+    one node: its upgrade() operations as rows, and the whole file as a diff."""
+    import difflib
+    mb = diff_base(repo, base, ref, merge_base)
+    out = []
+    for rel in sorted(f for f in changed_files if _is_migration(f)):
+        head_src = git(repo, 'show', f'{ref}:{rel}') if ref else (
+            open(os.path.join(repo, rel)).read() if os.path.isfile(os.path.join(repo, rel)) else '')
+        base_src = git(repo, 'show', f'{mb}:{rel}')
+        if head_src == base_src:
+            continue
+        deleted = not head_src
+        src = head_src or base_src
+        try:
+            doc = ast.get_docstring(ast.parse(src)) or ''
+        except SyntaxError:
+            doc = ''
+        name = os.path.basename(rel)[:-3]
+        title = one_line(doc.split('\n')[0], 70) if doc else name
+        diff = '\n'.join(difflib.unified_diff(base_src.splitlines(), head_src.splitlines(),
+                                               fromfile=f'{rel} (base)', tofile=f'{rel} (branch)',
+                                               lineterm='', n=3 if base_src and head_src else 100000))
+        nid = f'{tag}__mig_{nid_for(rel)}'
+        fkey = f'{tag}::mig:{rel}'
+        code_out[fkey] = {'file': rel, 'lineno': 1, 'name': name, 'cls': None, 'code': head_src}
+        node = {'id': nid, 'fnKey': fkey, 'col': 0, 'entry': True, 'layer': 'migration',
+                'changed': True, 'deleted': deleted, 'isnew': not base_src, 'title': title,
+                'sub': rel, 'steps': [], 'notes': migration_ops(src), 'base': base_src, 'diff': diff}
+        out.append({'id': nid, 'group': f'{tag} · migrations', 'method': 'mig', 'other': True,
+                    'path': name, 'title': title, 'summary': rel, 'inputs': [], 'nodes': [node],
+                    'modelEdges': [], 'reqModels': [], 'respModels': [], 'models': {}})
+    return out
+
+
 def process_repo(repo, args):
     """Index a repo and return (endpoints, code) for the chosen entries; ids namespaced by repo name."""
     tag = os.path.basename(repo.rstrip('/'))
@@ -678,7 +797,7 @@ def process_repo(repo, args):
         return [], {}
 
     # function-level change detection (which defs actually differ from base)
-    changed_q, changed_m, diffs, deleted = set(), set(), {}, {}
+    changed_q, changed_m, diffs, deleted, cf = set(), set(), {}, {}, set()
     if changed:
         cf = changed_rel_files(repo, base, ref, merge_base=not exact)
         changed_q, changed_m, diffs, deleted = changed_defs(idx, repo, base, ref, cf, merge_base=not exact)
@@ -706,10 +825,10 @@ def process_repo(repo, args):
         endpoints = [build(q, {}) for name in args.entries
                      for q in idx.by_simple.get(name, []) + idx.by_method.get(name, [])]
     elif not changed:
-        endpoints = [build(q, {'method': m, 'path': p, 'prefix': pre})
+        endpoints = [build(q, {'method': m, 'path': p, 'prefix': pre, 'route': True})
                      for q, m, p, pre in idx.routes]
     else:  # --changed: routes whose flow was changed somehow, then a coverage pass for the rest
-        endpoints = [build(q, {'method': m, 'path': p, 'prefix': pre})
+        endpoints = [build(q, {'method': m, 'path': p, 'prefix': pre, 'route': True})
                      for q, m, p, pre in idx.routes if flow_touches_changed(q)[1]]
         # coverage guarantee: every changed function must appear as a node in ≥1 chart. Any changed
         # def not actually rendered (e.g. deeper than --depth, or reached only by non-route code)
@@ -718,7 +837,10 @@ def process_repo(repo, args):
         for q in sorted(changed_q - shown):
             if q not in idx.funcs or q in shown:
                 continue
-            e = build(q, {'groupOverride': f'{tag} ⟂ changed defs (no route)'})
+            kind = idx.layer(q)
+            e = build(q, {'groupOverride': f'{tag} · not reached from a route',
+                          'method': _KIND_BADGE.get(kind, 'fn')})
+            e['other'] = True
             endpoints.append(e)
             shown |= rendered_quals(e)
         # class coverage: a changed class (schema / ORM model) that isn't shown as a chip and whose
@@ -733,13 +855,14 @@ def process_repo(repo, args):
                 continue
             m = idx.models[name]
             node = {'id': f'{tag}__model_{nid_for(name)}', 'fnKey': f'{tag}::model:{name}',
-                    'col': 0, 'entry': True, 'layer': 'model', 'changed': True, 'title': name,
+                    'col': 0, 'entry': True, 'changed': True, 'title': name,
+                    'layer': (lambda k: k if k in ('model', 'schema') else 'model')(layer_of(m['file'], idx.layers)),
                     'sub': f"{m['file'].split('/')[-1]}:{m['lineno']}", 'steps': []}
             d = diffs.get('model:' + name)
             if d:
                 node['base'] = d['base']; node['diff'] = d['diff']; node['isnew'] = d['new']
             endpoints.append({
-                'id': node['id'], 'group': f'{tag} ⟂ changed defs (no route)', 'method': 'class',
+                'id': node['id'], 'group': f'{tag} · not reached from a route', 'method': 'class', 'other': True,
                 'path': name, 'title': name, 'summary': 'changed class / data model',
                 'inputs': [], 'nodes': [node], 'modelEdges': [], 'reqModels': [], 'respModels': [],
                 'models': collect_models([name], idx, diffs, changed_m)})
@@ -751,22 +874,23 @@ def process_repo(repo, args):
                 continue
             nidd, fkey = f'{tag}__del_{nid_for(ikey)}', f'{tag}::del:{ikey}'
             node = {'id': nidd, 'fnKey': fkey, 'col': 0, 'entry': True, 'changed': True,
-                    'deleted': True, 'layer': 'model' if dd['is_model'] else 'helper',
+                    'deleted': True, 'layer': 'model' if dd['is_model'] else layer_of(dd['file'], idx.layers),
                     'title': dd['name'], 'sub': f"{dd['file'].split('/')[-1]}:{dd['lineno']}",
                     'steps': [], 'base': dd['base'], 'diff': dd['diff'], 'isnew': False}
             del_code[fkey] = {'file': dd['file'], 'lineno': dd['lineno'], 'name': dd['name'],
                               'cls': None, 'code': ''}
             endpoints.append({
-                'id': nidd, 'group': f'{tag} ⟂ changed defs (no route)', 'method': 'del',
+                'id': nidd, 'group': f'{tag} · not reached from a route', 'method': 'del', 'other': True,
                 'path': dd['name'], 'title': dd['name'], 'summary': 'deleted definition',
                 'inputs': [], 'nodes': [node], 'modelEdges': [], 'reqModels': [], 'respModels': [],
                 'models': {}})
+        endpoints += migration_entries(repo, tag, base, ref, cf, not exact, del_code)
     code = dict(del_code)
     for e in endpoints:
         for n in e['nodes']:
             q = n['fnKey'].split('::', 1)[1]
-            if q.startswith('del:'):
-                continue  # DELETED node — code already provided by del_code
+            if q.startswith('del:') or q.startswith('mig:'):
+                continue  # DELETED / migration node — code already provided by del_code
             if q.startswith('model:'):
                 m = idx.models[q.split('model:', 1)[1]]
                 code[n['fnKey']] = {'file': m['file'], 'lineno': m['lineno'],
@@ -776,6 +900,141 @@ def process_repo(repo, args):
                 code[n['fnKey']] = {'file': info['file'], 'lineno': info['lineno'],
                                     'name': info['name'], 'cls': info['cls'], 'code': info['code']}
     return endpoints, code
+
+
+def list_refs(repo, limit=40):
+    """Branches, tags and recent commits of `repo`, for the page's Compare picker."""
+    def lines(*a):
+        return [l for l in git(repo, *a).split('\n') if l]
+    cur = git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')
+    heads = lines('for-each-ref', '--sort=-committerdate', '--format=%(refname:short)\t%(committerdate:relative)', 'refs/heads')
+    remotes = lines('for-each-ref', '--sort=-committerdate', '--format=%(refname:short)\t%(committerdate:relative)', 'refs/remotes')
+    tags = lines('for-each-ref', '--sort=-creatordate', '--format=%(refname:short)\t%(creatordate:relative)', 'refs/tags')
+    commits = lines('log', f'-{limit}', '--format=%h\t%s\t%cr\t%an', 'HEAD')
+    split = lambda rows, keys: [dict(zip(keys, r.split('\t'))) for r in rows]
+    return {'current': cur,
+            'branches': split(heads, ('name', 'when')),
+            'remotes': [r for r in split(remotes, ('name', 'when')) if not r['name'].endswith('/HEAD')][:40],
+            'tags': split(tags, ('name', 'when'))[:20],
+            'commits': split(commits, ('sha', 'subject', 'when', 'author'))}
+
+
+def ref_exists(repo, ref):
+    return bool(ref) and not ref.startswith('-') and bool(
+        git(repo, 'rev-parse', '--verify', '--quiet', f'{ref}^{{commit}}'))
+
+
+def range_meta(args):
+    """What this run shows, in the Compare picker's terms: mode all | branch | exact."""
+    if args.commit_from:
+        return {'mode': 'exact', 'base': args.commit_from, 'head': args.commit_to or ''}
+    if args.changed:
+        return {'mode': 'branch', 'base': args.base, 'head': args.branch or ''}
+    return {'mode': 'all', 'base': args.base, 'head': args.branch or ''}
+
+
+def generate(args, repos, log=True):
+    all_eps, all_code = [], {}
+    for repo in repos:
+        if log:
+            print(f'  scanning {os.path.basename(repo)}…', file=sys.stderr, flush=True)
+        eps, code = process_repo(repo, args)
+        all_eps += eps; all_code.update(code)
+    # routes first, then the "not reached from a route" / migrations groups; same groups contiguous
+    all_eps.sort(key=lambda e: (bool(e.get('other')), e.get('group', '')))
+    return all_eps, all_code
+
+
+def render(args, repos, eps, code, serve=False):
+    meta = dict(range_meta(args), repos=[os.path.basename(r) for r in repos], serve=serve,
+                refs=list_refs(repos[0]) if repos else {})
+    blob = json.dumps({'code': code, 'graph': {'endpoints': eps}, 'meta': meta}, ensure_ascii=False)
+    blob = blob.replace('</', '<\\/')  # source text may contain "</script>"; keep it inside the JSON
+    tpl = open(args.template).read()
+    if '__DATA__' not in tpl:
+        sys.exit('template missing __DATA__ placeholder')
+    tpl = re.sub(r'<title>.*?</title>', lambda _: f'<title>{html.escape(args.title)}</title>', tpl, count=1)
+    return tpl.replace('__DATA__', blob)
+
+
+def serve(args, repos):
+    """Local-only server so the page can switch what it compares: `/?mode=branch&base=main&head=feat`.
+    Each range is generated on first request and cached; `&refresh=1` rebuilds it."""
+    import http.server, socketserver, threading, urllib.parse, webbrowser
+    cache, lock = {}, threading.Lock()
+
+    def args_for(q):
+        mode = q.get('mode', range_meta(args)['mode'])
+        base = q.get('base', args.commit_from or args.base) or 'main'
+        head = q.get('head', args.commit_to or args.branch or '') or ''
+        for ref in (base, head):
+            if ref and not any(ref_exists(r, ref) for r in repos):
+                raise ValueError(f'unknown ref: {ref}')
+        a = copy.copy(args)
+        a.changed, a.branch, a.commit_from, a.commit_to, a.base = False, head or None, None, None, base
+        if mode == 'branch':
+            a.changed = True
+        elif mode == 'exact':
+            a.commit_from, a.commit_to, a.branch = base, head or None, None
+        return a
+
+    class H(http.server.BaseHTTPRequestHandler):
+        def send(self, status, body, ctype='text/html; charset=utf-8'):
+            data = body.encode('utf-8')
+            self.send_response(status)
+            self.send_header('Content-Type', ctype)
+            self.send_header('Content-Length', str(len(data)))
+            self.send_header('Cache-Control', 'no-store')
+            self.end_headers()
+            self.wfile.write(data)
+
+        def do_GET(self):
+            # only answer to our own origin: stops a page on another site from reading your source
+            # through DNS rebinding (its Host header would name that site, not 127.0.0.1)
+            host = (self.headers.get('Host') or '').split(':')[0]
+            if host not in ('127.0.0.1', 'localhost'):
+                return self.send(403, 'forbidden', 'text/plain')
+            u = urllib.parse.urlparse(self.path)
+            q = {k: v[-1] for k, v in urllib.parse.parse_qs(u.query).items()}
+            try:
+                if u.path == '/api/refs':
+                    return self.send(200, json.dumps(list_refs(repos[0])), 'application/json')
+                if u.path != '/':
+                    return self.send(404, 'not found', 'text/plain')
+                a = args_for(q)
+                key = (a.changed, a.base, a.branch, a.commit_from, a.commit_to)
+                with lock:
+                    if q.get('refresh') or key not in cache:
+                        # the working tree moves under us, so only cache ranges between fixed refs
+                        eps, code = generate(a, repos, log=False)
+                        page = render(a, repos, eps, code, serve=True)
+                        if a.branch or a.commit_to:
+                            cache[key] = page
+                    else:
+                        page = cache[key]
+                self.send(200, page)
+            except ValueError as e:
+                self.send(400, str(e), 'text/plain')
+
+        def log_message(self, fmt, *a):
+            print('  ' + (fmt % a), file=sys.stderr)
+
+    class Server(socketserver.ThreadingMixIn, http.server.HTTPServer):
+        daemon_threads = True
+        allow_reuse_address = True
+
+    try:
+        srv = Server(('127.0.0.1', args.port), H)
+    except OSError:
+        srv = Server(('127.0.0.1', 0), H)  # port taken: let the OS pick one
+    url = f'http://127.0.0.1:{srv.server_address[1]}/'
+    print(f'flowsegul serving {", ".join(os.path.basename(r) for r in repos)} at {url}  (Ctrl+C to stop)')
+    if not args.no_open:
+        threading.Timer(0.3, lambda: webbrowser.open(url)).start()
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        print()
 
 
 def main():
@@ -797,30 +1056,25 @@ def main():
     ap.add_argument('--title', default='Call-Flow Explorer')
     ap.add_argument('--template', default=os.path.join(os.path.dirname(__file__), 'template.html'))
     ap.add_argument('--out', default=os.path.join(tempfile.gettempdir(), 'flowsegul.html'))
+    ap.add_argument('--serve', action='store_true',
+                    help='run a local server instead of writing a file, so the page can switch '
+                    'between branches, commits and ranges itself')
+    ap.add_argument('--port', type=int, default=8765, help='port for --serve (default 8765)')
+    ap.add_argument('--no-open', action='store_true', help='with --serve, do not open a browser')
     args = ap.parse_args()
 
     repos = args.repos or discover_repos(args.workspace or auto_workspace())
     repos = [os.path.abspath(r) for r in repos]
     if not repos:
         sys.exit('No Python repos found. Pass --repo DIR or run from your repos umbrella.')
+    if args.serve:
+        return serve(args, repos)
 
-    all_eps, all_code = [], {}
-    for repo in repos:
-        print(f'  scanning {os.path.basename(repo)}…', file=sys.stderr, flush=True)
-        eps, code = process_repo(repo, args)
-        all_eps += eps; all_code.update(code)
+    all_eps, all_code = generate(args, repos)
     if not all_eps:
         hint = ' changed on this branch' if (args.changed or args.commit_from) else ''
         sys.exit(f'No entries found{hint} across: {", ".join(os.path.basename(r) for r in repos)}.')
-    all_eps.sort(key=lambda e: e.get('group', ''))  # keep same-group endpoints contiguous
-
-    blob = json.dumps({'code': all_code, 'graph': {'endpoints': all_eps}}, ensure_ascii=False)
-    blob = blob.replace('</', '<\\/')  # source text may contain "</script>"; keep it inside the JSON
-    tpl = open(args.template).read()
-    if '__DATA__' not in tpl:
-        sys.exit('template missing __DATA__ placeholder')
-    tpl = re.sub(r'<title>.*?</title>', lambda _: f'<title>{html.escape(args.title)}</title>', tpl, count=1)
-    open(args.out, 'w').write(tpl.replace('__DATA__', blob))
+    open(args.out, 'w').write(render(args, repos, all_eps, all_code))
     groups = {}
     for e in all_eps:
         groups[e['group']] = groups.get(e['group'], 0) + 1

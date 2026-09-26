@@ -26,11 +26,30 @@ Run it from anywhere inside (or at the umbrella of) your repo(s):
 ```sh
 flowsegul            # every FastAPI route across the repo, opens in your browser
 flowsegul --changed  # ONLY what changed on the current branch vs main  ← the PR view
+flowsegul serve      # local server: pick branch / commit / range from inside the page
 ```
+
+With `flowsegul serve`, the button at the top left of the page picks what to show: **Everything**
+at a ref (or your working tree), **Branch changes** since a branch forked from a base (the PR view),
+or a **Commit range** between two commits. It suggests branches, tags and recent commits with their
+messages. The server only listens on `127.0.0.1`. A saved HTML file has the same button, and it
+gives you the command to run for the range you pick.
 
 The `--changed` view guarantees **nothing in the diff is invisible**: every changed function is a
 node in some endpoint's flow (or its own root chart if no route reaches it), and every changed
-class/model shows as a chip or its own diff node.
+class/model shows as a chip or its own diff node. Changed migrations (`alembic/`, `migrations/`) get
+their own entry, with their `op.*` operations listed and the file diff.
+
+### Code outside controller → service → repository
+
+Each box is labelled by what kind of code it is, going by file and folder names:
+controller, service, repository, model, schema, factory, util, task, external (clients,
+integrations), config and migration. Code that fits none of these is labelled with its folder name,
+e.g. `domain` or `billing`. To name things your own way, add a `.flowsegul.json` at the repo root:
+
+```json
+{"layers": {"src/app/core/*": "domain", "src/app/legacy/*": "legacy"}}
+```
 
 ### Common flags
 
@@ -44,6 +63,7 @@ class/model shows as a chip or its own diff node.
 | `--repo DIR` / `--workspace DIR` | Point at specific repo(s) instead of auto-discovery. |
 | `--out FILE` | Write to a specific path (default: a temp file). |
 | `--depth N` | Call-graph recursion depth (default 6). |
+| `--serve` | Serve locally instead of writing a file (`flowsegul serve`); `--port`, `--no-open`. |
 
 Run `flowsegul --help` for the full list.
 
