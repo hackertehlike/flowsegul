@@ -9,6 +9,7 @@ Renders the self-contained template.html (draggable graph, inline code, color-co
 Usage:
   flowsegul_gen.py --repo DIR [--files A.py B.py ...] --out out.html [--template template.html]
                   [--entries name1 name2 | --routes] [--depth 5] [--title "..."]
+  flowsegul_gen.py --repo DIR --react [SUBDIR]    # React/TSX mode, via scripts/flowsegul_react.mjs
 
 Examples:
   # every @router.<method> endpoint in a controller, resolving calls across the service + repos:
@@ -20,7 +21,7 @@ Examples:
   # explicit entry functions:
   flowsegul_gen.py --repo ~/proj/be --files src/services/foo.py --entries do_thing --out cf.html
 """
-import argparse, ast, copy, fnmatch, hashlib, html, json, os, re, subprocess, sys, tempfile
+import argparse, ast, copy, fnmatch, hashlib, html, json, os, re, shutil, subprocess, sys, tempfile
 
 PALETTE = ['#3b82f6','#0ea5a4','#d97706','#db2777','#16a34a','#7c3aed','#ea580c','#0891b2','#4f46e5','#059669']
 INPUT_PALETTE = ['#e8590c','#1098ad','#9c36b5','#2f9e44','#c2255c','#1971c2']
@@ -71,14 +72,34 @@ def is_python_repo(d):
     return any(gather_py([sd]) for sd in source_dirs(d))
 
 
+_JS_SKIP = {'node_modules', 'dist', 'build', 'out', 'coverage', 'vendor', 'public', 'static'}
+
+
+def has_tsx(d, limit=4000):
+    """True when the folder holds React components (.tsx / .jsx), outside node_modules and builds."""
+    seen = 0
+    for root, dirs, files in os.walk(d):
+        dirs[:] = sorted(x for x in dirs if not x.startswith('.') and x not in _JS_SKIP)
+        if any(f.endswith(('.tsx', '.jsx')) for f in files):
+            return True
+        seen += 1
+        if seen > limit:
+            break
+    return False
+
+
+def is_code_repo(d):
+    return is_python_repo(d) or has_tsx(d)
+
+
 def discover_repos(workspace):
     """Python git repos to consider: the workspace's immediate git subdirs, or itself."""
     repos = []
     for name in sorted(os.listdir(workspace)):
         d = os.path.join(workspace, name)
-        if os.path.isdir(os.path.join(d, '.git')) and is_python_repo(d):
+        if os.path.isdir(os.path.join(d, '.git')) and is_code_repo(d):
             repos.append(d)
-    if not repos and os.path.isdir(os.path.join(workspace, '.git')) and is_python_repo(workspace):
+    if not repos and os.path.isdir(os.path.join(workspace, '.git')) and is_code_repo(workspace):
         repos = [workspace]
     return repos
 
@@ -1885,22 +1906,118 @@ def range_meta(args):
     return {'mode': 'all', 'base': args.base, 'head': args.branch or ''}
 
 
+REACT_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'flowsegul_react.mjs')
+
+
+class ReactError(Exception):
+    pass
+
+
+def react_roots(repo, sub):
+    """Folders to read as React apps: `--react DIR`, else the repo itself when it has its own
+    package.json / tsconfig.json, else each subfolder (two levels deep) that does and holds .tsx."""
+    if sub:
+        return [os.path.join(repo, sub)]
+    if os.path.isfile(os.path.join(repo, 'tsconfig.json')):
+        return [repo]
+    # a monorepo or a full-stack repo keeps its app(s) in subfolders, each with its own tsconfig
+    # (whose path aliases like `@/components` are needed to follow imports)
+    found = {'tsconfig.json': [], 'package.json': []}
+    for root, dirs, files in os.walk(repo):
+        depth = 0 if root == repo else os.path.relpath(root, repo).count(os.sep) + 1
+        dirs[:] = sorted(x for x in dirs if not x.startswith('.') and x not in _JS_SKIP) if depth < 3 else []
+        if root == repo:
+            continue
+        for marker in ('tsconfig.json', 'package.json'):
+            if marker in files and has_tsx(root):
+                found[marker].append(root)
+                dirs[:] = []
+                break
+    return found['tsconfig.json'] or found['package.json'] or [repo]
+
+
+def run_react(root, tag):
+    """Run the Node analyzer on one app folder; its JSON, or ReactError with a one-line reason."""
+    if not shutil.which('node'):
+        raise ReactError('React mode needs Node.js: `node` was not found on PATH (https://nodejs.org).')
+    try:
+        proc = subprocess.run(['node', REACT_SCRIPT, root, '--tag', tag], stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE, universal_newlines=True, timeout=900)
+    except subprocess.TimeoutExpired:
+        raise ReactError(f'reading {root} as a React app took over 15 minutes; stopped.')
+    if proc.returncode != 0:
+        lines = [l for l in (proc.stderr or '').strip().split('\n') if l.strip()]
+        raise ReactError(lines[-1].replace('flowsegul: ', '', 1) if proc.returncode == 3 and lines else
+                         'the React analyzer failed: ' + ('\n'.join(lines[-6:]) or f'exit {proc.returncode}'))
+    return json.loads(proc.stdout)
+
+
+def merge_react(parts):
+    """One React map from several apps (ids are already namespaced by tag)."""
+    out = {'version': 1, 'units': [], 'rows': {}, 'states': [], 'actions': [], 'apps': []}
+    for p in parts:
+        out['units'] += p['units']; out['rows'].update(p['rows'])
+        out['states'] += p['states']; out['actions'] += p['actions']
+        out['apps'].append({'root': p.get('label') or p.get('root'), 'stats': p.get('stats', {})})
+    return out
+
+
+def react_for_repo(repo, args, have_routes, log=True):
+    """React map for a repo: always with --react, or on its own when it has .tsx and no FastAPI routes."""
+    explicit = args.react is not None
+    diffing = bool(args.changed or args.commit_from or args.branch)
+    if not explicit and (have_routes or diffing or not has_tsx(repo)):
+        return None
+    if explicit and diffing and log:
+        print('  note: React mode reads the working tree as it is; --changed/--branch/--from apply to routes only.',
+              file=sys.stderr)
+    tag = os.path.basename(repo.rstrip('/'))
+    parts = []
+    roots = react_roots(repo, args.react)
+    for i, root in enumerate(roots):
+        if not os.path.isdir(root):
+            raise ReactError(f'no such folder: {root}')
+        if log:
+            print(f'  reading {os.path.relpath(root, os.path.dirname(repo))} as a React app…', file=sys.stderr, flush=True)
+        data = run_react(root, f'{tag}{i}' if i else tag)
+        sub = os.path.relpath(root, repo).replace(os.sep, '/')
+        data['label'] = tag if sub == '.' else f'{tag}/{sub}'
+        if sub != '.' and (len(roots) > 1 or have_routes):   # say which app (or the frontend) each action is in
+            for a in data['actions']:
+                a['group'] = sub + ('/' + a['group'] if a['group'] else '')
+        for a in data['actions']:
+            a['group'] = a['group'] or tag
+        parts.append(data)
+    return parts
+
+
 def generate(args, repos, log=True):
-    all_eps, all_code = [], {}
+    all_eps, all_code, react_parts = [], {}, []
     for repo in repos:
         if log:
             print(f'  scanning {os.path.basename(repo)}…', file=sys.stderr, flush=True)
         eps, code = process_repo(repo, args)
         all_eps += eps; all_code.update(code)
+        try:
+            parts = react_for_repo(repo, args, bool(eps), log)
+        except ReactError as e:
+            if args.react is not None:
+                sys.exit(f'flowsegul: {e}')
+            print(f'  skipped the React part of {os.path.basename(repo)}: {e}', file=sys.stderr)
+            parts = None
+        react_parts += parts or []
     # routes first, then the "not reached from a route" / migrations groups; same groups contiguous
     all_eps.sort(key=lambda e: (bool(e.get('other')), bool(e.get('affected')), e.get('group', '')))
-    return all_eps, all_code
+    return all_eps, all_code, (merge_react(react_parts) if react_parts else None)
 
 
-def render(args, repos, eps, code, serve=False):
+def render(args, repos, eps, code, serve=False, react=None):
     meta = dict(range_meta(args), repos=[os.path.basename(r) for r in repos], serve=serve,
                 refs=list_refs(repos[0]) if repos else {})
-    blob = json.dumps({'code': code, 'graph': {'endpoints': eps}, 'meta': meta}, ensure_ascii=False)
+    graph = {'endpoints': eps}
+    if react:
+        graph['react'] = react
+    blob = json.dumps({'code': code, 'graph': graph, 'meta': meta}, ensure_ascii=False)
     blob = blob.replace('</', '<\\/')  # source text may contain "</script>"; keep it inside the JSON
     with open(args.template, encoding='utf-8') as f:
         tpl = f.read()
@@ -1963,8 +2080,8 @@ def serve(args, repos):
                 with lock:
                     if q.get('refresh') or key not in cache:
                         # the working tree moves under us, so only cache ranges between fixed refs
-                        eps, code = generate(a, repos, log=False)
-                        page = render(a, repos, eps, code, serve=True)
+                        eps, code, react = generate(a, repos, log=False)
+                        page = render(a, repos, eps, code, serve=True, react=react)
                         if a.branch or a.commit_to:
                             cache[key] = page
                     else:
@@ -2018,27 +2135,35 @@ def main():
                     'between branches, commits and ranges itself')
     ap.add_argument('--port', type=int, default=8765, help='port for --serve (default 8765)')
     ap.add_argument('--no-open', action='store_true', help='with --serve, do not open a browser')
+    ap.add_argument('--react', nargs='?', const='', default=None, metavar='DIR',
+                    help='also map the React + TypeScript app (optionally only the folder DIR inside '
+                    'the repo): user actions, what they set, what reruns. Needs Node.js and the '
+                    '"typescript" package. On by default for a repo with .tsx files and no FastAPI routes.')
     args = ap.parse_args()
 
     repos = args.repos or discover_repos(args.workspace or auto_workspace())
     repos = [os.path.abspath(r) for r in repos]
     if not repos:
-        sys.exit('No Python repos found. Pass --repo DIR or run from your repos umbrella.')
+        sys.exit('No Python or React repos found. Pass --repo DIR or run from your repos umbrella.')
     if args.serve:
         return serve(args, repos)
 
-    all_eps, all_code = generate(args, repos)
-    if not all_eps:
+    all_eps, all_code, react = generate(args, repos)
+    if not all_eps and not (react and react['actions']):
         hint = ' changed on this branch' if (args.changed or args.commit_from) else ''
         sys.exit(f'No entries found{hint} across: {", ".join(os.path.basename(r) for r in repos)}.')
     with open(args.out, 'w', encoding='utf-8') as f:
-        f.write(render(args, repos, all_eps, all_code))
+        f.write(render(args, repos, all_eps, all_code, react=react))
     groups = {}
     for e in all_eps:
         groups[e['group']] = groups.get(e['group'], 0) + 1
     print(f'Wrote {args.out}')
-    print('  ' + ' · '.join(f'{g}: {n}' for g, n in groups.items())
-          + f'  ({len(all_code)} functions)')
+    if groups:
+        print('  ' + ' · '.join(f'{g}: {n}' for g, n in groups.items())
+              + f'  ({len(all_code)} functions)')
+    if react:
+        ncomp = sum(1 for u in react['units'] if u['kind'] == 'component')
+        print(f'  actions: {len(react["actions"])} · states: {len(react["states"])}  ({ncomp} components)')
 
 
 if __name__ == '__main__':
