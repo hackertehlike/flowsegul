@@ -11,7 +11,7 @@
  --bg:#f4f5f9; --grid:#d9dde8; --panel:#ffffff; --panel2:#f6f7fb; --raise:#ffffff;
  --ink:#161a26; --ink2:#3b4254; --muted:#6b7385; --faint:#9aa1b2;
  --line:#e3e6ee; --line2:#d3d8e3; --edge:#a3acbf; --chip:#eef0f6; --model:#7a8194;
- --accent:#5b5bf0; --accent-ink:#4343d6; --accent-soft:#5b5bf01f;
+ --accent:#5b5bf0; --accent-ink:#4343d6; --accent-soft:#5b5bf01f; --accent-tk:#5b5bf038;
  --chg:#e8823a; --chg-soft:#e8823a1f; --del:#e5484d; --ok:#16a34a;
  --kw:#a626a4; --str:#3d8c40; --com:#8a94a6; --def:#2f6df6; --num:#b26a00; --self:#c2410c;
  --shadow-sm:0 1px 2px rgba(22,26,38,.06),0 1px 1px rgba(22,26,38,.04);
@@ -35,7 +35,7 @@
  --bg:#0d1017; --grid:#232938; --panel:#151923; --panel2:#1b202c; --raise:#1d2230;
  --ink:#e8ebf2; --ink2:#c3c8d4; --muted:#8e97aa; --faint:#5f687c;
  --line:#252b39; --line2:#323a4b; --edge:#56627a; --chip:#202633; --model:#8f98ab;
- --accent:#8b8bff; --accent-ink:#a5a5ff; --accent-soft:#8b8bff24;
+ --accent:#8b8bff; --accent-ink:#a5a5ff; --accent-soft:#8b8bff24; --accent-tk:#8b8bff45;
  --chg:#f0954f; --chg-soft:#f0954f22;
  --kw:#c678dd; --str:#98c379; --com:#5f6a7d; --def:#61afef; --num:#d19a66; --self:#e5924b;
  --shadow-sm:0 1px 2px rgba(0,0,0,.3);
@@ -56,7 +56,7 @@
  --bg:#0d1017; --grid:#232938; --panel:#151923; --panel2:#1b202c; --raise:#1d2230;
  --ink:#e8ebf2; --ink2:#c3c8d4; --muted:#8e97aa; --faint:#5f687c;
  --line:#252b39; --line2:#323a4b; --edge:#56627a; --chip:#202633; --model:#8f98ab;
- --accent:#8b8bff; --accent-ink:#a5a5ff; --accent-soft:#8b8bff24;
+ --accent:#8b8bff; --accent-ink:#a5a5ff; --accent-soft:#8b8bff24; --accent-tk:#8b8bff45;
  --chg:#f0954f; --chg-soft:#f0954f22;
  --kw:#c678dd; --str:#98c379; --com:#5f6a7d; --def:#61afef; --num:#d19a66; --self:#e5924b;
  --shadow-sm:0 1px 2px rgba(0,0,0,.3);
@@ -401,6 +401,67 @@ body.nomap .minimap{display:none}
 .empty[hidden]{display:none}
 .empty b{display:block;color:var(--ink);font-size:15px;margin:12px 0 4px}
 
+/* ── React mode: components as boxes, real lines as rows, no lines between them ─────────────── */
+.node.rbox{width:340px}
+.node.rbox.wide{width:max-content;min-width:340px;max-width:720px}
+.rbox .nhead{position:relative}
+.rsig{font:600 12px/1.45 var(--mono);color:var(--ink)}
+.rbox .nhead.lit .rsig{color:var(--accent)}
+.rrow{position:relative;font:11px/1.5 var(--mono);background:var(--panel2);border-radius:6px;border-left:3px solid var(--line2);color:var(--ink2);white-space:pre-wrap;overflow-wrap:anywhere;padding:4px 7px 4px calc(8px + var(--i,0) * 1.2ch + 2ch);text-indent:-2ch;transition:opacity .15s,background-color .15s}
+.rrow>*{text-indent:0}
+.rrow .kw,.rsig .kw,pre.code.js .kw{color:var(--kw)} .rrow .tag,.rsig .tag,pre.code.js .tag{color:var(--def)}
+.rrow .str,.rsig .str,pre.code.js .str{color:var(--str)} .rrow .com,.rsig .com,pre.code.js .com{color:var(--com)} .rrow .nm,.rsig .nm,pre.code.js .nm{color:var(--num)}
+.tk{border-radius:3px;padding:0 1px;margin:0 -1px}
+.tk.on{background:var(--accent-tk);box-shadow:0 0 0 1px color-mix(in srgb,var(--accent) 45%,transparent)}
+.srow{cursor:pointer}
+.srow:hover{background:color-mix(in srgb,var(--accent) 7%,var(--panel2))}
+.srow.pinned{box-shadow:inset 0 0 0 1.5px var(--accent)}
+.sets{font:500 10px/1 var(--sans);color:var(--muted);margin-left:8px;white-space:nowrap}
+.rrow.unc{border-left-style:dashed}
+.rrow.lit{background:var(--accent-soft);border-left-color:var(--accent);color:var(--ink)}
+.rrow.lit.unc{background:color-mix(in srgb,var(--accent) 6%,var(--panel2));color:var(--ink2)}
+.rrow.cur{background:color-mix(in srgb,var(--accent) 17%,var(--panel2));box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--accent) 55%,transparent)}
+.rrow[data-step]{cursor:pointer}
+#world.rdim .node.rbox:not(.hot){opacity:.32}
+#world.rdim .node.rbox.hot .rrow:not(.lit){opacity:.42}
+#world.rdim .node.rbox.hot.unc{opacity:.6}
+.rc{display:inline-flex;align-items:center;gap:4px;font:700 10px/1 var(--mono);padding:3px 6px;border-radius:6px;border:1px solid var(--line);background:var(--panel2);color:var(--ink2);white-space:nowrap;text-indent:0;vertical-align:1px}
+.rc.api{color:var(--m-get);background:var(--m-get-bg);border-color:color-mix(in srgb,var(--m-get) 35%,var(--line));margin-left:6px}
+.rc.api .dot{width:6px;height:6px;border-radius:50%;background:var(--ok)}
+.rc.rerun{position:absolute;top:-10px;right:10px;z-index:4;color:var(--chg);border-color:color-mix(in srgb,var(--chg) 50%,var(--line));background:var(--panel);box-shadow:inset 0 0 0 20px var(--chg-soft);cursor:help;padding:2px 6px 2px 3px}
+.rc.rerun[hidden]{display:none}
+.rc.rerun.unc{border-style:dashed;opacity:.75}
+.num{display:inline-grid;place-items:center;min-width:17px;height:17px;padding:0 4px;border-radius:9px;background:var(--accent);color:#fff;font:700 10px/1 var(--mono);text-indent:0;border:0;margin:0}
+button.num{cursor:pointer}
+.num.o{background:var(--panel);color:var(--accent);box-shadow:inset 0 0 0 1.5px var(--accent)}
+.rrow>.num.dyn{position:absolute;left:-10px;top:3px;z-index:4;box-shadow:0 0 0 2px var(--panel)}
+.rrow>.num.dyn.o{box-shadow:inset 0 0 0 1.5px var(--accent),0 0 0 2px var(--panel)}
+.rc.rerun .num{min-width:15px;height:15px;font-size:9px}
+.go{color:inherit;text-decoration:none;cursor:pointer;border-radius:3px}
+.go.tag{color:var(--def)}
+.go:hover{text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:2px}
+.rflash{outline:2px solid var(--accent);outline-offset:3px;animation:rflash 1.2s ease-out forwards}
+@keyframes rflash{0%,45%{outline-color:var(--accent)}100%{outline-color:transparent}}
+.stepbar{top:14px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:4px;padding:4px;border-color:color-mix(in srgb,var(--accent) 45%,var(--line));border-radius:20px;max-width:calc(100% - 260px)}
+.stepbar[hidden]{display:none}
+.stepbar.idle{opacity:.5}
+.stepbar button{width:26px;height:26px;border-radius:50%;border:none;background:var(--accent);color:#fff;cursor:pointer;display:grid;place-items:center;padding:0;flex:none}
+.stepbar button svg{width:14px;height:14px}
+.stepbar button:hover{filter:brightness(1.08)}
+.stepbar button[aria-disabled="true"]{opacity:.35;cursor:default;filter:none}
+.stepbar .sbback{background:none;color:var(--ink2);box-shadow:inset 0 0 0 1px var(--line2)}
+.stepbar .sbback:hover{background:var(--panel2)}
+.sbsep{width:1px;height:16px;background:var(--line);margin:0 3px;flex:none}
+.sbname{font:600 11px/1 var(--mono);color:var(--muted);padding:0 2px 0 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+#sbcount{font:600 12px/1 var(--sans);color:var(--accent);padding:0 6px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.ep.act .t{font:600 12.5px/1.3 var(--mono)}
+.grp.sect{font-size:11px;color:var(--ink2);padding-top:14px}
+.grp.agrp{line-height:1.3;overflow-wrap:anywhere}
+.rkey{display:grid;grid-template-columns:auto 1fr;gap:6px 8px;align-items:center;font-size:11px;padding-top:4px}
+.rkey>span:first-child{display:inline-flex;gap:3px;align-items:center;font:11px/1.4 var(--mono);color:var(--ink2)}
+.rkey .rc.rerun{position:static;box-shadow:none;background:var(--chg-soft);padding:2px 6px;cursor:default}
+.rkey .dash{width:22px;height:14px;border-left:3px dashed var(--line2);background:var(--panel2);border-radius:3px}
+
 @media (max-width:900px){.brand{width:auto}.brand h1 small,.crumb .sum,.tb .lbl{display:none}.minimap{display:none}}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 </style>
@@ -441,6 +502,7 @@ body.nomap .minimap{display:none}
    <div id="world"><svg id="edges"></svg></div>
    <div class="empty" id="empty" hidden><div><svg width="64" height="48" viewBox="0 0 64 48" fill="none"><rect x="2" y="6" width="22" height="14" rx="4" stroke="currentColor" stroke-width="1.5"/><rect x="40" y="28" width="22" height="14" rx="4" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 3"/><path d="M24 13c10 0 6 22 16 22" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 3"/></svg><b id="emptyh">Nothing to draw</b><span id="emptyp">No endpoints were found for this run.</span></div></div>
    <div class="float chgnav" id="chgnav" hidden><button id="chgprev" data-tip="Previous  (⇧N)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 10 4-4 4 4"/></svg></button><span id="chglabel"></span><button id="chgnext" data-tip="Next  (N)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 6 4 4 4-4"/></svg></button></div>
+   <div class="float stepbar" id="stepbar" hidden role="toolbar" aria-label="Steps"><button class="sbback" id="sbback" aria-label="Back (Alt+Left)" data-tip="Back  (Alt+←)" aria-disabled="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 4 3 7.5 6.5 11"/><path d="M3.5 7.5H10a3 3 0 0 1 0 6H8"/></svg></button><span class="sbsep"></span><span class="sbname" id="sbname"></span><button id="sbprev" aria-label="Previous step (Shift+N)" data-tip="Previous  (⇧N)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 10 4-4 4 4"/></svg></button><span id="sbcount" aria-live="polite"></span><button id="sbnext" aria-label="Next step (N)" data-tip="Next  (N)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 6 4 4 4-4"/></svg></button></div>
    <details class="float legend" id="legend"></details>
    <div class="float dock">
     <span class="seg scrollseg wheelseg" role="group" aria-label="Scroll wheel"><button class="segb" data-mode="pan" data-tip="Scroll wheel pans  (W)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v12M2 8h12M8 2 6.3 3.7M8 2l1.7 1.7M8 14l-1.7-1.7M8 14l1.7-1.7M2 8l1.7-1.7M2 8l1.7 1.7M14 8l-1.7-1.7M14 8l-1.7 1.7"/></svg>Pan</button><button class="segb" data-mode="zoom" data-tip="Scroll wheel zooms  (W)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3M5 7h4M7 5v4"/></svg>Zoom</button></span>
@@ -473,6 +535,8 @@ body.nomap .minimap{display:none}
   <div class="kr"><span>Zoom</span><span><kbd>+</kbd><kbd>−</kbd><kbd>0</kbd></span></div>
   <div class="kr"><span>Show / hide all code</span><span><kbd>C</kbd></span></div>
   <div class="kr"><span>Next changed function</span><span><kbd>N</kbd><kbd>⇧N</kbd></span></div>
+  <div class="kr"><span>Next / previous step of an action</span><span><kbd>N</kbd><kbd>⇧N</kbd></span></div>
+  <div class="kr"><span>Back to where you jumped from</span><span><kbd>Alt</kbd><kbd>←</kbd></span></div>
   <div class="kr"><span>Review mode</span><span><kbd>R</kbd></span></div>
   <div class="kr"><span>Mark current reviewed</span><span><kbd>X</kbd></span></div>
   <div class="kr"><span>Sidebar / minimap</span><span><kbd>[</kbd><kbd>M</kbd></span></div>
@@ -559,9 +623,9 @@ function hlSide(src,vars,flags,cls,calls,locals){
 // Highlight the whole source once (so multi-line strings stay coloured), then cut it into one block
 // per line. hl() emits flat spans, so a span crossing a newline is closed and reopened on the next line.
 // Each line carries its own indent so wrapped continuation lines hang under the code, not at column 0.
-function codeLines(src,vars,calls,locals,clsOf){
+function codeLines(src,vars,calls,locals,clsOf,hlf){
  src=String(src==null?'':src);
- const raw=src.split('\n'),html=hl(src,vars,calls,locals),out=[];
+ const raw=src.split('\n'),html=(hlf||hl)(src,vars,calls,locals),out=[];
  let cur='',open='';
  html.split(/(<span[^>]*>|<\/span>)/).forEach(t=>{
    if(t.startsWith('<span')){open=t;cur+=t;}
@@ -590,6 +654,7 @@ const revKey=ep=>ep.id+(ep.sig?'@'+ep.sig:'');
 function titleHtml(t){const i=(t||'').lastIndexOf('.');return i>0?'<span class="cls">'+esc(t.slice(0,i+1))+'</span><wbr>'+esc(t.slice(i+1)):esc(t||'');}
 
 function build(ep){
+ rLeave();
  curEp=ep; nodes={}; edges=[];
  world.querySelectorAll('.node').forEach(n=>n.remove());
  svg.innerHTML='';
@@ -762,6 +827,7 @@ function renderStep(s,nv){
 }
 
 function layout(){
+ if(RMODE)return rLayout();
  // Space columns by the actual (possibly expanded) width of their widest box, and stack
  // rows by real heights, so nothing overlaps once a box is uncollapsed.
  // Widen the column gap to fit the longest arrow label (args or "type → var") so text sits in
@@ -817,6 +883,7 @@ function groupEdges(){
 }
 let GORIG=[],GKEYS=[];            // GORIG[groupIndex] = ["<callerNodeId>|<rowVar>", …]  (for hover-linking)
 function drawEdges(){
+ if(RMODE){svg.innerHTML='';drawMinimap();return;}
  svg.setAttribute('width',8000);svg.setAttribute('height',5000);
  let defs='<defs>',stubs='',fwd='',ret='',labels='';GORIG=[];GKEYS=[];
  groupEdges().forEach((g,i)=>{
@@ -1161,11 +1228,291 @@ $('#theme').onclick=()=>{const cur=root.getAttribute('data-theme')||(matchMedia(
 // title: the generator writes --title into <title>; mirror it in the header
 {const t=document.title.replace(/\s*[—·|-]\s*Call-Flow Explorer\s*$/,'')||'Call-Flow Explorer';$('#apptitle').innerHTML=esc(t)+'<small>'+(t==='Call-Flow Explorer'?'flowsegul':'Call-flow explorer')+'</small>';}
 
+// ══ React mode: user actions, the real lines they run through, what reruns ═══════════════════════
+// graph.react comes from flowsegul_react.mjs. Boxes are components (and the hooks / functions an
+// action reaches), rows are their real source lines. No lines are drawn between boxes: a component
+// tag, a prop or a setter name is a link, and Alt+← goes back.
+const RX=graph.react||null;
+let RMODE=false;
+const RU={},RR={},RS={},RSTATE_ROW={};
+if(RX){RX.units.forEach(u=>{RU[u.id]=u;});Object.assign(RR,RX.rows);RX.states.forEach(st=>{RS[st.id]=st;RSTATE_ROW[st.row]=st;});}
+// base: the action whose boxes are on the canvas; act: the one being numbered (Esc clears it, not the boxes)
+const rv={base:null,act:null,step:1,hover:null,pin:null,sstep:1,extra:new Set(),shownKey:'',shown:new Set(),need:new Set(),code:new Set()};
+let rhist=[],rquiet=0;
+const RERUN_BOXES=10;
+
+// syntax colours for TSX, one class per character so links can sit on top of them
+const JKW=new Set('const let var function return if else for while do switch case break continue new typeof instanceof in of async await export default import from as class extends try catch finally throw yield void delete this null undefined true false'.split(' '));
+const JRE=/(\/\/[^\n]*|\/\*[\s\S]*?(?:\*\/|$))|("(?:[^"\\\n]|\\.)*"?|'(?:[^'\\\n]|\\.)*'?|`(?:[^`\\]|\\.)*`?)|(<\/?[A-Za-z][\w.:-]*|\/>)|(\b\d[\d_.]*\b)|([A-Za-z_$][\w$]*)|([\s\S])/g;
+function jsClasses(text){
+ const cls=new Array(text.length).fill('');let m;JRE.lastIndex=0;
+ while((m=JRE.exec(text))){const c=m[1]?'com':m[2]?'str':m[3]?'tag':m[4]?'nm':(m[5]&&JKW.has(m[5]))?'kw':'';if(c)for(let i=m.index;i<JRE.lastIndex;i++)cls[i]=c;}
+ return cls;
+}
+function synHtml(text,cls,a,b){let s='',j=a;while(j<b){const c=cls[j];let k=j;while(k<b&&cls[k]===c)k++;const t=esc(text.slice(j,k));s+=c?'<span class="'+c+'">'+t+'</span>':t;j=k;}return s;}
+function hlJs(src){const t=String(src||'');return synHtml(t,jsClasses(t),0,t.length);}
+// a row's text with its marks: c = component tag, s = setter name, v = the state's value, p = prop in a signature
+function rCode(text,marks,o){
+ o=o||{};const cls=jsClasses(text);let out='',i=0;
+ (marks||[]).slice().sort((a,b)=>a[0]-b[0]).forEach(m=>{
+   if(m[0]<i||m[1]>text.length)return;
+   out+=synHtml(text,cls,i,m[0]);const inner=synHtml(text,cls,m[0],m[1]);i=m[1];
+   const k=m[2];
+   if(k==='c')out+='<a class="go tag" href="#" data-go="u|'+esc(m[3])+'">'+inner+'</a>';
+   else if(k==='s'){const ids=String(m[3]).split(' '),tk='<span class="tk" data-s="'+esc(m[3])+'">'+inner+'</span>';
+     out+=(o.state&&ids.includes(o.state))?tk:'<a class="go" href="#" data-go="s|'+esc(ids[0])+'">'+tk+'</a>';}
+   else if(k==='v')out+='<span class="tk" data-v="'+esc(m[3])+'">'+inner+'</span>';
+   else if(k==='p'){let t=inner;if(m[4])t='<span class="tk" data-s="'+esc(m[4])+'">'+t+'</span>';else if(m[5])t='<span class="tk" data-v="'+esc(m[5])+'">'+t+'</span>';
+     out+='<a class="go" href="#" data-go="p|'+esc(o.unit||'')+'|'+esc(m[3])+'">'+t+'</a>';}
+   else out+=inner;
+ });
+ return out+synHtml(text,cls,i,text.length);
+}
+
+// which boxes to draw: everything the action's steps touch, the components that rerun (a few),
+// the pinned state's lines, and the tree between them so the columns read parent → child
+function rShownSet(){
+ const s=new Set(),need=new Set();
+ const addRow=id=>{const r=RR[id];if(r){s.add(r.u);need.add(id);}};
+ const A=rv.base;
+ if(A){A.steps.forEach(st=>st.r.forEach(addRow));
+   let n=0;A.steps.forEach(st=>(st.rr||[]).forEach(([u,row])=>{if(s.has(u))return;if(n<RERUN_BOXES){s.add(u);n++;}}));
+   A.steps.forEach(st=>(st.rr||[]).forEach(([u,row])=>{if(s.has(u)&&row)need.add(row);}));}
+ if(rv.pin){const st=RS[rv.pin];[st.row].concat(st.hops,st.sites).forEach(addRow);st.sigs.forEach(u=>s.add(u));}
+ rv.extra.forEach(u=>s.add(u));
+ [...s].forEach(u=>{
+   if(!RU[u]||RU[u].kind!=='component')return;
+   const prev=new Map([[u,null]]),q=[[u,0]];let hit=null;
+   for(let i=0;i<q.length&&!hit;i++){const [x,d]=q[i];if(d>=6)continue;
+     for(const p of (RU[x]&&RU[x].parents)||[]){if(prev.has(p))continue;prev.set(p,x);if(s.has(p)){hit=p;break;}q.push([p,d+1]);}}
+   if(hit){let y=prev.get(hit);while(y&&y!==u){s.add(y);y=prev.get(y);}}
+ });
+ return {s,need};
+}
+function rRowVisible(id){const r=RR[id];return !r.kids||r.kids.some(k=>rv.shown.has(k))||rv.need.has(id);}
+function rBox(U){
+ const card=el('div','node rbox'+(U.kind!=='component'?' '+U.kind:''));card.dataset.id=U.id;
+ const head=el('div','nhead');
+ head.innerHTML='<span class="ntitle"><span class="rsig">'+rCode(U.sig.t,U.sig.m,{unit:U.id})+'</span><div class="nsub">'+esc(U.file)+':'+U.line+'</div></span><button class="ncaret" title="collapse">'+ICON_CARET+'</button><span class="rc rerun" tabindex="0" hidden></span>';
+ card.appendChild(head);
+ const body=el('div','nbody');
+ const ids=U.rows.filter(rRowVisible);
+ const inds=ids.map(id=>RR[id].i),base=Math.min(...inds);
+ const steps=inds.map(x=>x-base).filter(x=>x>0),unit=steps.length?Math.max(2,Math.min(4,Math.min(...steps))):2;
+ ids.forEach(id=>{
+   const r=RR[id],st=RSTATE_ROW[id];
+   const row=el('div','rrow'+(st?' srow':'')+(r.unc?' unc':''));row.id='rr-'+id;row.dataset.row=id;
+   row.style.setProperty('--i',Math.min(6,Math.round((r.i-base)/unit)));
+   let h=rCode(r.t,r.m,{state:st&&st.id});
+   if(st){row.dataset.s=st.id;row.tabIndex=0;row.setAttribute('role','button');row.setAttribute('aria-pressed','false');
+     row.setAttribute('aria-label',(st.name||st.setter)+' state, show where it is set');
+     h+='<span class="sets">set in '+st.sites.length+' place'+(st.sites.length===1?'':'s')+'</span>';}
+   (r.api||[]).forEach(([m,u])=>{h+='<span class="rc api"><span class="dot"></span>'+esc(m+' '+u)+'</span>';});
+   row.innerHTML=h;body.appendChild(row);
+ });
+ if(U.code){
+   const bar=el('div','codebar'),btn=el('button','codebtn'),pre=el('pre','code js');
+   bar.appendChild(btn);body.appendChild(bar);body.appendChild(pre);
+   pre.innerHTML=codeLines(U.code,{},{},null,null,hlJs);
+   btn.onclick=e=>{e.stopPropagation();const show=pre.hidden;show?rv.code.add(U.id):rv.code.delete(U.id);setNodeCode(card,show);relayout();};
+   setNodeCode(card,codeShown||rv.code.has(U.id),pre,btn);
+ }
+ card.appendChild(body);
+ head.addEventListener('click',e=>{if(dragMoved||e.target.closest('a.go,.rc,.ncaret'))return;card.classList.toggle('shut');relayout();});
+ return card;
+}
+function rBuild(force){
+ const {s,need}=rShownSet();rv.need=need;
+ const key=[...s].sort().join(',')+'|'+[...need].sort().join(',');
+ if(!force&&key===rv.shownKey){rPaint();return false;}
+ rv.shownKey=key;rv.shown=s;
+ world.querySelectorAll('.node').forEach(n=>n.remove());nodes={};
+ [...s].forEach(id=>{const U=RU[id];if(!U)return;const card=rBox(U);world.appendChild(card);nodes[id]={def:U,el:card,x:0,y:0};makeDraggable(card,nodes[id],card.querySelector('.nhead'));});
+ rLayout();rPaint();
+ return true;
+}
+// columns by render-tree depth, parent left of child; within a column, under the row that renders it
+function rLayout(){
+ const ids=Object.keys(nodes);if(!ids.length){drawMinimap();return;}
+ const comps=ids.filter(id=>RU[id].kind!=='fn');
+ const depths=[...new Set(comps.map(id=>RU[id].depth||0))].sort((a,b)=>a-b);
+ const colOf=id=>RU[id].kind==='fn'?depths.length:depths.indexOf(RU[id].depth||0);
+ const order=new Map();let k=0;(rv.base?rv.base.steps:[]).forEach(st=>st.r.forEach(r=>{const u=RR[r]&&RR[r].u;if(u&&!order.has(u))order.set(u,k++);}));
+ const ncol=Math.max(...ids.map(colOf))+1;let x=24;
+ for(let c=0;c<ncol;c++){
+   const col=ids.filter(id=>colOf(id)===c);if(!col.length)continue;
+   // under the row that renders it (a component) or calls it (a hook)
+   const anchor=id=>{const U=RU[id];let best=Infinity;
+     (U.parents||[]).forEach(p=>{const nd=nodes[p];if(!nd)return;const rows=nd.el.querySelectorAll('.rrow');
+       let y=nd.y+24;for(const r of rows){const R=RR[r.dataset.row];if(R&&R.kids&&R.kids.includes(id)){y=nd.y+r.offsetTop;break;}}best=Math.min(best,y);});
+     (U.callRows||[]).forEach(r=>{const e=rEl(r),nd=e&&nodes[RR[r].u];if(e&&nd&&nd.x<x)best=Math.min(best,nd.y+e.offsetTop);});
+     return best;};
+   const ys=new Map(col.map(id=>[id,anchor(id)]));
+   col.sort((a,b)=>(ys.get(a)-ys.get(b))||((order.has(a)?order.get(a):1e9)-(order.has(b)?order.get(b):1e9))||(a<b?-1:1));
+   let y=24,w=340;
+   col.forEach(id=>{const nd=nodes[id];const want=ys.get(id);if(isFinite(want))y=Math.max(y,want-10);nd.x=x;nd.y=y;place(nd);y+=nd.el.offsetHeight+26;w=Math.max(w,nd.el.offsetWidth);});
+   x+=w+56;
+ }
+ drawMinimap();
+}
+
+// ── lighting: a hovered or pinned state, or the numbered steps of an action ──
+function rEl(id){return document.getElementById('rr-'+id);}
+function rLight(id){const e=rEl(id);if(!e)return null;e.classList.add('lit');const n=e.closest('.node');if(n)n.classList.add('hot');return e;}
+function rBadge(e,n,cur,unc){const b=document.createElement('button');b.type='button';b.className='num dyn'+(cur==null||n===cur?'':' o');b.textContent=n;b.dataset.step=n;
+ b.setAttribute('aria-label','step '+n+(n===cur?', current':''));if(e.classList.contains('srow'))b.tabIndex=-1;e.insertBefore(b,e.firstChild);if(unc)e.classList.add('unc');}
+function rPaint(){
+ world.querySelectorAll('.lit,.hot,.cur,.pinned').forEach(e=>e.classList.remove('lit','hot','cur','pinned'));
+ world.querySelectorAll('.num.dyn').forEach(e=>e.remove());
+ world.querySelectorAll('.rrow[data-step]').forEach(e=>e.removeAttribute('data-step'));
+ world.querySelectorAll('.rrow.unc').forEach(e=>{if(!RR[e.dataset.row].unc)e.classList.remove('unc');});
+ world.querySelectorAll('.tk.on').forEach(e=>e.classList.remove('on'));
+ world.querySelectorAll('.rc.rerun').forEach(e=>{e.hidden=true;e.textContent='';e.classList.remove('unc');e.removeAttribute('data-tip');});
+ world.querySelectorAll('.srow').forEach(e=>e.setAttribute('aria-pressed','false'));
+ world.classList.remove('rdim');
+ const s=rv.hover||rv.pin;
+ if(rv.pin){const p=rEl(RS[rv.pin].row);if(p){p.classList.add('pinned');p.setAttribute('aria-pressed','true');}}
+ if(s){
+   const st=RS[s];world.classList.add('rdim');
+   [st.row].concat(st.hops,st.sites).forEach(rLight);
+   st.sigs.forEach(u=>{const nd=nodes[u];if(nd){nd.el.classList.add('hot');nd.el.querySelector('.nhead').classList.add('lit');}});
+   world.querySelectorAll('.tk[data-s~="'+s+'"]').forEach(t=>t.classList.add('on'));
+   const c=rv.pin===s?rv.sstep:null;
+   st.sites.forEach((id,i)=>{const e=rEl(id);if(!e)return;e.dataset.step=i+1;rBadge(e,i+1,c,st.unc.includes(id));if(c===i+1)e.classList.add('cur');});
+ }else if(rv.act){
+   world.classList.add('rdim');const rr={};
+   rv.act.steps.forEach((st,i)=>{const n=i+1;
+     st.r.forEach((id,j)=>{const e=rLight(id);if(!e)return;e.dataset.step=n;if(j===0)rBadge(e,n,rv.step,st.unc);else if(st.unc)e.classList.add('unc');if(n===rv.step)e.classList.add('cur');});
+     (st.tk||[]).forEach(x=>world.querySelectorAll('.tk[data-s~="'+x+'"]').forEach(t=>t.classList.add('on')));
+     (st.tv||[]).forEach(x=>world.querySelectorAll('.tk[data-v~="'+x+'"]').forEach(t=>t.classList.add('on')));
+     (st.rr||[]).forEach(([u,row,unc])=>{(rr[u]=rr[u]||[]).push([n,row,unc]);});
+   });
+   Object.keys(rr).forEach(u=>{const nd=nodes[u];if(!nd)return;const chip=nd.el.querySelector('.rc.rerun');chip.hidden=false;nd.el.classList.add('hot');
+     const seen=new Set();rr[u].forEach(([n,row,unc])=>{if(seen.has(n))return;seen.add(n);const b=el('span','num'+(n===rv.step?'':' o'),String(n));b.dataset.step=n;chip.appendChild(b);});
+     chip.appendChild(document.createTextNode('reruns'));
+     if(rr[u].every(e=>e[2])){chip.classList.add('unc');nd.el.classList.add('unc');}
+     const tips=[...new Set(rr[u].map(([n,row])=>{const R=RR[row];return R?RU[R.u].file+':'+R.a+'\n'+R.t:'';}).filter(Boolean))];
+     chip.dataset.tip=tips.join('\n\n');});
+ }
+ rBar();
+}
+
+// ── steps, jumps, back ──
+function rStops(){
+ if(rv.pin)return RS[rv.pin].sites.map(rEl);
+ if(rv.act)return rv.act.steps.map(st=>st.r.length?rEl(st.r[0]):(st.rr&&st.rr.length&&nodes[st.rr[0][0]]?nodes[st.rr[0][0]].el.querySelector('.rc.rerun'):null));
+ return [];
+}
+function rCur(){return rv.pin?rv.sstep:rv.step;}
+function rDis(e,v){e.setAttribute('aria-disabled',String(!!v));}
+function rBar(){
+ const bar=$('#stepbar');if(!RMODE){bar.hidden=true;return;}
+ const st=rStops();bar.hidden=!st.length&&!rhist.length;
+ rDis($('#sbback'),!rhist.length);
+ const on=st.length>0;['#sbprev','#sbnext','#sbcount','#sbname'].forEach(q=>{$(q).style.display=on?'':'none';});
+ bar.querySelector('.sbsep').style.display=on?'':'none';
+ if(!on)return;
+ bar.classList.toggle('idle',!!(rv.hover&&rv.hover!==rv.pin));
+ $('#sbname').textContent=rv.pin?(RS[rv.pin].setter||RS[rv.pin].name):rv.act.label;
+ $('#sbcount').textContent=rCur()+' / '+st.length;
+ rDis($('#sbprev'),rCur()<=1);rDis($('#sbnext'),rCur()>=st.length);
+}
+function rGo(n){
+ const st=rStops();if(!st.length)return;
+ n=Math.max(1,Math.min(st.length,n));
+ if(rv.hover&&rv.hover!==rv.pin)rv.hover=null;
+ if(rv.pin)rv.sstep=n;else rv.step=n;
+ rPaint();rReveal(rStops()[n-1]);
+}
+function rFlash(e){if(!e)return;e.classList.remove('rflash');void e.offsetWidth;e.classList.add('rflash');clearTimeout(e._ft);e._ft=setTimeout(()=>e.classList.remove('rflash'),1300);}
+// pan so the element sits in view (the canvas pans, the page never scrolls)
+function rReveal(e,quiet){
+ if(!e)return;const sr=stage.getBoundingClientRect(),r=e.getBoundingClientRect();
+ const top=sr.top+60,bot=sr.bottom-20,left=sr.left+16,right=sr.right-16;
+ if(r.top<top||r.bottom>bot||r.left<left||r.right>right){
+   view.x+=(sr.left+sr.width/2)-(r.left+r.width/2);
+   view.y+=r.height>bot-top?top+10-r.top:(top+(bot-top)/2)-(r.top+r.height/2);
+   rquiet=Date.now()+800;quiet?applyView():animateView();
+ }
+ if(!quiet)rFlash(e);
+}
+function rTarget(g){
+ const [k,a,b]=g.split('|');
+ if(k==='u')return {unit:a,el:()=>nodes[a]&&nodes[a].el};
+ if(k==='s'){const st=RS[a];return st&&{unit:st.u,el:()=>rEl(st.row)};}
+ if(k==='r'){const R=RR[a];return R&&{unit:R.u,el:()=>rEl(a)};}
+ if(k==='p'){const U=RU[a],rows=(U&&U.propRows[b])||[];if(!rows.length)return null;
+   const pick=rows.find(r=>rv.shown.has(RR[r].u))||rows[0];return {unit:RR[pick].u,row:pick,el:()=>rEl(pick)};}
+ return null;
+}
+function rJump(a){
+ const t=rTarget(a.dataset.go);if(!t)return;
+ let added=false;
+ if(!rv.shown.has(t.unit)){rv.extra.add(t.unit);added=true;}
+ if(t.row&&!rv.need.has(t.row)){rv.extra.add(t.unit);}
+ const from=a.closest('.rrow,.nhead');const fromId=from&&(from.id||(from.closest('.node')&&from.closest('.node').dataset.id));
+ rhist.push({x:view.x,y:view.y,s:view.s,from:fromId,row:!!(from&&from.id)});
+ if(added){rBuild();}
+ const e=t.el();if(!e)return;
+ rReveal(e);rBar();
+}
+function rBack(){
+ const h=rhist.pop();if(!h)return;
+ view.x=h.x;view.y=h.y;view.s=h.s;rquiet=Date.now()+800;animateView();
+ const e=h.row?document.getElementById(h.from):(nodes[h.from]&&nodes[h.from].el.querySelector('.nhead'));
+ if(e)setTimeout(()=>rFlash(e),300);
+ rBar();
+}
+function rEsc(){rv.act=null;rv.pin=null;rv.hover=null;if(document.activeElement&&world.contains(document.activeElement))document.activeElement.blur();rBuild();}
+function rPin(id){rv.pin=rv.pin===id?null:id;rv.sstep=1;rBuild();}
+
+world.addEventListener('click',e=>{
+ if(!RMODE)return;
+ const a=e.target.closest('a.go');if(a){e.preventDefault();e.stopPropagation();rJump(a);return;}
+ const b=e.target.closest('.num[data-step]');if(b){e.stopPropagation();rGo(+b.dataset.step);return;}
+ const sr=e.target.closest('.srow');if(sr){rPin(sr.dataset.s);return;}
+ const r=e.target.closest('.rrow[data-step]');if(r)rGo(+r.dataset.step);
+});
+world.addEventListener('mouseover',e=>{if(!RMODE)return;const r=e.target.closest('.srow');if(!r||rv.hover===r.dataset.s||Date.now()<rquiet)return;rv.hover=r.dataset.s;rPaint();});
+world.addEventListener('mouseout',e=>{if(!RMODE)return;const r=e.target.closest('.srow');if(!r||(e.relatedTarget&&r.contains(e.relatedTarget)))return;if(rv.hover===r.dataset.s){rv.hover=null;rPaint();}});
+world.addEventListener('focusin',e=>{if(!RMODE)return;const r=e.target.closest('.srow');if(r&&e.target===r){rv.hover=r.dataset.s;rPaint();}});
+world.addEventListener('focusout',e=>{if(!RMODE)return;const r=e.target.closest('.srow');if(r&&rv.hover===r.dataset.s){rv.hover=null;rPaint();}});
+world.addEventListener('keydown',e=>{if(!RMODE)return;const r=e.target.closest('.srow');if(r&&e.target===r&&(e.key==='Enter'||e.key===' ')){e.preventDefault();rPin(r.dataset.s);}});
+$('#sbprev').onclick=()=>rGo(rCur()-1);
+$('#sbnext').onclick=()=>rGo(rCur()+1);
+$('#sbback').onclick=rBack;
+
+function rLegend(){
+ $('#legend').innerHTML='<summary><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 4 4 4-4 4"/></svg>Key</summary><div class="lgbody"><div class="rkey">'
+  +'<span><span class="num o">1</span><span class="num">2</span></span><span>order after the action, filled is current</span>'
+  +'<span><kbd>N</kbd><kbd>⇧N</kbd></span><span>next, previous step</span>'
+  +'<span><span class="tag" style="color:var(--def);text-decoration:underline">&lt;Tag</span></span><span>click a tag, prop or setter to jump</span>'
+  +'<span><kbd>Alt</kbd><kbd>←</kbd></span><span>back</span>'
+  +'<span><span class="rc rerun">reruns</span></span><span>function runs again, hover for why</span>'
+  +'<span><span class="tk on">setX</span></span><span>same setter, other name</span>'
+  +'<span><span class="dash"></span></span><span>not sure: spread props, context</span>'
+  +'<span><kbd>Esc</kbd></span><span>clear</span>'
+  +'</div></div>';
+}
+function rLeave(){if(!RMODE)return;RMODE=false;world.classList.remove('rdim');$('#stepbar').hidden=true;rv.pin=null;rv.hover=null;}
+function selectAction(A){
+ RMODE=true;curEp={id:A.id,nodes:[],react:true};
+ svg.innerHTML='';$('#chgnav').hidden=true;closeDrawer();
+ Object.assign(rv,{base:A,act:A,step:1,hover:null,pin:null,sstep:1,extra:new Set(),shownKey:''});rhist=[];
+ rBuild(true);fit(false);
+ const R=RR[A.row],U=R&&RU[R.u];
+ $('#epinfo').innerHTML='<span class="path" title="'+esc(A.label)+'">'+esc(A.label)+'</span><span class="sum">'+esc(A.sub)+(U?' · '+esc(U.file)+':'+R.a:'')+'</span>';
+ rLegend();
+ const first=rStops()[0];if(first)rReveal(first,true);
+}
+
 // ── sidebar ──
 const side=$('#side');
 const epEls=[];
 let curGroup=null, anyChg=0; const chgFns=new Set();
-function selectEp(ep,d){side.querySelectorAll('.ep').forEach(x=>x.classList.remove('on'));d.classList.add('on');d.scrollIntoView({block:'nearest'});store.set('ep',ep.id);build(ep);}
+function selectEp(ep,d){side.querySelectorAll('.ep').forEach(x=>x.classList.remove('on'));d.classList.add('on');d.scrollIntoView({block:'nearest'});store.set('ep',ep.id);if(ep.__act){selectAction(ep.__act);curEp=ep;}else build(ep);}
+const bothKinds=graph.endpoints.length&&RX&&RX.actions.length;
+if(bothKinds)side.appendChild(el('div','grp sect','Routes'));
 graph.endpoints.forEach((ep,i)=>{
  if(ep.group && ep.group!==curGroup){curGroup=ep.group;const g=el('div','grp',esc(curGroup)+'<span class="gn">'+graph.endpoints.filter(x=>x.group===ep.group).length+'</span>');g.dataset.grp=ep.group;side.appendChild(g);}
  else if(!ep.group && curGroup===null){curGroup='';side.appendChild(el('div','grp','Endpoints'));}
@@ -1178,6 +1525,23 @@ graph.endpoints.forEach((ep,i)=>{
  d.querySelector('.revchk').onclick=(e)=>{e.stopPropagation();markReviewed(ep,d);};
  side.appendChild(d); epEls.push({ep,d});
 });
+// user actions (React mode), grouped by the folder of the component they sit in
+if(RX&&RX.actions.length){
+ if(bothKinds)side.appendChild(el('div','grp sect','Actions'));
+ let g=null;
+ RX.actions.forEach(A=>{
+   const item={id:A.id,title:A.label,path:A.sub,method:'',group:A.group,nodes:[],__act:A};
+   if(A.group!==g){g=A.group;const h=el('div','grp agrp',esc(g)+'<span class="gn">'+RX.actions.filter(x=>x.group===g).length+'</span>');h.dataset.grp=g;side.appendChild(h);}
+   const d=el('div','ep act');d.tabIndex=0;
+   const R=RR[A.row],U=R&&RU[R.u];
+   if(U)d.dataset.tip=U.file+':'+R.a+'\n'+R.t;
+   d.innerHTML='<span class="eptext"><div class="t">'+esc(A.label)+'</div><div class="p">'+esc(A.sub)+'</div></span>';
+   d.onclick=()=>selectEp(item,d);
+   d.onkeydown=e=>{if(e.key==='Enter')selectEp(item,d);};
+   side.appendChild(d);epEls.push({ep:item,d});
+ });
+ if(!graph.endpoints.length)$('#q').placeholder='Filter actions';
+}
 function markReviewed(ep,d){const on=d.classList.toggle('reviewed');on?reviewed.add(revKey(ep)):reviewed.delete(revKey(ep));saveReviewed(reviewed);updateRevProgress();}
 if(anyChg){$('#chgtoggle').hidden=false;$('#chgcount').textContent=chgFns.size;}
 
@@ -1288,10 +1652,11 @@ window.addEventListener('pageshow',()=>{$('#loading').hidden=true;});
 
 // ── keyboard ──
 window.addEventListener('keydown',e=>{
+ if(RMODE&&e.altKey&&e.key==='ArrowLeft'&&!(e.target.closest&&e.target.closest('input,textarea,[contenteditable]'))){if(rhist.length){e.preventDefault();rBack();}return;}
  if((e.metaKey||e.ctrlKey)&&(e.key==='k'||e.key==='K')){e.preventDefault();if(document.body.classList.contains('noside'))toggleSide();$('#q').focus();$('#q').select();return;}
  if(e.metaKey||e.ctrlKey||e.altKey)return;
  const typing=e.target.closest&&e.target.closest('input,textarea,[contenteditable]');
- if(e.key==='Escape'){toggleHelp(false);closeDrawer();closeRange();return;}
+ if(e.key==='Escape'){toggleHelp(false);closeDrawer();closeRange();if(RMODE&&!typing)rEsc();return;}
  if(typing)return;
  const k=e.key;
  if(k==='/'){e.preventDefault();if(document.body.classList.contains('noside'))toggleSide();$('#q').focus();$('#q').select();}
@@ -1301,6 +1666,7 @@ window.addEventListener('keydown',e=>{
  else if(k==='-'||k==='_'){zoomCenter(1/1.2);}
  else if(k==='0'){$('#zpct').click();}
  else if(k==='c'||k==='C'){setCode(!codeShown);}
+ else if(RMODE&&(k==='n'||k==='N')){e.preventDefault();rGo(rCur()+(k==='N'?-1:1));}
  else if(k==='n'){if(anyChg)gotoChg(1);}
  else if(k==='N'){if(anyChg)gotoChg(-1);}
  else if(k==='Enter'&&chgNavOn&&!e.target.closest('.ep,button')){e.preventDefault();gotoChg(e.shiftKey?-1:1);}
@@ -1320,7 +1686,7 @@ if(store.get('nomap',false))toggleMap();
 if(store.get('noside',false))document.body.classList.add('noside');
 updateRevProgress();
 applyView();
-if(!graph.endpoints.length){
+if(!epEls.length){
  $('#empty').hidden=false;$('#legend').hidden=true;
  if(META.mode!=='all'){$('#emptyh').textContent='No changes here';$('#emptyp').innerHTML='Nothing in <b>'+esc(META.head||'the working tree')+'</b> differs from <b>'+esc(META.base)+'</b>. Pick another range with the button at the top left.';}
 }

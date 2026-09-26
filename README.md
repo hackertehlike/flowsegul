@@ -67,6 +67,26 @@ e.g. `domain` or `billing`. To name things your own way, add a `.flowsegul.json`
 
 Run `flowsegul --help` for the full list.
 
+### React + TypeScript apps
+
+```sh
+flowsegul --react            # or just `flowsegul` in a repo with .tsx files and no FastAPI routes
+flowsegul --react frontend   # only this folder of the repo
+```
+
+The sidebar lists what a user can do, grouped by folder: `click Apply`, `type in coupon`,
+`submit Log in`, `page load`. Pick one and the map numbers the real code lines it runs through, in
+order: the handler, the callback props it goes up through, the `useState` setter, the components
+that rerun (a `reruns` chip; hover it for the line responsible), effects that depend on the state,
+and the requests they make (`GET /orders/preview`). Step through with `N` / `Shift+N`; `Esc`
+clears. Hover a `useState` line to see every place that sets it (`set in 2 places`), click to pin.
+Click a component tag, a prop or a setter to jump to where it comes from; `Alt+←` goes back.
+
+It needs Node.js and the `typescript` package: the app's own, one installed globally, or a folder
+named by `FLOWSEGUL_TS`. Labels and paths come from the code by fixed rules. Anything that can't be
+followed for sure (props passed on with `{...props}`, values from a context) is drawn faded as
+uncertain. A repo with both a FastAPI backend and a React app gets both with `--react`.
+
 ## What you get
 
 - **Draggable node graph** per endpoint — opens fitted to the screen; drag to pan, pinch or
@@ -109,7 +129,8 @@ python3 -m unittest discover -s tests -v
 ```
 
 A smoke test builds a tiny FastAPI repo, runs the generator in normal and `--changed` modes, and
-checks the HTML it writes. CI runs it on Linux and macOS.
+checks the HTML it writes. CI runs it on Linux and macOS. `tests/test_react.py` checks React mode
+on a small checkout app (`tests/react_fixture.py`); it skips when Node or `typescript` isn't found.
 
 ## Claude Code skill
 

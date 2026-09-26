@@ -58,6 +58,13 @@ python3 scripts/flowsegul_gen.py --changed --out /tmp/flowsegul.html   # then op
   specific commit range rather than the branch-vs-base view. (`--base`/`--branch` also accept raw
   hashes, but they diff via the *merge-base* — branch semantics.)
 - **`--depth`** (default 6), **`--title`**, **`--out`** (default a temp file).
+- **`--react [DIR]`** — map a React + TypeScript app (or only the folder `DIR` in the repo): each
+  user action (click, typing, submit, page load) and the ordered path it sets off — handler,
+  callback props up the tree, the `useState` setter, the components that rerun, effects on that
+  state and the requests they make. On by default for a repo with `.tsx` and no FastAPI routes.
+  Needs `node` and the `typescript` package (the app's own, a global one, or `FLOWSEGUL_TS=DIR`).
+  Reads the working tree; `--changed` etc. apply to routes only. Anything it can't pin down is
+  marked uncertain (faded), never claimed.
 
 **Coverage guarantee (`--changed` / `--from`):** every changed *function* is drawn as a node in
 some endpoint's flow, or as its own root chart if no endpoint reaches it; every changed *class*
