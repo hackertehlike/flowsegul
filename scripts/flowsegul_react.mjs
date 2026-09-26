@@ -1749,6 +1749,17 @@ export function analyze(ts, root, { tag = '' } = {}) {
     const richRows = new Set(actOut.filter((a) => a.steps.length > 1).map((a) => a.row));
     for (let i = actOut.length - 1; i >= 0; i--) if (actOut[i].steps.length <= 1 && richRows.has(actOut[i].row)) actOut.splice(i, 1);
   }
+  // sidebar groups read as short folder names: drop the folders every group shares and a leading src/
+  {
+    const parts = actOut.map((a) => (a.group ? a.group.split('/') : []));
+    let common = parts.length ? Math.min(...parts.map((p) => p.length)) : 0;
+    for (let i = 0; i < common; i++) if (parts.some((p) => p[i] !== parts[0][i])) { common = i; break; }
+    actOut.forEach((a, k) => {
+      let p = parts[k].slice(common);
+      if (p[0] === 'src') p = p.slice(1);
+      a.group = p.join('/');
+    });
+  }
   const treeRank = new Map();
   {
     const visit = (u) => { if (treeRank.has(u)) return; treeRank.set(u, treeRank.size); for (const r of u.renders) visit(r.child); };

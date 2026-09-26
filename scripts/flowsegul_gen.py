@@ -1984,7 +1984,7 @@ def react_for_repo(repo, args, have_routes, log=True):
         data['label'] = tag if sub == '.' else f'{tag}/{sub}'
         if sub != '.' and (len(roots) > 1 or have_routes):   # say which app (or the frontend) each action is in
             for a in data['actions']:
-                a['group'] = sub + ('/' + a['group'] if a['group'] else '')
+                a['group'] = os.path.basename(sub) + ('/' + a['group'] if a['group'] else '')
         for a in data['actions']:
             a['group'] = a['group'] or tag
         parts.append(data)

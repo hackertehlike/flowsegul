@@ -78,8 +78,8 @@ class ReactAnalyzerTest(unittest.TestCase):
             self.assertIn(want, labels)
         self.assertEqual(self.action('click Apply')['sub'], 'CouponField')
         self.assertEqual(self.action('page load')['sub'], 'CheckoutPage')
-        self.assertEqual(self.action('click Apply')['group'], 'src/checkout')
-        self.assertEqual(self.action('click Dark')['group'], 'src/settings')
+        self.assertEqual(self.action('click Apply')['group'], 'checkout')
+        self.assertEqual(self.action('click Dark')['group'], 'settings')
 
     def test_setter_sites(self):
         cc = self.state('couponCode')
