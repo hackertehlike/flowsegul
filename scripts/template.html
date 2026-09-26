@@ -218,8 +218,8 @@ body.review .revbar{display:block}
 #edges.linking path.ge.on,#edges.spot path.vhot{stroke-dasharray:7 5;animation:flow .6s linear infinite}
 @keyframes flow{to{stroke-dashoffset:-12}}
 /* variable spotlight: hover a variable → it + its arrows stay lit, everything else fades */
-.spot .vchip:not(.vhot),.spot .var:not(.vhot),.spot .lvar:not(.vhot){opacity:.22;transition:opacity .12s}
-.spot .vchip.vhot,.spot .var.vhot,.spot .lvar.vhot{outline:1.5px solid currentColor;outline-offset:1px;border-radius:4px}
+.spot .vchip:not(.vhot),.spot .var:not(.vhot),.spot .lvar:not(.vhot),.spot .ins [data-var]:not(.vhot){opacity:.22;transition:opacity .12s}
+.spot .vchip.vhot,.spot .var.vhot,.spot .lvar.vhot,.spot .ins [data-var].vhot{outline:1.5px solid currentColor;outline-offset:1px;border-radius:4px}
 .spot .vhot.vpart{outline-style:dashed}
 /* what a box's parameters received, and which fields it reads */
 .ins{display:flex;flex-direction:column;gap:4px;font:11px/1.5 var(--mono);padding:5px 8px;border:1px dashed var(--line2);border-radius:7px}
@@ -475,6 +475,9 @@ const $=(s,r=document)=>r.querySelector(s);
 const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
 const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const reEsc=s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+// the attribute chain right after a name (payload|.customer_id), minus a trailing method call
+function fieldTail(src,i){const m=/^(?:\.[A-Za-z_][A-Za-z0-9_]*)+/.exec(src.slice(i));if(!m)return '';let t=m[0];if(src[i+t.length]==='(')t=t.slice(0,t.lastIndexOf('.'));return t;}
+const pathAttr=p=>p?' data-path="'+esc(p)+'"':'';
 const store={get(k,d){try{const v=localStorage.getItem('flowsegul_'+k);return v==null?d:JSON.parse(v);}catch(e){return d;}},set(k,v){try{localStorage.setItem('flowsegul_'+k,JSON.stringify(v));}catch(e){}}};
 const ICON_CODE='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 4.5 2 8l3.5 3.5M10.5 4.5 14 8l-3.5 3.5"/></svg>';
 const ICON_CARET='<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 6 4 4 4-4"/></svg>';
@@ -491,7 +494,7 @@ function hl(src,vars,calls,locals){
    else if(m[3])out+='<span class=str>'+esc(m[3])+'</span>';
    else if(m[4])out+='<span class=dec>'+esc(m[4])+'</span>';
    else if(m[5])out+='<span class=num>'+esc(m[5])+'</span>';
-   else if(m[6]){const w=m[6];if(KW.has(w))out+='<span class=kw>'+w+'</span>';else if(w==='self'||w==='cls')out+='<span class=self>'+w+'</span>';else if(vars[w])out+='<span class="var" data-var="'+esc(w)+'" style="background:'+vars[w]+'22;color:'+vars[w]+'">'+esc(w)+'</span>';else if(calls[w])out+='<span class="call" style="color:'+calls[w].color+'" data-target="'+calls[w].target+'">'+esc(w)+'</span>';else if(locals&&locals.has(w))out+='<span class="lvar" data-var="'+esc(w)+'">'+esc(w)+'</span>';else out+=esc(w);}
+   else if(m[6]){const w=m[6];if(KW.has(w))out+='<span class=kw>'+w+'</span>';else if(w==='self'||w==='cls')out+='<span class=self>'+w+'</span>';else if(vars[w]){const t=fieldTail(src,re.lastIndex);re.lastIndex+=t.length;out+='<span class="var" data-var="'+esc(w)+'"'+pathAttr(t)+' style="background:'+vars[w]+'22;color:'+vars[w]+'">'+esc(w+t)+'</span>';}else if(calls[w])out+='<span class="call" style="color:'+calls[w].color+'" data-target="'+calls[w].target+'">'+esc(w)+'</span>';else if(locals&&locals.has(w)){const t=fieldTail(src,re.lastIndex);re.lastIndex+=t.length;out+='<span class="lvar" data-var="'+esc(w)+'"'+pathAttr(t)+'>'+esc(w+t)+'</span>';}else out+=esc(w);}
    else out+=esc(m[7]);
  }
  return out;
@@ -610,7 +613,7 @@ function build(ep){
    (n.notes||[]).forEach(t=>body.appendChild(el('div','step note',esc(t))));
    const nodeVars=nodeVarsFor(n);
    const ins=renderIns(n,nodeVars);if(ins)body.appendChild(ins);
-   (n.steps||[]).forEach(s=>{if(s.expr==='')return;const row=renderStep(s,varColor);if(s.target&&nameById[s.target])row.dataset.callee=nameById[s.target];body.appendChild(row);});
+   (n.steps||[]).forEach(s=>{if(s.expr==='')return;const row=renderStep(s,nodeVars);if(s.target&&nameById[s.target])row.dataset.callee=nameById[s.target];body.appendChild(row);});
    if(c.code||n.diff||n.base!=null){   // deleted nodes have no HEAD code but do have a removal diff
      const pre=el('pre','code');
      const flags=diffFlags(n.diff||'');
@@ -673,7 +676,7 @@ function setNodeCode(card,show,pre,btn){
 // A value's origin is "<node id>|<name>" where it first appears, plus a path into it ('.items[].sku').
 // A name with no recorded flow is its own origin.
 function nameOf(origin){return origin.slice(origin.lastIndexOf('|')+1);}
-function originsOf(nid,name){const f=FLOW[nid]&&FLOW[nid][name];return f&&f.length?f:[[nid+'|'+name,'']];}
+function originsOf(nid,name,path){const f=FLOW[nid]&&FLOW[nid][name],os=f&&f.length?f:[[nid+'|'+name,'']];return path?os.map(([o,p])=>[o,p+path]):os;}
 // 2 = same value, 1 = one is part of the other (payload vs payload.items), 0 = unrelated
 function overlap(p,q){if(p===q)return 2;const[a,b]=p.length<q.length?[p,q]:[q,p];return b.startsWith(a)&&'.['.includes(b[a.length])?1:0;}
 function relation(os,H){let best=0;for(const[a,p]of os)for(const[b,q]of H)if(a===b)best=Math.max(best,overlap(p,q));return best;}
@@ -685,7 +688,7 @@ function edgeKeys(src,s){
  (s.bind||[]).forEach(b=>{if(b.from)add(b.from,b.path);(b.uses||[]).forEach(u=>add(u));});
  return [...k];
 }
-const vchip=(name,c)=>'<span class="vchip" data-var="'+esc(name)+'"'+(c?' style="background:'+c+'22;color:'+c+'"':'')+'>'+esc(name)+'</span>';
+const vchip=(name,c,path,text)=>'<span class="vchip" data-var="'+esc(name)+'"'+pathAttr(path)+(c?' style="background:'+c+'22;color:'+c+'"':'')+'>'+esc(text==null?name:text)+'</span>';
 // top of a box: what each parameter received from the caller, and which of its fields this function reads
 function renderIns(n,nv){
  const rows=new Map(), callers=new Set((n.recv||[]).map(r=>r[2]));
@@ -694,20 +697,25 @@ function renderIns(n,nv){
  if(!rows.size)return null;
  const box=el('div','ins');
  rows.forEach((r,p)=>{
-   const src=r.src.filter(([t])=>t).map(([t,caller])=>'<span class="src">'+esc(t)+'</span>'+(callers.size>1?'<span class="rd"> in '+esc(caller)+'</span>':'')).join('<span class="rd"> or </span>');
-   const reads=r.reads.length?'<span class="rd">reads</span>'+r.reads.map(x=>'<span class="fl">'+esc(x.replace(/^\[\]/,'each '))+'</span>').join(''):'';
+   const src=r.src.filter(([t])=>t).map(([t,caller])=>'<span class="src" data-var="'+esc(p)+'">'+esc(t)+'</span>'+(callers.size>1?'<span class="rd"> in '+esc(caller)+'</span>':'')).join('<span class="rd"> or </span>');
+   const reads=r.reads.length?'<span class="rd">reads</span>'+r.reads.map(x=>'<span class="fl" data-var="'+esc(p)+'" data-path="'+esc(x)+'">'+esc(x.replace(/^\[\]/,'each '))+'</span>').join(''):'';
    box.appendChild(el('div','in',vchip(p,nv[p])+(src?'<span class="rd">←</span>'+src:'')+reads));
  });
  return box;
 }
-function renderStep(s,varColor){
+function renderStep(s,nv){
  const row=el('div','step'+(s.var==='return'?' ret':''));
- const col=(s.var&&s.var!=='return')?varColor[s.var]:null;
+ const col=(s.var&&s.var!=='return')?nv[s.var]:null;
  if(col)row.style.borderLeftColor=col;
  let label = s.var==='return' ? '<span class="kw">return</span> '
-   : '<span class="vchip" data-var="'+esc(s.var)+'" style="background:'+col+'22;color:'+col+'">'+esc(s.var)+'</span> <span class="arw">=</span> ';
- let expr=esc(s.expr);
- (s.uses||[]).forEach(u=>{const c=varColor[u];if(!c)return;expr=expr.replace(new RegExp('\\b'+reEsc(u)+'\\b','g'),'<span class="vchip" data-var="'+esc(u)+'" style="background:'+c+'22;color:'+c+'">'+esc(u)+'</span>');});
+   : vchip(s.var,col)+' <span class="arw">=</span> ';
+ // every coloured name in the call, with the field it reads (payload.customer_id stays one token)
+ let expr='',m;const re=/([A-Za-z_][A-Za-z0-9_]*)|([\s\S])/g,src=s.expr;
+ while((m=re.exec(src))){
+   const w=m[1];
+   if(w&&nv[w]&&src[m.index-1]!=='.'){const t=fieldTail(src,re.lastIndex);re.lastIndex+=t.length;expr+=vchip(w,nv[w],t,w+t);}
+   else expr+=esc(m[0]);
+ }
  row.innerHTML=label+expr;
  row.dataset.rowvar=s.var;
  return row;
@@ -843,15 +851,15 @@ svg.addEventListener('mouseout',e=>{if(e.target.closest('[data-g]'))setLink([]);
 // It follows the value, not the name: the argument a caller passes and the parameter it lands in
 // light up together, parts of it (payload → payload.items → items) get a dashed outline, and an
 // unrelated variable that happens to share the name stays dim.
-function setSpot(v,nid){
+function setSpot(v,nid,path){
  const on=!!v;
  world.classList.toggle('spot',on); svg.classList.toggle('spot',on);
  world.querySelectorAll('.vhot').forEach(e=>e.classList.remove('vhot','vpart'));
  svg.querySelectorAll('.vhot').forEach(e=>e.classList.remove('vhot'));
  if(!on)return;
- const H=nid?originsOf(nid,v):legendOrigins(v);
+ const H=nid?originsOf(nid,v,path):legendOrigins(v);
  world.querySelectorAll('[data-var]').forEach(e=>{const card=e.closest('.node');if(!card)return;
-   const r=relation(originsOf(card.dataset.id,e.dataset.var),H);
+   const r=relation(originsOf(card.dataset.id,e.dataset.var,e.dataset.path),H);
    if(r){e.classList.add('vhot');if(r===1)e.classList.add('vpart');}});
  svg.querySelectorAll('[data-keys]').forEach(e=>{if(relation(e.dataset.keys.split(' ').map(k=>{const i=k.indexOf('@');return[k.slice(0,i),k.slice(i+1)];}),H))e.classList.add('vhot');});
 }
@@ -862,7 +870,7 @@ function legendOrigins(v){
    if((n.steps||[]).some(s=>s.var===v))out.push([n.id+'|'+v,'']);});
  return out;
 }
-world.addEventListener('mouseover',e=>{const t=e.target.closest('[data-var]');if(t){const c=t.closest('.node');setSpot(t.dataset.var,c&&c.dataset.id);}});
+world.addEventListener('mouseover',e=>{const t=e.target.closest('[data-var]');if(t){const c=t.closest('.node');setSpot(t.dataset.var,c&&c.dataset.id,t.dataset.path);}});
 world.addEventListener('mouseout',e=>{const t=e.target.closest('[data-var]');if(t)setSpot(null);});
 // the legend rows trace too
 $('#legend').addEventListener('mouseover',e=>{const t=e.target.closest('[data-var]');if(t)setSpot(t.dataset.var);});
