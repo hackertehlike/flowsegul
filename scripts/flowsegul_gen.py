@@ -192,6 +192,7 @@ class Index:
         self.by_simple = {}    # module func name -> [qual]
         self.routes = []       # (qual, method, path, prefix)
         self.steps_cache = {}  # qual -> steps (memoized)
+        self.facts_cache = {}  # qual -> value_facts (memoized)
         self.file_src = {}     # rel path -> exact source it was parsed from
         self.models = {}       # class name -> {code, file, lineno} (request/response schemas etc.)
         self.layers = load_config(repo).get('layers') or {}
@@ -527,6 +528,116 @@ def reachable_quals(entry, idx, depth):
     return seen
 
 
+def _chain(node):
+    """('payload', '.items') for a Name/Attribute chain like `payload.items`, else None."""
+    attrs = []
+    while isinstance(node, ast.Attribute):
+        attrs.append(node.attr)
+        node = node.value
+    if isinstance(node, ast.Name):
+        return node.id, ''.join('.' + a for a in reversed(attrs))
+    return None
+
+
+def param_names(node):
+    a = node.args
+    return [x.arg for x in [*getattr(a, 'posonlyargs', []), *a.args, *a.kwonlyargs]
+            if x.arg not in ('self', 'cls')]
+
+
+def value_facts(info, idx):
+    """What one function does with the values it holds, for tracing data across calls. Memoized.
+
+    aliases: {local: (name, path)} for locals that are just another name for part of a value:
+             `items = payload.items`, `for i in items` (i is an element of items: path '[]').
+    reads:   {param: sorted paths} fields a parameter is read at, e.g. payload → ['.coupon', '.items'],
+             following aliases (so `i.quantity` in `for i in items` is items → '[].quantity').
+    whole:   {param: [callee]} a parameter handed whole to code flowsegul can't see into, so any of
+             its fields may be used there.
+    """
+    cache = idx.facts_cache
+    if info['qual'] in cache:
+        return cache[info['qual']]
+    fn = info['node']
+    params = set(param_names(fn))
+    aliases = {}
+    for n in ast.walk(fn):
+        if isinstance(n, ast.Assign) and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name):
+            c = _chain(n.value)
+            if c and c[0] not in ('self', 'cls') and c[0] != n.targets[0].id:
+                aliases[n.targets[0].id] = c
+        elif isinstance(n, (ast.For, ast.AsyncFor, ast.comprehension)) and isinstance(n.target, ast.Name):
+            c = _chain(n.iter)
+            if c and c[0] != n.target.id:
+                aliases[n.target.id] = (c[0], c[1] + '[]')
+
+    def resolve(name, path=''):
+        for _ in range(12):
+            if name in params or name not in aliases:
+                break
+            name, pre = aliases[name]
+            path = pre + path
+        return name, path
+
+    parent = {}
+    for n in ast.walk(fn):
+        for ch in ast.iter_child_nodes(n):
+            parent[ch] = n
+    reads, whole = {}, {}
+    for n in ast.walk(fn):
+        if isinstance(n, ast.Attribute) and not isinstance(parent.get(n), ast.Attribute):
+            c = _chain(n)
+            if not c:
+                continue
+            name, path = c
+            up = parent.get(n)
+            if isinstance(up, ast.Call) and up.func is n:   # payload.items.append(…) reads .items
+                path = path[:path.rfind('.')]
+            root, pre = resolve(name)
+            if root in params and pre + path:
+                reads.setdefault(root, set()).add(pre + path)
+        elif isinstance(n, ast.Call) and not idx.resolve(n, info.get('cls'), info['qual']):
+            callee = unparse(n.func).split('(')[0][-40:]
+            for a in list(n.args) + [k.value for k in n.keywords]:
+                if isinstance(a, ast.Starred):
+                    a = a.value
+                if isinstance(a, ast.Name):
+                    root, pre = resolve(a.id)
+                    if root in params and not pre:
+                        whole.setdefault(root, [])
+                        if callee not in whole[root]:
+                            whole[root].append(callee)
+    out = {'aliases': aliases, 'resolve': resolve, 'params': params,
+           'reads': {k: sorted(v) for k, v in reads.items()}, 'whole': whole}
+    cache[info['qual']] = out
+    return out
+
+
+def bindings_for(call, callee):
+    """[{p: callee param, from: caller name, path, text}] — which argument lands in which parameter.
+    An argument that is a computed expression gets `uses` (the names it's computed from) instead."""
+    params = param_names(callee['node'])
+    pairs = []
+    for i, a in enumerate(call.args):
+        if isinstance(a, ast.Starred) or i >= len(params):
+            break
+        pairs.append((params[i], a))
+    for k in call.keywords:
+        if k.arg and k.arg in params:
+            pairs.append((k.arg, k.value))
+    out = []
+    for p, expr in pairs:
+        b = {'p': p, 'text': one_line(unparse(expr), 40)}
+        c = _chain(expr)
+        if c and c[0] not in ('self', 'cls'):
+            b['from'], b['path'] = c
+        else:
+            b['uses'] = sorted({n.id for n in ast.walk(expr) if isinstance(n, ast.Name)
+                                and n.id not in ('self', 'cls')})[:4]
+        out.append(b)
+    return out
+
+
 def steps_for(info, idx):
     """Ordered data-flow steps: any statement that calls an in-scope function, recursing into
     if/for/while/with/try so calls in conditions and nested blocks are captured too. Memoized."""
@@ -572,6 +683,7 @@ def steps_for(info, idx):
                                 + (', ' if call.args and call.keywords else '')
                                 + ', '.join(f'{k.arg}={unparse(k.value)}' for k in call.keywords), 60),
                 'ret': one_line(idx.funcs[qual]['returns'], 46), 'uses': uses, '_qual': qual,
+                'bind': bindings_for(call, idx.funcs[qual]),
             })
             first = False
         for qual in refs:
@@ -635,6 +747,113 @@ def callers_of(idx, entry_qual, limit=8):
     return out
 
 
+def trace_values(order, entry_qual, idx, nid):
+    """Follow values across the calls of one endpoint.
+
+    Every value gets an origin: the (node id|name) where it first appears, plus the path into it.
+    The entry's parameters and every other function's own locals are origins; a parameter takes
+    the origin of whatever the caller passed, so `apply_coupon(subtotal, payload.coupon)` makes
+    apply_coupon's `total` the caller's `subtotal`, and its `coupon` the entry's `payload` at
+    `.coupon`. Returns ({qual: {name: [[origin, path], …]}}, {qual: [[param, text, caller title]]}).
+    """
+    facts = {q: value_facts(idx.funcs[q], idx) for q in order}
+    origins = {}
+
+    def origin_of(q, name, path=''):
+        root, pre = facts[q]['resolve'](name)
+        base = origins.get((q, root)) or {(f'{nid(q)}|{root}', '')}
+        return {(o, p + pre + path) for o, p in base}
+
+    recv = {}
+    for _ in range(3):  # callers come before callees in BFS order; a few passes settle cycles
+        changed = False
+        for q in order:
+            info = idx.funcs[q]
+            title = (f"{info['cls']}." if info['cls'] else '') + info['name']
+            for st in steps_for(info, idx):
+                cq = st['_qual']
+                if cq not in facts:
+                    continue
+                for b in st.get('bind') or []:
+                    r = recv.setdefault(cq, [])
+                    if [b['p'], b['text'], title] not in r and len(r) < 8:
+                        r.append([b['p'], b['text'], title])
+                    if 'from' not in b:
+                        continue  # computed argument: a new value, its origin is the parameter itself
+                    got = origins.setdefault((cq, b['p']), set())
+                    new = origin_of(q, b['from'], b['path']) - got
+                    if new and len(got) < 8:
+                        got |= new
+                        changed = True
+        if not changed:
+            break
+    flow = {}
+    for q in order:
+        f = facts[q]
+        names = set(f['params']) | set(f['aliases'])
+        out = {}
+        for nm in sorted(names):
+            o = origin_of(q, nm)
+            if o != {(f'{nid(q)}|{nm}', '')}:
+                out[nm] = sorted([list(x) for x in o])[:8]
+        flow[q] = out
+    return flow, recv, facts
+
+
+_PATH_TOK = re.compile(r'\.([A-Za-z_][A-Za-z0-9_]*)|\[\]')
+
+
+def field_use(entry_qual, order, flow, facts, idx, nid):
+    """{model: {field: [function titles]}} for the entry's request models: which function reads
+    which field, following the value through every call. A model handed whole to code flowsegul
+    can't see into is recorded under '*'."""
+    enode = idx.funcs[entry_qual]['node']
+    roots = {}
+    for a in enode.args.args + enode.args.kwonlyargs:
+        ms = models_in(unparse(a.annotation), idx) if a.annotation else []
+        if ms:
+            roots[f'{nid(entry_qual)}|{a.arg}'] = ms[0]
+    use = {}
+
+    def mark(model, path, who):
+        cur = model
+        toks = list(_PATH_TOK.finditer(path))
+        if not toks:
+            use.setdefault(cur, {}).setdefault('*', [])
+            if who not in use[cur]['*']:
+                use[cur]['*'].append(who)
+            return
+        for t in toks:
+            if not t.group(1):
+                continue  # [] — an element of a list keeps the list's model
+            fld = t.group(1)
+            use.setdefault(cur, {}).setdefault(fld, [])
+            if who not in use[cur][fld]:
+                use[cur][fld].append(who)
+            f = next((x for x in idx.models.get(cur, {}).get('fields', []) if x['name'] == fld), None)
+            nxt = models_in(f['type'], idx) if f else []
+            if not nxt:
+                return
+            cur = nxt[0]
+
+    for q in order:
+        info = idx.funcs[q]
+        who = (f"{info['cls']}." if info['cls'] else '') + info['name']
+        own = f'{nid(q)}|'
+        for nm, paths in facts[q]['reads'].items():
+            for o, p in (flow[q].get(nm) or [[own + nm, '']]):
+                if o in roots:
+                    for rp in paths:
+                        mark(roots[o], p + rp, who)
+        for nm, callees in facts[q]['whole'].items():
+            for o, p in (flow[q].get(nm) or [[own + nm, '']]):
+                if o in roots:
+                    # a field handed on (`round(coupon)`) is just read; a whole model handed on may
+                    # have any field read, so say where it went
+                    mark(roots[o], p, who if p else f"{who} → {', '.join(callees[:2])}()")
+    return use
+
+
 def build_endpoint(entry_qual, idx, meta, depth, tag, changed_q=frozenset(), changed_m=frozenset(),
                    diffs=None):
     """BFS the call tree from entry_qual into an endpoint spec, ids/fnKeys namespaced by `tag`.
@@ -659,6 +878,7 @@ def build_endpoint(entry_qual, idx, meta, depth, tag, changed_q=frozenset(), cha
                 col[cq] = col[q] + 1
             if cq not in seen:
                 seen.add(cq); order.append(cq)
+    flow, recv, facts = trace_values(order, entry_qual, idx, nid)
     nodes = []
     for q in order:
         info = idx.funcs[q]
@@ -674,6 +894,12 @@ def build_endpoint(entry_qual, idx, meta, depth, tag, changed_q=frozenset(), cha
             'sub': f"{info['file'].split('/')[-1]}:{info['lineno']}", 'steps': steps,
             'locals': local_names(info['node']),
         }
+        if flow.get(q):
+            n['flow'] = flow[q]
+        if recv.get(q):
+            n['recv'] = recv[q]
+        if facts[q]['reads']:
+            n['reads'] = facts[q]['reads']
         if q in diffs:
             n['base'] = diffs[q]['base']; n['diff'] = diffs[q]['diff']; n['isnew'] = diffs[q]['new']
         nodes.append(n)
@@ -704,8 +930,9 @@ def build_endpoint(entry_qual, idx, meta, depth, tag, changed_q=frozenset(), cha
     resp_names = list(dict.fromkeys(models_in(unparse(entry_node.returns) if entry_node.returns else '', idx)))
     models_reg = collect_models(req_names + resp_names, idx, diffs, changed_m)
 
-    cand = [entry_qual] + [q for q in order if col[q] == 1]
-    uniq = list(dict.fromkeys(p for q in cand for p in idx.funcs[q]['params']))[:len(INPUT_PALETTE)]
+    # only the entry's own parameters are inputs; deeper functions take their colour from the
+    # value they were passed (trace_values), so a same-named but unrelated parameter isn't tinted
+    uniq = list(dict.fromkeys(idx.funcs[entry_qual]['params']))[:len(INPUT_PALETTE)]
     inputs = [[p, INPUT_PALETTE[k], []] for k, p in enumerate(uniq)]
     doc = ast.get_docstring(idx.funcs[entry_qual]['node']) or ''
     prefix = meta.get('prefix', '')
@@ -717,6 +944,7 @@ def build_endpoint(entry_qual, idx, meta, depth, tag, changed_q=frozenset(), cha
         'summary': one_line(doc.split('\n')[0]) if doc else '',
         'inputs': inputs, 'nodes': nodes, 'modelEdges': [],
         'reqModels': req_names, 'respModels': resp_names, 'models': models_reg,
+        'fieldUse': field_use(entry_qual, order, flow, facts, idx, nid),
     }
 
 

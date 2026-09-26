@@ -219,7 +219,13 @@ body.review .revbar{display:block}
 @keyframes flow{to{stroke-dashoffset:-12}}
 /* variable spotlight: hover a variable → it + its arrows stay lit, everything else fades */
 .spot .vchip:not(.vhot),.spot .var:not(.vhot),.spot .lvar:not(.vhot){opacity:.22;transition:opacity .12s}
-.spot .vchip.vhot,.spot .var.vhot{outline:1.5px solid currentColor;outline-offset:1px;border-radius:4px}
+.spot .vchip.vhot,.spot .var.vhot,.spot .lvar.vhot{outline:1.5px solid currentColor;outline-offset:1px;border-radius:4px}
+.spot .vhot.vpart{outline-style:dashed}
+/* what a box's parameters received, and which fields it reads */
+.ins{display:flex;flex-direction:column;gap:4px;font:11px/1.5 var(--mono);padding:5px 8px;border:1px dashed var(--line2);border-radius:7px}
+.ins .in{display:flex;flex-wrap:wrap;align-items:baseline;gap:3px 6px}
+.ins .src{color:var(--ink2);overflow-wrap:anywhere} .ins .rd{color:var(--muted);font-family:var(--sans);font-size:10.5px}
+.ins .fl{background:var(--chip);border-radius:4px;padding:0 5px;color:var(--ink2)}
 #edges.spot .ge{opacity:.07}
 #edges.spot .vhot{opacity:1}
 [data-var]{cursor:pointer}
@@ -345,7 +351,11 @@ body.nomap .minimap{display:none}
 .drawer[hidden]{display:none}
 .drawer h3{margin:0;font:600 14px/1.3 var(--mono);display:flex;align-items:center;gap:8px}
 .drawer .dsub{font:11px/1 var(--mono);color:var(--muted);margin:5px 0 14px}
-.drawer .fld{display:flex;justify-content:space-between;gap:12px;font:12px/1.5 var(--mono);padding:7px 0;border-bottom:1px solid var(--line)}
+.drawer .fld{font:12px/1.5 var(--mono);padding:7px 0;border-bottom:1px solid var(--line)}
+.drawer .fmain{display:flex;justify-content:space-between;gap:12px}
+.drawer .fuse{font:11px/1.4 var(--sans);color:var(--ok);margin-top:2px}
+.drawer .fuse.none{color:var(--muted)}
+.drawer .fld.unused .fname{color:var(--muted)}
 .drawer .fname{color:var(--ink)} .drawer .fopt{color:var(--muted);font:600 9px var(--sans);letter-spacing:.05em;text-transform:uppercase;padding:1px 4px;border:1px solid var(--line);border-radius:4px;margin-left:4px}
 .drawer .ftype{color:var(--def);text-align:right;word-break:break-word}
 .drawer .lnk{cursor:pointer;text-decoration:underline dotted;text-underline-offset:2px}
@@ -540,7 +550,7 @@ function lineBlock(inner,cls,rawLine,extra){const ind=rawLine.match(/^\s*/)[0].r
 const stage=$('#stage'), world=$('#world'), svg=$('#edges');
 let view={x:40,y:20,s:1};
 function applyView(){world.style.transform='translate('+view.x+'px,'+view.y+'px) scale('+view.s+')';$('#zpct').textContent=Math.round(view.s*100)+'%';drawMinimap();}
-let nodes={}, edges=[], curEp=null, dragMoved=false, inputTokens={}, legendInputs=[], pvcolor={}, chgList=[], chgIdx=-1, chgNavOn=false;
+let FLOW={}, nodes={}, edges=[], curEp=null, dragMoved=false, inputTokens={}, legendInputs=[], pvcolor={}, chgList=[], chgIdx=-1, chgNavOn=false;
 // overview first: boxes open as their call rows; source is one click (or C) away. Changed code always shows its diff.
 let codeShown=store.get('code',false);
 const REVKEY='flowsegul_reviewed';
@@ -569,6 +579,16 @@ function build(ep){
    [name,...(aliases||[])].forEach(tok=>{inputTokens[tok]=col; codeVars[tok]=col;});
  });
 
+ // where each function's values come from (see originsOf); a parameter takes the colour of what
+ // the caller passed, so `apply_coupon(total)` shows `total` in the colour of the caller's `subtotal`
+ FLOW={}; ep.nodes.forEach(n=>{FLOW[n.id]=n.flow||{};});
+ const nodeVarsFor=(n)=>{
+   const nv=Object.assign({},codeVars);
+   (n.recv||[]).forEach(([p])=>{if(!(n.flow||{})[p])delete nv[p];});   // computed argument: a new value
+   Object.entries(n.flow||{}).forEach(([nm,os])=>{const c=codeVars[nameOf(os[0][0])];if(c)nv[nm]=c;else delete nv[nm];});
+   return nv;
+ };
+
  // map node id -> the callee's simple function name, to light up call sites inside the code
  const nameById={}; ep.nodes.forEach(n=>{nameById[n.id]=(n.title||'').split('.').pop();});
 
@@ -588,18 +608,20 @@ function build(ep){
    // one row per statement; extra calls in the same statement have no expr — they still get an
    // arrow (edge), but we don't render a blank duplicate row for them.
    (n.notes||[]).forEach(t=>body.appendChild(el('div','step note',esc(t))));
+   const nodeVars=nodeVarsFor(n);
+   const ins=renderIns(n,nodeVars);if(ins)body.appendChild(ins);
    (n.steps||[]).forEach(s=>{if(s.expr==='')return;const row=renderStep(s,varColor);if(s.target&&nameById[s.target])row.dataset.callee=nameById[s.target];body.appendChild(row);});
    if(c.code||n.diff||n.base!=null){   // deleted nodes have no HEAD code but do have a removal diff
      const pre=el('pre','code');
      const flags=diffFlags(n.diff||'');
      const lset=new Set(n.locals||[]);
      const paint=(mode)=>{
-       if(mode==='Plain'){pre.className='code';pre.innerHTML=codeLines(c.code,codeVars,callMarks,lset);return;}
+       if(mode==='Plain'){pre.className='code';pre.innerHTML=codeLines(c.code,nodeVars,callMarks,lset);return;}
        pre.className='code diff';
-       if(mode==='Diff')pre.innerHTML=hlDiff(n.diff||'',codeVars,callMarks,lset);
-       else if(mode==='Old')pre.innerHTML=hlSide(n.base||'',codeVars,flags.oldRemoved,'ddel',callMarks,lset);
+       if(mode==='Diff')pre.innerHTML=hlDiff(n.diff||'',nodeVars,callMarks,lset);
+       else if(mode==='Old')pre.innerHTML=hlSide(n.base||'',nodeVars,flags.oldRemoved,'ddel',callMarks,lset);
        else if(n.deleted)pre.innerHTML='(deleted — no current version)';
-       else pre.innerHTML=hlSide(c.code,codeVars,flags.newAdded,'dadd',callMarks,lset);
+       else pre.innerHTML=hlSide(c.code,nodeVars,flags.newAdded,'dadd',callMarks,lset);
      };
      if(n.changed&&(n.diff||n.base!=null)){
        // changed code is the point of a review, so its diff always stays open
@@ -626,7 +648,7 @@ function build(ep){
  });
 
  // edges: every node's steps that target another node
- ep.nodes.forEach(n=>{(n.steps||[]).forEach(s=>{if(s.target&&nodes[s.target])edges.push({src:n.id,dst:s.target,color:(s.var&&s.var!=='return')?varColor[s.var]:'var(--edge)',rowVar:s.var,label:s.arg||'',ret:s.ret||''});});});
+ ep.nodes.forEach(n=>{(n.steps||[]).forEach(s=>{if(s.target&&nodes[s.target])edges.push({src:n.id,dst:s.target,color:(s.var&&s.var!=='return')?varColor[s.var]:'var(--edge)',rowVar:s.var,label:s.arg||'',ret:s.ret||'',bind:s.bind||[],keys:edgeKeys(n.id,s)});});});
  // schema edges: only the response shape (dashed). The request model is shown as a node but not
  // wired with an arrow — it's the input type, not a call, so an arrow would just be documentation.
  (ep.modelEdges||[]).forEach(m=>{if(m.kind==='resp'&&nodes[m.src]&&nodes[m.dst])
@@ -647,6 +669,37 @@ function setNodeCode(card,show,pre,btn){
  btn.innerHTML=ICON_CODE+(show?'Hide code':'View code');
 }
 
+// ── values across calls ──
+// A value's origin is "<node id>|<name>" where it first appears, plus a path into it ('.items[].sku').
+// A name with no recorded flow is its own origin.
+function nameOf(origin){return origin.slice(origin.lastIndexOf('|')+1);}
+function originsOf(nid,name){const f=FLOW[nid]&&FLOW[nid][name];return f&&f.length?f:[[nid+'|'+name,'']];}
+// 2 = same value, 1 = one is part of the other (payload vs payload.items), 0 = unrelated
+function overlap(p,q){if(p===q)return 2;const[a,b]=p.length<q.length?[p,q]:[q,p];return b.startsWith(a)&&'.['.includes(b[a.length])?1:0;}
+function relation(os,H){let best=0;for(const[a,p]of os)for(const[b,q]of H)if(a===b)best=Math.max(best,overlap(p,q));return best;}
+// the origins an arrow carries: the variable its result lands in, and whatever its arguments come from
+// as "origin@path" tokens, so an arrow carrying payload.coupon doesn't light up for payload.items
+function edgeKeys(src,s){
+ const k=new Set(),add=(nm,path)=>originsOf(src,nm).forEach(([o,p])=>k.add(o+'@'+p+(path||'')));
+ if(s.var&&s.var!=='return'&&s.var!=='·')add(s.var);
+ (s.bind||[]).forEach(b=>{if(b.from)add(b.from,b.path);(b.uses||[]).forEach(u=>add(u));});
+ return [...k];
+}
+const vchip=(name,c)=>'<span class="vchip" data-var="'+esc(name)+'"'+(c?' style="background:'+c+'22;color:'+c+'"':'')+'>'+esc(name)+'</span>';
+// top of a box: what each parameter received from the caller, and which of its fields this function reads
+function renderIns(n,nv){
+ const rows=new Map(), callers=new Set((n.recv||[]).map(r=>r[2]));
+ (n.recv||[]).forEach(([p,text,caller])=>{const r=rows.get(p)||{src:[],reads:[]};const t=text===p?'':text;if(!r.src.some(x=>x[0]===t))r.src.push([t,caller]);rows.set(p,r);});
+ Object.entries(n.reads||{}).forEach(([p,paths])=>{const r=rows.get(p)||{src:[],reads:[]};r.reads=paths;rows.set(p,r);});
+ if(!rows.size)return null;
+ const box=el('div','ins');
+ rows.forEach((r,p)=>{
+   const src=r.src.filter(([t])=>t).map(([t,caller])=>'<span class="src">'+esc(t)+'</span>'+(callers.size>1?'<span class="rd"> in '+esc(caller)+'</span>':'')).join('<span class="rd"> or </span>');
+   const reads=r.reads.length?'<span class="rd">reads</span>'+r.reads.map(x=>'<span class="fl">'+esc(x.replace(/^\[\]/,'each '))+'</span>').join(''):'';
+   box.appendChild(el('div','in',vchip(p,nv[p])+(src?'<span class="rd">←</span>'+src:'')+reads));
+ });
+ return box;
+}
 function renderStep(s,varColor){
  const row=el('div','step'+(s.var==='return'?' ret':''));
  const col=(s.var&&s.var!=='return')?varColor[s.var]:null;
@@ -723,10 +776,9 @@ function drawEdges(){
    const gc='ge ge'+i;                       // linking hook: every part of this group carries ge<i>
    GORIG[i]=g.items.map(e=>g.src+'|'+e.rowVar);
    // variable spotlight hook: which vars this bundle carries (produced results + argument tokens)
-   const gvars=new Set();
-   g.items.forEach(e=>{if(e.rowVar&&e.rowVar!=='return')gvars.add(e.rowVar);});
-   (g.label.match(/[A-Za-z_][A-Za-z0-9_]*/g)||[]).forEach(t=>gvars.add(t));
-   const dv=gvars.size?' data-vars="'+esc([...gvars].join(' '))+'"':'';
+   const gkeys=new Set();
+   g.items.forEach(e=>(e.keys||[]).forEach(k=>gkeys.add(k)));
+   const dv=gkeys.size?' data-keys="'+esc([...gkeys].join(' '))+'"':'';
    // each call's own origin row (var-coloured) so you see exactly which line(s) make the call
    const origins=g.items.map(e=>({y:e.rowVar?anchorRow(a,e.rowVar):a.y+34,col:e.color||'var(--edge)'}));
    const rx=a.x+a.el.offsetWidth, ry=origins.reduce((s,o)=>s+o.y,0)/origins.length;
@@ -746,7 +798,9 @@ function drawEdges(){
    const consumed=[...new Set(argToks.filter(t=>pvcolor[t]))];
    const allConsumed=argToks.length>0 && argToks.every(t=>pvcolor[t]);
    if(g.label && !allConsumed){const m=bez(jx,ry,fc1,ry,fc2,fy,fx,fy,0.5);const badge=n>1?' <tspan fill="var(--muted)" font-weight="700">×'+n+'</tspan>':'';labels+='<text data-g="'+i+'"'+dv+' x="'+m[0]+'" y="'+(m[1]-5)+'" class="'+gc+' elab" text-anchor="middle" fill="'+col+'">'+argTspans(g.label,col)+badge+'</text>';}
-   consumed.forEach((v,k)=>{const pw=Math.max(30,v.length*7+16);labels+=pill(fx-pw/2-5,fy+k*21,v,pvcolor[v]||'var(--edge)',true,i,dv);});
+   // a value that lands under another name says so: subtotal → total
+   const renamed=v=>{for(const e of g.items)for(const b of e.bind||[])if(b.from===v&&!b.path&&b.p!==v)return v+' → '+b.p;return v;};
+   consumed.forEach((v,k)=>{const t=renamed(v),pw=Math.max(30,t.length*7+16);labels+=pill(fx-pw/2-5,fy+k*21,t,pvcolor[v]||'var(--edge)',true,i,dv);});
    // return arrow: callee (lower-left) -> back to the caller row, listing every distinct result var.
    if(!g.plain){
      const seen=new Set();
@@ -786,17 +840,29 @@ svg.addEventListener('mouseout',e=>{if(e.target.closest('[data-g]'))setLink([]);
 
 // variable spotlight: hover any variable → it lights up everywhere (chips, code tokens, and every
 // arrow that carries it), while the rest fades. This is the "trace this value" view.
-function setSpot(v){
+// It follows the value, not the name: the argument a caller passes and the parameter it lands in
+// light up together, parts of it (payload → payload.items → items) get a dashed outline, and an
+// unrelated variable that happens to share the name stays dim.
+function setSpot(v,nid){
  const on=!!v;
  world.classList.toggle('spot',on); svg.classList.toggle('spot',on);
- world.querySelectorAll('.vhot').forEach(e=>e.classList.remove('vhot'));
+ world.querySelectorAll('.vhot').forEach(e=>e.classList.remove('vhot','vpart'));
  svg.querySelectorAll('.vhot').forEach(e=>e.classList.remove('vhot'));
  if(!on)return;
- const q=(window.CSS&&CSS.escape)?CSS.escape(v):v.replace(/"/g,'');
- world.querySelectorAll('[data-var="'+q+'"]').forEach(e=>e.classList.add('vhot'));
- svg.querySelectorAll('[data-vars~="'+q+'"]').forEach(e=>e.classList.add('vhot'));
+ const H=nid?originsOf(nid,v):legendOrigins(v);
+ world.querySelectorAll('[data-var]').forEach(e=>{const card=e.closest('.node');if(!card)return;
+   const r=relation(originsOf(card.dataset.id,e.dataset.var),H);
+   if(r){e.classList.add('vhot');if(r===1)e.classList.add('vpart');}});
+ svg.querySelectorAll('[data-keys]').forEach(e=>{if(relation(e.dataset.keys.split(' ').map(k=>{const i=k.indexOf('@');return[k.slice(0,i),k.slice(i+1)];}),H))e.classList.add('vhot');});
 }
-world.addEventListener('mouseover',e=>{const t=e.target.closest('[data-var]');if(t)setSpot(t.dataset.var);});
+// a Key row names a variable without saying which box it's in: take every box that produces it
+function legendOrigins(v){
+ const out=[];(curEp?curEp.nodes:[]).forEach(n=>{
+   if(n.entry&&(curEp.inputs||[]).some(i=>i[0]===v))out.push([n.id+'|'+v,'']);
+   if((n.steps||[]).some(s=>s.var===v))out.push([n.id+'|'+v,'']);});
+ return out;
+}
+world.addEventListener('mouseover',e=>{const t=e.target.closest('[data-var]');if(t){const c=t.closest('.node');setSpot(t.dataset.var,c&&c.dataset.id);}});
 world.addEventListener('mouseout',e=>{const t=e.target.closest('[data-var]');if(t)setSpot(null);});
 // the legend rows trace too
 $('#legend').addEventListener('mouseover',e=>{const t=e.target.closest('[data-var]');if(t)setSpot(t.dataset.var);});
@@ -863,7 +929,15 @@ function openModel(name,push){
  if(push!==false)mstack.push(name);
  const back=mstack.length>1?'<div class="dcrumb" data-back="1">‹ '+esc(mstack[mstack.length-2])+'</div>':'';
  const linkify=t=>esc(t||'').replace(/[A-Za-z_][A-Za-z0-9_]*/g,w=>(ep.models&&ep.models[w])?'<span class="lnk" data-model="'+w+'">'+w+'</span>':w);
- const fields=(m.fields||[]).map(f=>'<div class="fld"><span class="fname">'+esc(f.name)+(f.optional?'<span class="fopt">opt</span>':'')+'</span><span class="ftype">'+linkify(f.type)+'</span></div>').join('')||'<div class="dsub">no annotated fields</div>';
+ // which function reads each field, following the request through every call (request models only)
+ const use=(ep.fieldUse||{})[name], whole=use&&use['*'];
+ const usage=f=>{if(!use)return '';const by=use[f.name];
+   if(by)return '<div class="fuse">read in '+by.map(esc).join(', ')+'</div>';
+   if(whole)return '<div class="fuse">may be read: passed whole to '+whole.map(esc).join(', ')+'</div>';
+   return '<div class="fuse none">not read in this flow</div>';};
+ const nread=use?(m.fields||[]).filter(f=>use[f.name]).length:0;
+ const summary=use?'<div class="dsub">'+nread+' of '+(m.fields||[]).length+' fields read in this flow'+(whole?', and it is passed whole to code flowsegul can\'t see into':'')+'</div>':'';
+ const fields=summary+((m.fields||[]).map(f=>'<div class="fld'+(use&&!use[f.name]&&!whole?' unused':'')+'"><div class="fmain"><span class="fname">'+esc(f.name)+(f.optional?'<span class="fopt">opt</span>':'')+'</span><span class="ftype">'+linkify(f.type)+'</span></div>'+usage(f)+'</div>').join('')||'<div class="dsub">no annotated fields</div>');
  const nest=(m.nested||[]).length?'<div class="dnest">nested: '+m.nested.map(n=>'<span class="lnk" data-model="'+esc(n)+'">'+esc(n)+'</span>').join(', ')+'</div>':'';
  dr.innerHTML='<h3>'+esc(name)+(m.changed?' <span class="chgbadge">CHANGED</span>':'')+'<button class="dx" data-close="1" title="close (Esc)">✕</button></h3><div class="dsub">'+esc(m.sub||'')+'</div>'+back+fields+nest;
  dr.hidden=false;
