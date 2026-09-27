@@ -25,6 +25,8 @@ import argparse, ast, copy, fnmatch, hashlib, html, json, os, re, shutil, subpro
 
 PALETTE = ['#3b82f6','#0ea5a4','#d97706','#db2777','#16a34a','#7c3aed','#ea580c','#0891b2','#4f46e5','#059669']
 INPUT_PALETTE = ['#e8590c','#1098ad','#9c36b5','#2f9e44','#c2255c','#1971c2']
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from flowsegul_effects import timeline as effect_timeline  # noqa: E402
 SKIP_PARAMS = {'self', 'cls', 'db', 'body', 'request', 'session'}
 
 
@@ -259,7 +261,8 @@ class Index:
         self.app_handlers = {} # exception name -> status (or None) from @app.exception_handler(...)
         self.raise_cache = {}  # qual -> own raise statements (filled by steps_for)
         self.esc_cache = {}    # qual -> errors that can leave the function (see escapes)
-        self.layers = load_config(repo).get('layers') or {}
+        self.cfg = load_config(repo)
+        self.layers = self.cfg.get('layers') or {}
         self.imports = {}      # rel -> {local name: (module, imported name or None, level)}
         self.routers = {}      # rel -> {router var: its own APIRouter(prefix=…)}
         self.includes = []     # (rel, parent expr, child expr, prefix) from `x.include_router(y, prefix=…)`
@@ -762,7 +765,8 @@ def _kind_of_token(tok):
 
 def load_config(repo):
     """Optional `.flowsegul.json` at the repo root: {"layers": {"<glob>": "<label>"}} maps paths
-    (fnmatch on the repo-relative path, e.g. "src/app/core/**") to a layer label of your choosing."""
+    (fnmatch on the repo-relative path, e.g. "src/app/core/**") to a layer label of your choosing;
+    {"irreversible": ["mailer.send_*"]} names calls that can't be taken back (see flowsegul_effects)."""
     try:
         with open(os.path.join(repo, '.flowsegul.json')) as f:
             cfg = json.load(f)
@@ -1613,6 +1617,14 @@ def statuses_for(entry_qual, idx, changed_q):
     return sorted(out.values(), key=lambda o: (o['kind'] != 'ok', o['code']))
 
 
+def _helpers(_cache=[]):
+    """This module's functions as one object, for flowsegul_effects (works however this file is run)."""
+    if not _cache:
+        import types
+        _cache.append(types.SimpleNamespace(**globals()))
+    return _cache[0]
+
+
 def build_endpoint(entry_qual, idx, meta, depth, tag, changed_q=frozenset(), changed_m=frozenset(),
                    diffs=None, used_by=None):
     """BFS the call tree from entry_qual into an endpoint spec, ids/fnKeys namespaced by `tag`.
@@ -1726,6 +1738,7 @@ def build_endpoint(entry_qual, idx, meta, depth, tag, changed_q=frozenset(), cha
         'reqModels': req_names, 'respModels': resp_names, 'models': models_reg,
         'fieldUse': field_use(entry_qual, order, flow, facts, idx, nid),
         'statuses': statuses_for(entry_qual, idx, changed_q) if meta.get('route') else [],
+        'effects': effect_timeline(entry_qual, idx, _helpers(), nid, idx.cfg) if meta.get('route') else {},
         **({'route': route_facts(entry_qual, idx, meta['path'], meta['method'])} if meta.get('route') else {}),
     }
 
