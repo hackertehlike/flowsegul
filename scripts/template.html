@@ -231,7 +231,7 @@ body.review .revbar{display:block}
 [data-var]{cursor:pointer}
 /* errors: a red squiggle under code that can fail, green when a caller handles it; hover one to
    light up where that error travels (rows, arrow labels, status chips) and fade the rest */
-.sq,.sqok{text-decoration:underline wavy var(--del);text-decoration-thickness:1px;text-underline-offset:3px;text-decoration-skip-ink:none;cursor:default}
+.sq,.sqok{text-decoration:underline wavy var(--del);text-decoration-thickness:1px;text-underline-offset:3px;text-decoration-skip-ink:none}
 .sqok{text-decoration-color:var(--ok)}
 .step.raise{background:transparent;border-left-color:var(--del)}
 .step.raise.handled{border-left-color:var(--line2)}
@@ -940,8 +940,8 @@ function renderStep(s,nv){
    else expr+=esc(m[0]);
  }
  // an error this call can let through gets a red squiggle; one handled right here gets a green one
- if(s.esc&&s.esc.length)expr='<span class="sq" data-err="'+esc(s.esc.join(' '))+'" data-tip="'+esc(s.esc.join(' · '))+'">'+expr+'</span>';
- else if(s.caught&&s.caught.length)expr='<span class="sqok" data-err="'+esc(s.caught.map(c=>c[0]).join(' '))+'" data-st="'+esc(String(s.caught[0][1]||''))+'" data-tip="'+esc(s.caught.map(c=>c[0]+' → '+(c[1]||'handled')).join(' · '))+'">'+expr+'</span>';
+ if(s.esc&&s.esc.length)expr='<span class="sq" data-err="'+esc(s.esc.join(' '))+'">'+expr+'</span>';
+ else if(s.caught&&s.caught.length)expr='<span class="sqok" data-err="'+esc(s.caught.map(c=>c[0]).join(' '))+'" data-st="'+esc(String(s.caught[0][1]||''))+'">'+expr+'</span>';
  row.innerHTML=label+expr;
  row.dataset.rowvar=s.var;
  return row;
@@ -1108,8 +1108,8 @@ function setErr(src){
  document.querySelectorAll('#world [data-err],#edges [data-err],#epinfo [data-err],#epinfo [data-st]').forEach(e=>{if(errMatch(e,H)){e.classList.add('errhot');
    const st=e.closest('.step');if(st)st.classList.add('errhot');const card=e.closest('.node');if(card)card.classList.add('errhot');}});
 }
-document.addEventListener('mouseover',e=>{const t=e.target.closest&&e.target.closest('.sq,.sqok,.errlab,.stc[data-err],.step.raise,.fx[data-err]');if(t)setErr(t);});
-document.addEventListener('mouseout',e=>{const t=e.target.closest&&e.target.closest('.sq,.sqok,.errlab,.stc[data-err],.step.raise,.fx[data-err]');if(t&&!(e.relatedTarget&&t.contains(e.relatedTarget)))setErr(null);});
+document.addEventListener('mouseover',e=>{const t=e.target.closest&&e.target.closest('.stc[data-err],.step.raise,.fx[data-err]');if(t)setErr(t);});
+document.addEventListener('mouseout',e=>{const t=e.target.closest&&e.target.closest('.stc[data-err],.step.raise,.fx[data-err]');if(t&&!(e.relatedTarget&&t.contains(e.relatedTarget)))setErr(null);});
 
 // variable spotlight: hover any variable → it lights up everywhere (chips, code tokens, and every
 // arrow that carries it), while the rest fades. This is the "trace this value" view.
