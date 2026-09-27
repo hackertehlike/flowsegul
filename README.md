@@ -125,6 +125,14 @@ wrappers like `api('/items')`. Vite's `server.proxy` rewrites, Next.js `rewrites
   `.coupon`, `.items`). Hovering a value lights it wherever it goes, with parts of it (`payload.items`)
   outlined dashed. The request model's panel says which function reads each field, and which fields
   nothing reads.
+- **Click a value to trace it** — clicking a variable numbers its path on the map: where it comes
+  from (the route parameter, each call it's passed through, each return it lands in, local lines
+  like `items = payload.items`), then where it goes next, up to the response. The rest of the map
+  fades and a short list repeats the steps as code; click a step to go there, `Esc` to clear.
+- **Ask a box** — the `?` on each box (or `?` on a focused box) asks where one of its parameters
+  comes from, or why it can fail (each `raise` below it, up through the callers to the `except` that
+  handles it or the status the client gets). The answer is drawn the same way. Clicking a box's
+  `3 routes` tag lists the other routes that reach it; click one to open it.
 - **Full route paths** — prefixes from `APIRouter(prefix=…)` and `include_router(…, prefix=…)`
   (also a constant or `settings.API_V1_STR`) are joined into the path. FastAPI dependencies
   (`Depends(get_current_user)`, `Annotated[…, Depends(…)]`) are drawn as calls.
