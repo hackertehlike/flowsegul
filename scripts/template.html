@@ -641,12 +641,12 @@ pre.code{border-color:transparent;border-radius:16px;background:var(--panel2)}
 #tip .tiprt[data-ep]:hover{background:#ffffff1f;text-decoration:underline;text-underline-offset:2px}
 #tip .tiprt.off{opacity:.55}
 /* "Ask a box" in the flat look: lime step numbers, round borderless menus */
-.askbtn{border-radius:999px}
-.askpop,.asklist{border-color:transparent;border-radius:18px;box-shadow:var(--shadow-lg)}
-.aq,.ast{border-radius:12px}
-.askn{background:var(--lit-fill);color:var(--lit-on)}
-.askn.cur{box-shadow:0 0 0 2px var(--panel),0 0 0 4px var(--lit)}
-.ast .askn{box-shadow:none}
+:root .askbtn{border-radius:999px}
+:root .askpop,:root .asklist{border-color:transparent;border-radius:18px;box-shadow:var(--shadow-lg)}
+:root .aq,:root .ast{border-radius:12px}
+:root .askn:not(.err):not(.ok){background:var(--lit-fill);color:var(--lit-on)}
+:root .askn.cur:not(.err){box-shadow:0 0 0 2px var(--panel),0 0 0 4px var(--lit)}
+:root .ast .askn{box-shadow:none}
 /* colour themes: surfaces and the accent change; changed / error / ok colours never do */
 :root[data-palette=sand]{--bg:#ebe6dd;--grid:#d6cfc2;--panel:#fbf8f3;--panel2:#f2ede5;--raise:#fffdf9;--chip:#ece6dc;--line:#e6e0d5;--line2:#d6cdbf;--lit:#0f766e;--lit-fill:#99e2d6;--lit-on:#0b3b37;--accent-tk:#99e2d640}
 @media (prefers-color-scheme:dark){:root[data-palette=sand]:not([data-theme=light]){--bg:#12100d;--grid:#2b271f;--panel:#1b1814;--panel2:#23201a;--raise:#27231d;--chip:#28241e;--line:#2e2923;--line2:#3b352d;--lit:#5eead4;--lit-fill:#5eead4;--lit-on:#0b3b37;--accent-tk:#5eead440}}
