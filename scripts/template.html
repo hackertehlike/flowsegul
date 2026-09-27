@@ -455,6 +455,14 @@ a.rc.api:hover{border-color:var(--m-get)}
 a.rc.bad{text-decoration:none;cursor:pointer}
 a.rc.bad:hover{border-color:var(--del)}
 .rc.quiet{color:var(--ink2);border-style:dashed;margin-left:4px;cursor:default}
+.cmp{display:flex;flex-wrap:wrap;gap:4px 3px;margin:6px 0 2px;font:600 10.5px/1.2 var(--mono);text-indent:0}
+.cmp .cp{display:inline-flex;flex-direction:column;gap:3px;max-width:100%}
+.cmp .cp>span{padding:3px 6px;border-radius:5px;border:1px solid var(--line);background:var(--panel2);color:var(--ink2);overflow-wrap:anywhere;min-height:17px}
+.cmp .cp.lab>span{font:600 10.5px/1.2 var(--sans);color:var(--muted);border-color:transparent;background:transparent;padding-left:0;padding-right:4px}
+.cmp .cp>span.ok{color:var(--muted);border-color:transparent;background:transparent}
+.cmp .cp>span.bad{color:var(--del);background:color-mix(in srgb,var(--del) 10%,var(--panel));border-color:color-mix(in srgb,var(--del) 45%,var(--line))}
+.cmp .cp>span.dim{border-style:dashed}
+.cmp .cp>span.gap{background:transparent;border-style:dashed;min-width:28px}
 .callers{display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap;font:600 11px/1 var(--ui,inherit);color:var(--ink2);margin-left:8px}
 .callers .rc{font-size:11px;padding:4px 7px;text-decoration:none;cursor:pointer;color:var(--def,var(--accent))}
 .callers .rc:hover{border-color:var(--accent)}
@@ -1574,11 +1582,19 @@ function apiChips([m,u,id]){
  if(ln.slash)h+='<span class="rc quiet" data-tip="'+esc(H.p+' → '+E.path)+'">307</span>';
  (ln.extra||[]).slice(0,3).forEach(k=>{h+='<span class="rc bad">no param '+esc(k)+'</span>';});
  (ln.miss||[]).slice(0,3).forEach(k=>{h+='<span class="rc bad">needs '+esc(k)+'</span>';});
- // the body it sends and the type it expects back, against the route's models: red sure, grey maybe
- const ty=ln.ty||[],tyc=([tone,t,tip])=>'<span class="rc '+(tone==='bad'?'bad':'quiet')+'"'+(tip?' data-tip="'+esc(tip)+'"':'')+'>'+esc(t)+'</span>';
- ty.slice(0,3).forEach(x=>{h+=tyc(x);});
- if(ty.length>3)h+='<span class="rc quiet" data-tip="'+esc(ty.slice(3).map(x=>x[1]).join('\n'))+'">+'+(ty.length-3)+'</span>';
+ (ln.cmp||[]).forEach(c=>{h+=cmpTable(c);});
  return h;
+}
+// what the call sends (or reads back) above what the Python model has, key under key:
+// red where they differ, grey where they may, a missing key is an empty dashed cell
+function cmpTable(c){
+ const cols=c.cols.slice(0,5),more=c.cols.length-cols.length;
+ const cell=(t,tone)=>'<span class="'+tone+(t?'':' gap')+'">'+esc(t)+'</span>';
+ const pair=(a,b,cls,tip)=>'<span class="cp'+(cls||'')+'"'+(tip?' data-tip="'+esc(tip)+'"':'')+'>'+a+b+'</span>';
+ let h=pair('<span>'+esc(c.k)+'</span>','<span data-tip="'+esc(c.at||'')+'">'+esc(c.py)+'</span>',' lab');
+ cols.forEach(([a,b,tone])=>{h+=pair(cell(a,tone),cell(b,tone));});
+ if(more>0)h+=pair('<span class="ok">+'+more+'</span>','<span></span>','',c.cols.slice(5).map(x=>(x[0]||'—')+'  /  '+(x[1]||'—')).join('\n'));
+ return '<div class="cmp">'+h+'</div>';
 }
 // route header: who calls it
 function callerChips(ep){

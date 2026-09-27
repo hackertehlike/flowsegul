@@ -134,22 +134,27 @@ class LinkTest(unittest.TestCase):
         self.assertEqual(names(self.route('GET', '/users/search')), ['OrderPanel'])
 
     def ty(self, needle):
-        return [(t, lbl) for t, lbl, _ in self.call(needle)['ln'].get('ty', [])]
+        """(sends/reads, Python model, [(tone, frontend, Python)]) for each comparison, context left out."""
+        return [(c['k'], c['py'], [(t, a, b) for a, b, t in c['cols'] if t != 'ok'])
+                for c in self.call(needle)['ln'].get('cmp', [])]
 
     def test_body_fields(self):
         # `qty` isn't a field of OrderIn (Pydantic drops it), so the required `quantity` is missing
-        self.assertEqual(self.ty('qty: 2'), [('bad', 'OrderIn: no qty'), ('bad', 'needs quantity')])
-        self.assertEqual(self.ty('http.post("/orders/")'), [('bad', 'needs OrderIn')])
+        # sent above what OrderIn has: `qty` sits over `quantity` since it looks like the same key renamed
+        self.assertEqual(self.ty('qty: 2'), [('sends', 'OrderIn', [('bad', 'qty', 'quantity')])])
+        self.assertEqual(self.call('qty: 2')['ln']['cmp'][0]['cols'][0], ['sku', 'sku', 'ok'])
+        self.assertEqual(self.ty('http.post("/orders/")'), [('sends', 'OrderIn', [('bad', '', 'sku'), ('bad', '', 'quantity')])])
         self.assertEqual(self.ty('quantity: 1'), [])
 
     def test_response_types(self):
         # the preview is read as a number; the route it means answers with an object
-        self.assertEqual(self.ty('fetch(`/api/orders/preview'), [('bad', 'PreviewOut ≠ number')])
+        self.assertEqual(self.ty('fetch(`/api/orders/preview'), [('reads', 'PreviewOut', [('bad', 'number', 'PreviewOut')])])
         # api<Order>(…): field by field, nested lists too; a null the type doesn't allow is grey
-        self.assertEqual(self.ty('api<Order>'), [('bad', 'id: int ≠ string'), ('bad', 'no items[].quantity'),
-                                                 ('dim', 'note: str | None ≠ string')])
+        self.assertEqual(self.ty('api<Order>'), [('reads', 'OrderOut', [
+            ('bad', 'id: string', 'id: int'), ('bad', 'items[].quantity', 'items[].qty'),
+            ('dim', 'note: string', 'note: str | None')])])
         # `const data: { count: number } = await res.json()`
-        self.assertEqual(self.ty('fetch("/api/users/stats")'), [('bad', 'count: str ≠ number')])
+        self.assertEqual(self.ty('fetch("/api/users/stats")'), [('reads', 'Stats', [('bad', 'count: number', 'count: str')])])
         # api<{ id: number }> only asks for what OrderOut has
         self.assertEqual(self.ty('api<{ id: number }>'), [])
         # the shapes are only for linking, not for the page
@@ -313,30 +318,30 @@ class ShapesTest(unittest.TestCase):
         self.assertTrue(self.facts['/partial']['body']['s'].get('alias'))
 
     def marks(self, h, path):
-        return [(t, lbl) for t, lbl, _ in shapes.check_request(h, self.facts[path])]
+        return [(t, a, b) for c in shapes.check_request(h, self.facts[path]) for a, b, t in c['cols'] if t != 'ok']
 
     def test_check(self):
         o = lambda **kw: {'o': {k: [v[0], v[1], v[2] if len(v) > 2 else ''] for k, v in kw.items()}, 'n': ''}
         body = lambda sh: {'b': {'s': sh, 't': ''}}
         self.assertEqual(self.marks(body(o(title=('str', 0))), '/items'), [])
         # a key TypeScript marks optional may never be sent: grey
-        self.assertEqual(self.marks(body(o(title=('str', 0), tilte=('str', 1))), '/items'), [('dim', 'Base: no tilte')])
+        self.assertEqual(self.marks(body(o(title=('str', 0), tilte=('str', 1))), '/items'), [('dim', 'tilte', '')])
         # optional in TypeScript, required by the model: grey
-        self.assertEqual(self.marks(body(o(title=('str', 1, 'string'))), '/items'), [('dim', 'needs title')])
+        self.assertEqual(self.marks(body(o(title=('str', 1, 'string'))), '/items'), [('dim', 'title?', 'title')])
         # "3" into an int is read as 3, but 3 into a str is a 422
         self.assertEqual(self.marks(body(o(a=(o(fullName=('num', 0, 'number')), 0), n=('str', 0, 'string'))), '/two'),
-                         [('bad', 'a.fullName: number ≠ str'), ('dim', 'n: string ≠ int')])
+                         [('bad', 'a.fullName: number', 'a.fullName: str'), ('dim', 'n: string', 'n: int')])
         # an open model (alias generator) gets no key marks
         self.assertEqual(self.marks(dict(body(o(y=('num', 0))), r={'s': o(x=('num', 0))}), '/partial'), [])
 
     def test_null_in_response(self):
         r = lambda sh: {'bx': 1, 'r': {'s': sh, 't': 'T'}}
         arr = lambda **kw: {'a': {'o': {k: [v, 0, 'string'] for k, v in kw.items()}, 'n': ''}}
-        self.assertEqual(self.marks(r(arr(fullName='str', note='str')), '/two'), [('dim', '[].note: Optional[str] ≠ string')])
+        self.assertEqual(self.marks(r(arr(fullName='str', note='str')), '/two'), [('dim', '[].note: string', '[].note: Optional[str]')])
         # TypeScript without strict null checks: every type takes null
         self.assertEqual(self.marks(dict(r(arr(fullName='str', note='str')), lax=1), '/two'), [])
         # and a field the frontend reads that the model doesn't have
-        self.assertEqual(self.marks(r(arr(fullName='str', email='str')), '/two'), [('bad', 'no [].email')])
+        self.assertEqual(self.marks(r(arr(fullName='str', email='str')), '/two'), [('bad', '[].email', '')])
 
 
 class MatchTest(unittest.TestCase):

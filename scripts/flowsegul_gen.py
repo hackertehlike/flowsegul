@@ -2262,9 +2262,9 @@ def link_http(eps, react):
             if miss:
                 ln['miss'] = miss
         # the body it sends and the type it expects back, against the route's models
-        marks = shapes.check_request(h, target['route'])
-        if marks:
-            ln['ty'] = [list(m) for m in marks]
+        cmp = shapes.check_request(h, target['route'])
+        if cmp:
+            ln['cmp'] = cmp
         h['ln'] = ln
         # a route lists the calls that reach it (a shadowed call reaches the route declared first)
         if not h.get('inner') and h.get('row'):

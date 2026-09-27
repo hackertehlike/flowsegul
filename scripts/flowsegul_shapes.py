@@ -8,6 +8,7 @@ A shape is the same on both sides (flowsegul_react.mjs writes the TypeScript one
 'any' is anything that can't be told (a dict, Decimal, a class from a library) and never gives a mark.
 """
 import ast
+import difflib
 
 STR = {'str', 'bytes', 'EmailStr', 'NameEmail', 'UUID', 'UUID1', 'UUID3', 'UUID4', 'UUID5', 'datetime',
        'date', 'time', 'timedelta', 'AnyUrl', 'AnyHttpUrl', 'HttpUrl', 'FileUrl', 'PostgresDsn', 'SecretStr',
@@ -241,16 +242,18 @@ def _pick(parts, k):
 
 
 class Check:
-    """Marks for one request: `got` is the value that arrives, `want` what the other side declares.
-    Each mark is (tone, label, tip); tone 'bad' is red, 'dim' grey."""
+    """What one side of a request has against what the other side declares, as columns to draw
+    one above the other: each is [frontend text, Python text, tone], '' where a side has nothing.
+    tone 'bad' is red, 'dim' grey (maybe), 'ok' a matching key shown for context.
+    `got` is the value that arrives, `want` what the receiving side declares."""
 
     def __init__(self, lax):
         self.lax = lax            # TypeScript without strict null checks: every type may be null
-        self.marks = []
+        self.cols = []
 
-    def add(self, tone, label, tip):
-        if not any(m[1] == label for m in self.marks):
-            self.marks.append((tone, label, tip))
+    def add(self, tone, ts, py):
+        if [ts, py] not in [c[:2] for c in self.cols]:
+            self.cols.append([ts, py, tone])
 
     def value(self, got, want, path, gtext, wtext, sending, depth=0):
         """`sending`: the frontend sends `got` to Python (a body); otherwise Python sends it back."""
@@ -260,18 +263,17 @@ class Check:
         gk, wk = _core(gp), _core(wp)
         if gk == 'any' or wk == 'any':
             return
-        lbl = lambda: (path + ': ' if path else '') + (gtext or '?') + ' ≠ ' + (wtext or '?')
+        pre = path + ': ' if path else ''
         ts_, py_ = (gtext, wtext) if sending else (wtext, gtext)
-        tip = lambda: 'TypeScript  ' + (path + ': ' if path else '') + (ts_ or '?') + '\nPython  ' + (path + ': ' if path else '') + (py_ or '?')
+        cell = lambda: (pre + (ts_ or '?'), pre + (py_ or '?'))
         if gk and wk and not (gk & wk):
             # the body's "3" still becomes 3: Pydantic reads numbers and booleans from strings
             soft = sending and gk == {'str'} and wk <= {'num', 'bool'}
-            self.add('dim' if soft else 'bad', lbl(), tip())
+            self.add('dim' if soft else 'bad', *cell())
             return
         # null where the other side doesn't allow it
         if 'null' in gp and 'null' not in wp and not self.lax:
-            only = not gk
-            self.add('bad' if only else 'dim', lbl(), tip())
+            self.add('bad' if not gk else 'dim', *cell())
         if len(gk) != 1 or gk != wk:
             return
         k = next(iter(gk))
@@ -287,35 +289,45 @@ class Check:
         if g.get('alias') or w.get('alias'):
             return
         pre = path + '.' if path else ''
-        wname = w.get('n') or ''
-        py = w if sending else g
-        keys = lambda o: ', '.join(list(o['o'])[:12]) + (' …' if len(o['o']) > 12 else '')
-        tip = (py.get('n') or 'Python') + '  ' + (py.get('at') or '') + '\n' + keys(py)
+        ts, py = (g, w) if sending else (w, g)
+        only_ts, only_py = [], []       # (key, tone): a key one side has and the other doesn't
         if sending:
             # keys the frontend sends that the model doesn't have: dropped, or a 422 if extra is forbidden
             if not w.get('open') and w.get('extra') != 'allow':
-                for k in g['o']:
-                    if k not in w['o']:
-                        # sent for sure: red; a key TypeScript marks optional may never go out: grey
-                        self.add('dim' if g['o'][k][1] else 'bad', (wname + ': no ' + k) if wname and not pre else 'no ' + pre + k, tip)
+                only_ts = [(k, 'dim' if g['o'][k][1] else 'bad') for k in g['o'] if k not in w['o']]
             for k, (sh, opt, txt) in w['o'].items():
                 if opt:
                     continue
                 if k not in g['o']:
-                    self.add('bad', 'needs ' + pre + k, tip)
+                    only_py.append((k, 'bad'))
                 elif g['o'][k][1]:
-                    self.add('dim', 'needs ' + pre + k, tip)     # optional in TypeScript, required in Python
-        else:
+                    self.add('dim', pre + k + '?', pre + k)     # optional in TypeScript, required in Python
+        elif not g.get('open'):
             # fields the frontend counts on that the response never has
-            if not g.get('open'):
-                for k, (sh, opt, txt) in w['o'].items():
-                    if not opt and k not in g['o']:
-                        self.add('bad', (g['n'] + ': no ' + k) if g.get('n') and not pre else 'no ' + pre + k, tip)
+            only_ts = [(k, 'bad') for k, (sh, opt, txt) in w['o'].items() if not opt and k not in g['o']]
+            spare = [k for k in g['o'] if k not in w['o']]
+            only_py = [(k, 'pair') for k in spare]      # only shown when it looks like a renamed key
+        # a key on one side and a similar one on the other is most likely a rename: one column
+        for k, tone in only_ts:
+            m = next((x for x in only_py if _similar(k, x[0])), None)
+            if m:
+                only_py.remove(m)
+                self.add(tone, pre + k, pre + m[0])
+            else:
+                self.add(tone, pre + k, '')
+        for k, tone in only_py:
+            if tone != 'pair':
+                self.add(tone, '', pre + k)
         for k in g['o']:
             if k in w['o']:
                 gs, _, gt = g['o'][k]
                 ws, _, wt = w['o'][k]
                 self.value(gs, ws, pre + k, gt, wt, sending, depth)
+
+
+def _similar(a, b):
+    a, b = a.lower().replace('_', ''), b.lower().replace('_', '')
+    return a.startswith(b) or b.startswith(a) or difflib.SequenceMatcher(None, a, b).ratio() >= 0.5
 
 
 def ts_text(sh):
@@ -329,21 +341,42 @@ def ts_text(sh):
 
 
 def check_request(h, route, lax=False):
-    """Marks for request `h` (from flowsegul_react.mjs) against `route` (route_facts)."""
-    c = Check(lax or bool(h.get('lax')))
+    """Side-by-side comparisons for request `h` (from flowsegul_react.mjs) against `route`
+    (route_facts): [{'k': 'sends' | 'reads', 'ts': frontend type, 'py': Python type, 'at':
+    file:line, 'cols': [[frontend, Python, tone], …]}], only where something doesn't match."""
+    lax = lax or bool(h.get('lax'))
+    out = []
+
+    def side(k, got, want, ts_name, py_name, at, sending, ts_obj, py_obj):
+        c = Check(lax)
+        c.value(got, want, '', ts_name if sending else py_name, py_name if sending else ts_name, sending)
+        if not c.cols:
+            return
+        # a couple of keys both sides share, so the rows read as the same object
+        if ts_obj and py_obj:
+            shared = [x for x in ts_obj['o'] if x in py_obj['o'] and not any(col[0].split(':')[0].rstrip('?') == x for col in c.cols)]
+            for x in shared[:2]:
+                c.cols.insert(0, [x, x, 'ok'])
+        bad = [x for x in c.cols if x[2] == 'bad']
+        cols = [x for x in c.cols if x[2] == 'ok'] + bad + [x for x in c.cols if x[2] == 'dim']
+        out.append({'k': k, 'ts': ts_name, 'py': py_name, 'at': at, 'cols': cols})
+
+    obj = lambda sh: sh if isinstance(sh, dict) and 'o' in sh else None
     body = route.get('body')
     if body and not body.get('form') and not h.get('bx'):
-        name = body.get('t') or ''
+        name = body.get('t') or 'body'
+        at = body['s'].get('at', '') if isinstance(body['s'], dict) else ''
         if h.get('nb'):
             if body.get('req'):
-                at = body['s'].get('at', '') if isinstance(body['s'], dict) else ''
-                c.add('bad', 'needs ' + (name or 'body'), (name + '  ' + at).strip())
+                keys = list(body['s']['o'])[:3] if obj(body['s']) else [name]
+                out.append({'k': 'sends', 'ts': '', 'py': name, 'at': at,
+                            'cols': [['', k, 'bad'] for k in keys]})
         elif h.get('b'):
             b = h['b']
-            c.value(b['s'], body['s'], '', b.get('t') or ts_text(b['s']), name, True)
+            side('sends', b['s'], body['s'], b.get('t') or ts_text(b['s']), name, at, True, obj(b['s']), obj(body['s']))
     resp = route.get('resp')
     r = h.get('r')
     if resp and r:
-        c.value(resp['s'], r['s'], '', resp.get('t') or '', r.get('t') or ts_text(r['s']), False)
-    bad = [m for m in c.marks if m[0] == 'bad']
-    return bad + [m for m in c.marks if m[0] != 'bad']
+        at = resp['s'].get('at', '') if isinstance(resp['s'], dict) else ''
+        side('reads', resp['s'], r['s'], r.get('t') or ts_text(r['s']), resp.get('t') or '', at, False, obj(r['s']), obj(resp['s']))
+    return out
