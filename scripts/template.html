@@ -930,10 +930,14 @@ function originsOf(nid,name,path){const f=FLOW[nid]&&FLOW[nid][name],os=f&&f.len
 // 2 = same value, 1 = one is part of the other (payload vs payload.items), 0 = unrelated
 function overlap(p,q){if(p===q)return 2;const[a,b]=p.length<q.length?[p,q]:[q,p];return b.startsWith(a)&&'.['.includes(b[a.length])?1:0;}
 function relation(os,H){let best=0;for(const[a,p]of os)for(const[b,q]of H)if(a===b)best=Math.max(best,overlap(p,q));return best;}
-// what a hover lights: 2 = the same value, 1 = a field of it (payload → payload.items), 0 otherwise.
-// The object a field sits in doesn't count: hovering payload.customer_id leaves payload's own arrows dark.
+// how a thing relates to the hovered value: 2 = the same value, 1 = a field of it (payload → payload.items),
+// -1 = the object it sits in (payload.customer_id → payload), 0 = unrelated, which includes its siblings
 function inside(os,H){let best=0;for(const[a,p]of os)for(const[b,q]of H){if(a!==b)continue;
- if(p===q)return 2;if(p.startsWith(q)&&'.['.includes(p[q.length]))best=1;}return best;}
+ if(p===q)return 2;if(p.startsWith(q)&&'.['.includes(p[q.length]))best=1;
+ else if(!best&&q.startsWith(p)&&'.['.includes(q[p.length]))best=-1;}return best;}
+// the hovered box and every box on the calls leading to it
+function upstream(nid){const up=new Set([nid]),q=[nid];while(q.length){const x=q.shift();
+ (curEp?curEp.nodes:[]).forEach(c=>{if(!up.has(c.id)&&(c.steps||[]).some(s=>s.target===x)){up.add(c.id);q.push(c.id);}});}return up;}
 // the origins an arrow carries: the variable its result lands in, and whatever its arguments come from
 // as "origin@path" tokens, so an arrow carrying payload.coupon doesn't light up for payload.items
 function edgeKeys(src,s){
@@ -1152,22 +1156,24 @@ document.addEventListener('mouseout',e=>{const t=e.target.closest&&e.target.clos
 // light up together, parts of it (payload → payload.items → items) get a dashed outline, and an
 // unrelated variable that happens to share the name stays dim.
 const splitKey=k=>{const i=k.indexOf('@');return[k.slice(0,i),k.slice(i+1)];};
-function setSpot(v,nid,path){setSpotH(v?(nid?originsOf(nid,v,path):legendOrigins(v)):null);}
+function setSpot(v,nid,path){setSpotH(v?(nid?originsOf(nid,v,path):legendOrigins(v)):null,nid);}
 // H: the origins being traced. Hovering an arrow or a call row traces everything that arrow carries.
-function setSpotH(H){
+function setSpotH(H,nid){
  const on=!!(H&&H.length);
  world.classList.toggle('spot',on); svg.classList.toggle('spot',on);
  world.querySelectorAll('.vhot').forEach(e=>e.classList.remove('vhot','vpart'));
  svg.querySelectorAll('.vhot').forEach(e=>e.classList.remove('vhot'));
  if(!on)return;
-  // the value itself lights everywhere it goes; its fields only (dashed) in a box that holds the value
- // itself, and an arrow only when it carries exactly this value
- const parts=[],holds=new Set();
+ // the value and its fields light everywhere they go (fields dashed). The object it sits in lights only
+ // on the way here (the calls that brought it to the hovered box), never where the object goes next,
+ // and sibling fields stay dark: hovering payload.customer_id doesn't light payload.items
+ const up=nid?upstream(nid):new Set();
  world.querySelectorAll('[data-var]').forEach(e=>{const card=e.closest('.node');if(!card)return;
    const r=inside(originsOf(card.dataset.id,e.dataset.var,e.dataset.path),H);
-   if(r===2){e.classList.add('vhot');holds.add(card);}else if(r===1)parts.push([e,card]);});
- parts.forEach(([e,card])=>{if(holds.has(card))e.classList.add('vhot','vpart');});
- svg.querySelectorAll('[data-keys]').forEach(e=>{if(inside(e.dataset.keys.split(' ').map(splitKey),H)===2)e.classList.add('vhot');});
+   if(r===2)e.classList.add('vhot');else if(r===1||(r===-1&&up.has(card.dataset.id)))e.classList.add('vhot','vpart');});
+ const G=groupEdges();
+ svg.querySelectorAll('[data-keys]').forEach(e=>{const r=inside(e.dataset.keys.split(' ').map(splitKey),H),g=G[+e.dataset.g];
+   if(r>0||(r===-1&&g&&up.has(g.dst)))e.classList.add('vhot');});
 }
 // a Key row names a variable without saying which box it's in: take every box that produces it
 function legendOrigins(v){
@@ -1975,14 +1981,16 @@ function usesOfVar(nid,v,path,S){
  (n.steps||[]).forEach(t=>{if(!t.target||!NB(t.target))return;
    (t.bind||[]).forEach(b=>{
      // the same value passed on (payload.items → items), or the whole object passed with this field inside it
-     let rest='';const hit=b.from===v?((b.path||'')===(path||'')||(path&&!b.path&&(rest=path,true))):(!path&&(b.uses||[]).includes(v));if(!hit)return;
+     // the same value, or a field of it (narrowing as it goes); not the object it sits in, not its siblings
+     const bp=b.path||'',pp=path||'',rest='';
+     const hit=b.from===v?(bp===pp||(bp.startsWith(pp)&&'.['.includes(bp[pp.length]))):(!path&&(b.uses||[]).includes(v));if(!hit)return;
      const gi=gIndex(nid,t.target,t.var),moved=b.text!==b.p;
      if(moved)S.push({nid,t:'row',rv:t.var,v,g:[gi,'f'],code:b.text});
-     S.push({nid:t.target,t:'ins',v:b.p,g:[gi,'f'],code:b.p+rest,also:moved?[]:[[nid,t.var]]});
+     S.push({nid:t.target,t:'ins',v:b.p,g:[gi,'f'],code:b.p,also:moved?[]:[[nid,t.var]]});
      usesOfVar(t.target,b.p,rest,S);
      if(!rest&&retIdents(t.target).has(b.p))retUp(t.target,S);});});
  // a local that is just another name for it: `items = payload.items`, `for i in items`
- Object.entries(n.alias||{}).forEach(([loc,[root,p]])=>{if(root!==v||(p||'')!==(path||''))return;const a=assignLine(nid,loc);
+ Object.entries(n.alias||{}).forEach(([loc,[root,p]])=>{if(root!==v||!((p||'')===(path||'')||(p||'').startsWith(path||'')&&'.['.includes((p||'')[(path||'').length])))return;const a=assignLine(nid,loc);
    if(a)S.push(codeStep(nid,a.line,{v:loc}));usesOfVar(nid,loc,'',S);});
  if(!path&&retIdents(nid).has(v))retUp(nid,S);
 }
