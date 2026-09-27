@@ -250,6 +250,23 @@ body.review .revbar{display:block}
 #edges .errpath{opacity:0;transition:opacity .12s}
 #edges.errfocus .errpath.errhot{opacity:1;stroke-dasharray:6 4;animation:flow .6s linear infinite}
 
+/* side effects, in the order the route runs them: a strip under the route header. Red squiggle:
+   can't be undone, and an error or the commit can still come after it. Faded: only on some paths. */
+.fxstrip{left:14px;top:14px;display:flex;flex-wrap:wrap;align-items:flex-start;gap:5px 3px;padding:6px 8px;max-width:calc(100% - 262px);max-height:118px;overflow-y:auto}
+.fxw{display:inline-flex;flex-direction:column;align-items:center;gap:3px;min-width:0}
+.fxw i{font:10px/1 var(--mono);font-style:normal;color:var(--muted);max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fx{font:500 11px/1 var(--mono);color:var(--ink2);background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:4px 8px;white-space:nowrap;cursor:pointer}
+.fx:hover{border-color:var(--line2)}
+.fx b{font-weight:600;color:var(--muted)}
+.fx.commit{color:var(--ok);background:color-mix(in srgb,var(--ok) 11%,var(--panel));border-color:color-mix(in srgb,var(--ok) 35%,var(--line))}
+.fx.via{border-style:dashed;border-color:var(--muted)}
+.fx.unk{color:var(--muted);background:none;border-style:dashed;border-color:var(--muted);cursor:default}
+.fx.risk{color:var(--del);background:color-mix(in srgb,var(--del) 10%,var(--panel));border-color:color-mix(in srgb,var(--del) 35%,var(--line));text-decoration:underline wavy var(--del);text-decoration-thickness:1px;text-underline-offset:3px;text-decoration-skip-ink:none}
+.fxw.cond{opacity:.5}
+.fxa{color:var(--faint);font:11px/1 var(--mono);padding-top:5px}
+.stage.hasfx .chgnav{top:auto;bottom:14px}
+.node.fxhot{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft),var(--shadow-lg)}
+
 .node{position:absolute;width:320px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);z-index:2;transition:box-shadow .18s,border-color .18s}
 .node:hover{box-shadow:var(--shadow-lg)}
 .node.wide{width:max-content;min-width:320px;max-width:720px}
@@ -518,6 +535,7 @@ button.num{cursor:pointer}
    <div class="empty" id="empty" hidden><div><svg width="64" height="48" viewBox="0 0 64 48" fill="none"><rect x="2" y="6" width="22" height="14" rx="4" stroke="currentColor" stroke-width="1.5"/><rect x="40" y="28" width="22" height="14" rx="4" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 3"/><path d="M24 13c10 0 6 22 16 22" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 3"/></svg><b id="emptyh">Nothing to draw</b><span id="emptyp">No endpoints were found for this run.</span></div></div>
    <div class="float chgnav" id="chgnav" hidden><button id="chgprev" data-tip="Previous  (⇧N)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 10 4-4 4 4"/></svg></button><span id="chglabel"></span><button id="chgnext" data-tip="Next  (N)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 6 4 4 4-4"/></svg></button></div>
    <div class="float stepbar" id="stepbar" hidden role="toolbar" aria-label="Steps"><button class="sbback" id="sbback" aria-label="Back (Alt+Left)" data-tip="Back  (Alt+←)" aria-disabled="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 4 3 7.5 6.5 11"/><path d="M3.5 7.5H10a3 3 0 0 1 0 6H8"/></svg></button><span class="sbsep"></span><span class="sbname" id="sbname"></span><button id="sbprev" aria-label="Previous step (Shift+N)" data-tip="Previous  (⇧N)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 10 4-4 4 4"/></svg></button><span id="sbcount" aria-live="polite"></span><button id="sbnext" aria-label="Next step (N)" data-tip="Next  (N)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 6 4 4 4-4"/></svg></button></div>
+   <div class="float fxstrip" id="fxstrip" hidden></div>
    <details class="float legend" id="legend"></details>
    <div class="float dock">
     <span class="seg scrollseg wheelseg" role="group" aria-label="Scroll wheel"><button class="segb" data-mode="pan" data-tip="Scroll wheel pans  (W)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v12M2 8h12M8 2 6.3 3.7M8 2l1.7 1.7M8 14l-1.7-1.7M8 14l1.7-1.7M2 8l1.7-1.7M2 8l1.7 1.7M14 8l-1.7-1.7M14 8l-1.7 1.7"/></svg>Pan</button><button class="segb" data-mode="zoom" data-tip="Scroll wheel zooms  (W)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3M5 7h4M7 5v4"/></svg>Zoom</button></span>
@@ -769,6 +787,7 @@ function build(ep){
  layout();
  closeDrawer();
  $('#epinfo').innerHTML='<span class="m '+esc(ep.method.toUpperCase())+'">'+esc(ep.method)+'</span><span class="path" title="'+esc(ep.path)+'">'+esc(ep.path)+'</span><span class="sum" title="'+esc(ep.summary||'')+'">'+esc(ep.summary||'')+'</span>'+modelChips(ep)+statusChips(ep)+callerChips(ep);
+ fxStrip(ep);
  renderLegend(varColor);
  fit(false);
  setupChgNav();
@@ -782,6 +801,37 @@ function statusChips(ep){
  return '<span class="stchips">'+ep.statuses.map(s=>'<span class="stc '+esc(s.kind)+(s.new?' new':'')+'" data-st="'+esc(s.code)+'"'
    +(s.types.length?' data-err="'+esc(s.types.join(' '))+'" data-tip="'+esc(s.types.join('\n'))+'"':'')+'>'+esc(s.code)+'</span>').join('')+'</span>';
 }
+
+// what the route does to the world, in the order it happens: database writes, the commit, and
+// steps that can't be undone (email, HTTP, files, queues). Hover a chip to see its line and box;
+// click to go there. A red one can't be undone while an error or the commit can still follow it.
+function fxStrip(ep){
+ const box=$('#fxstrip'),F=(ep&&ep.effects)||{};let items=F.items||[];
+ box.hidden=!items.length;stage.classList.toggle('hasfx',!box.hidden);
+ if(!items.length){box.innerHTML='';return;}
+ const MAX=12;
+ const chip=it=>{
+   const errs=(it.risk||[]).filter(r=>r!=='commit');
+   const tip=it.code+'\n'+it.fn+' · '+it.file.split('/').pop()+':'+it.line+(it.risk?'\ncan follow: '+it.risk.join(' · '):'');
+   return '<span class="fxw'+(it.cond?' cond':'')+'"><button class="fx '+esc(it.k)+(it.risk?' risk':'')+(it.via?' via':'')+'" data-go="'+esc(it.node)+'" data-tip="'+esc(tip)+'"'
+     +(errs.length?' data-err="'+esc(errs.join(' '))+'"':'')+'>'+esc(it.label)+(it.n>1?' <b>×'+it.n+'</b>':'')+'</button>'
+     +((it.via||it.cond)?'<i>'+esc(it.via||it.cond)+'</i>':'')+'</span>';
+ };
+ // a long strip shows each step once, where it first happens (×n counts the rest), keeps every
+ // red one, and folds runs of the others into a +N chip
+ if(items.length>MAX){const seen=new Map();items=items.reduce((out,it)=>{const k=[it.k,it.label,it.via||'',!!it.risk].join('|'),o=seen.get(k);
+   if(o){o.n=(o.n||1)+(it.n||1);if(!it.cond)o.cond='';if(it.risk)o.risk=[...new Set(o.risk.concat(it.risk))];return out;}
+   const c=Object.assign({},it);seen.set(k,c);out.push(c);return out;},[]);}
+ const h=[];let run=[];
+ const flush=()=>{if(run.length)h.push('<span class="fxw"><span class="fx unk" data-tip="'+esc(run.map(i=>i.label).join('\n'))+'">+'+run.length+'</span></span>');run=[];};
+ items.forEach((it,i)=>{if(i<MAX||it.risk){flush();h.push(chip(it));}else run.push(it);});
+ flush();
+ if(F.commit==='unknown')h.push('<span class="fxw"><span class="fx unk" data-tip="no commit found">commit ?</span></span>');
+ box.innerHTML=h.join('<span class="fxa">→</span>');
+}
+$('#fxstrip').addEventListener('click',e=>{const c=e.target.closest('.fx[data-go]');if(c)focusNode(nodes[c.dataset.go]);});
+$('#fxstrip').addEventListener('mouseover',e=>{const c=e.target.closest('.fx[data-go]'),nd=c&&nodes[c.dataset.go];if(nd)nd.el.classList.add('fxhot');});
+$('#fxstrip').addEventListener('mouseout',e=>{world.querySelectorAll('.node.fxhot').forEach(n=>n.classList.remove('fxhot'));});
 
 function setNodeCode(card,show,pre,btn){
  pre=pre||card.querySelector('pre.code');btn=btn||card.querySelector('.codebtn');
@@ -1002,8 +1052,8 @@ function setErr(src){
  document.querySelectorAll('#world [data-err],#edges [data-err],#epinfo [data-err],#epinfo [data-st]').forEach(e=>{if(errMatch(e,H)){e.classList.add('errhot');
    const st=e.closest('.step');if(st)st.classList.add('errhot');const card=e.closest('.node');if(card)card.classList.add('errhot');}});
 }
-document.addEventListener('mouseover',e=>{const t=e.target.closest&&e.target.closest('.sq,.sqok,.errlab,.stc[data-err],.step.raise');if(t)setErr(t);});
-document.addEventListener('mouseout',e=>{const t=e.target.closest&&e.target.closest('.sq,.sqok,.errlab,.stc[data-err],.step.raise');if(t&&!(e.relatedTarget&&t.contains(e.relatedTarget)))setErr(null);});
+document.addEventListener('mouseover',e=>{const t=e.target.closest&&e.target.closest('.sq,.sqok,.errlab,.stc[data-err],.step.raise,.fx[data-err]');if(t)setErr(t);});
+document.addEventListener('mouseout',e=>{const t=e.target.closest&&e.target.closest('.sq,.sqok,.errlab,.stc[data-err],.step.raise,.fx[data-err]');if(t&&!(e.relatedTarget&&t.contains(e.relatedTarget)))setErr(null);});
 
 // variable spotlight: hover any variable → it lights up everywhere (chips, code tokens, and every
 // arrow that carries it), while the rest fades. This is the "trace this value" view.
@@ -1181,11 +1231,13 @@ function fit(anim){
  const b=bounds(),r=stage.getBoundingClientRect();
  if(!b||!r.width){view={x:20,y:20,s:1};applyView();return;}
  const pad=36,w=b.x1-b.x0,h=b.y1-b.y0;
- let s=Math.min(1,(r.width-pad*2)/w,(r.height-pad*2-40)/h);
+ // keep the first boxes clear of the side-effect strip at the top
+ const top=stage.classList.contains('hasfx')?$('#fxstrip').offsetHeight:0, H=r.height-top;
+ let s=Math.min(1,(r.width-pad*2)/w,(H-pad*2-40)/h);
  s=Math.max(anim?0.2:0.75,s);
  view.s=s;
  view.x=w*s<r.width-pad*2?(r.width-w*s)/2-b.x0*s:pad-b.x0*s;
- view.y=h*s<r.height-pad*2-40?Math.max(pad,(r.height-h*s)/2-20)-b.y0*s:pad-b.y0*s;
+ view.y=top+(h*s<H-pad*2-40?Math.max(pad,(H-h*s)/2-20)-b.y0*s:pad-b.y0*s);
  anim?animateView():applyView();
 }
 function setCode(show){codeShown=show;store.set('code',show);$('#codeAll').classList.toggle('on',show);world.querySelectorAll('.node').forEach(card=>setNodeCode(card,show));relayout();}
@@ -1561,7 +1613,7 @@ function openCaller(row){
 function rUnitView(row){
  const R=RR[row],U=R&&RU[R.u];if(!U)return;
  side.querySelectorAll('.ep').forEach(x=>x.classList.remove('on'));
- if(!RMODE){RMODE=true;svg.innerHTML='';$('#chgnav').hidden=true;closeDrawer();}
+ if(!RMODE){RMODE=true;svg.innerHTML='';$('#chgnav').hidden=true;fxStrip(null);closeDrawer();}
  curEp={id:'unit:'+row,nodes:[],react:true};
  Object.assign(rv,{base:null,act:null,step:1,hover:null,pin:null,sstep:1,extra:new Set([U.id]),shownKey:'',unitRow:row});rhist=[];
  rBuild(true);fit(false);
@@ -1597,7 +1649,7 @@ function rLegend(){
 }
 function rLeave(){if(!RMODE)return;RMODE=false;world.classList.remove('rdim');$('#stepbar').hidden=true;rv.pin=null;rv.hover=null;}
 function selectAction(A){
- RMODE=true;curEp={id:A.id,nodes:[],react:true};
+ RMODE=true;curEp={id:A.id,nodes:[],react:true};fxStrip(null);
  svg.innerHTML='';$('#chgnav').hidden=true;closeDrawer();
  Object.assign(rv,{base:A,act:A,step:1,hover:null,pin:null,sstep:1,extra:new Set(),shownKey:''});rhist=[];
  rBuild(true);fit(false);
