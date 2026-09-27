@@ -845,6 +845,7 @@ export function analyze(ts, root, { tag = '' } = {}) {
     const unres = !s.replace(/[/\u0001]/g, '').length && s !== '/';
     const segs = s.split('/').map((g) => (g.includes('\u0001') || /^\{[^}]*\}$/.test(g) ? '{}' : g));
     let shownPath = shown.replace(/^[^/]*?\/\/[^/]*/, '').replace(/^\u0002+/, '');
+    if (lead) shownPath = shownPath.replace(/^(\$\{[^}]*\})+/, '');   // `${env.API_URL}/items` shows as /items
     const qa = shownPath.indexOf('?'); if (qa > 0) shownPath = shownPath.slice(0, qa);
     return { p: segs.join('/'), host, lead, q, unres, shown: shownPath.replace(/\u0002/g, '') };
   }
@@ -1565,8 +1566,15 @@ export function analyze(ts, root, { tag = '' } = {}) {
   function queryFnOf(expr, depth = 0) {
     expr = skipOuter(expr);
     if (!expr || depth > 4) return null;
-    if (ts.isObjectLiteralExpression(expr)) return expr.properties.find((q) => q.name && q.name.getText() === 'queryFn') || null;
+    if (ts.isObjectLiteralExpression(expr)) {
+      const own = expr.properties.find((q) => q.name && q.name.getText() === 'queryFn');
+      if (own) return own;
+      // useInfiniteQuery({ ...commentsQueryOptions(id) })
+      for (const p of expr.properties) if (ts.isSpreadAssignment(p)) { const q = queryFnOf(p.expression, depth + 1); if (q) return q; }
+      return null;
+    }
     if (ts.isCallExpression(expr)) {
+      if (QUERY_WRAP.has(calleeName(expr))) return queryFnOf(expr.arguments[0], depth + 1);
       const t = resolveValue(expr.expression).find((x) => x.kind === 'fn');
       if (t) for (const r of returnsOf(t.fn)) { const q = queryFnOf(r, depth + 1); if (q) return q; }
       return null;
@@ -1654,6 +1662,73 @@ export function analyze(ts, root, { tag = '' } = {}) {
     return f;
   }
 
+
+  // ── query keys: which queries a `queryClient.invalidateQueries({ queryKey })` reloads ──
+  // A key is known by the functions it is built through (`getCommentsQueryOptions(id).queryKey`,
+  // a `commentKeys.all()` factory) and by its first word (`['comments', id]`): React Query
+  // reloads every query whose key starts the same way.
+  const QUERY_WRAP = new Set(['queryOptions', 'infiniteQueryOptions']);
+  const RELOADS = new Set(['invalidateQueries', 'refetchQueries', 'resetQueries']);
+  function declInit(id) {
+    const d = ((symOf(id) || {}).declarations || []).find((x) => ts.isVariableDeclaration(x) && x.initializer);
+    return d ? d.initializer : null;
+  }
+  function keyInfo(expr, info, depth = 0) {
+    expr = skipOuter(expr);
+    if (!expr || depth > 6) return info;
+    if (ts.isStringLiteral(expr) || ts.isNoSubstitutionTemplateLiteral(expr)) { info.lit = info.lit || expr.text; return info; }
+    if (ts.isArrayLiteralExpression(expr)) {
+      const e0 = expr.elements[0];
+      if (e0) keyInfo(ts.isSpreadElement(e0) ? e0.expression : e0, info, depth + 1);
+      return info;
+    }
+    if (ts.isPropertyAccessExpression(expr) && expr.name.text === 'queryKey') return optionsKey(expr.expression, info, depth + 1);
+    if (ts.isIdentifier(expr) || ts.isPropertyAccessExpression(expr)) {
+      const init = ts.isIdentifier(expr) ? declInit(expr) : null;
+      if (init) return keyInfo(init, info, depth + 1);
+      const t = resolveValue(expr).find((x) => x.kind === 'fn');
+      if (t) info.fns.add(t.fn);
+      return info;
+    }
+    if (ts.isCallExpression(expr)) {
+      const t = resolveValue(expr.expression).find((x) => x.kind === 'fn');
+      if (t && !info.fns.has(t.fn)) { info.fns.add(t.fn); for (const r of returnsOf(t.fn)) keyInfo(r, info, depth + 1); }
+    }
+    return info;
+  }
+  function optionsKey(expr, info, depth = 0) {
+    expr = skipOuter(expr);
+    if (!expr || depth > 6) return info;
+    if (ts.isObjectLiteralExpression(expr)) {
+      for (const p of expr.properties) {
+        if (ts.isSpreadAssignment(p)) optionsKey(p.expression, info, depth + 1);
+        else if (p.name && p.name.getText() === 'queryKey') {
+          if (ts.isPropertyAssignment(p)) keyInfo(p.initializer, info, depth + 1);
+          else if (ts.isShorthandPropertyAssignment(p)) { const i = declInit(p.name); if (i) keyInfo(i, info, depth + 1); }
+        }
+      }
+      return info;
+    }
+    if (ts.isIdentifier(expr)) { const i = declInit(expr); return i ? optionsKey(i, info, depth + 1) : info; }
+    if (ts.isCallExpression(expr)) {
+      if (QUERY_WRAP.has(calleeName(expr))) return optionsKey(expr.arguments[0], info, depth + 1);
+      const t = resolveValue(expr.expression).find((x) => x.kind === 'fn');
+      if (t && !info.fns.has(t.fn)) { info.fns.add(t.fn); for (const r of returnsOf(t.fn)) optionsKey(r, info, depth + 1); }
+    }
+    return info;
+  }
+  let queryIndex = null;
+  function queriesFor(key) {
+    if (!queryIndex) {
+      queryIndex = [];
+      for (const c of calls) {
+        if (!/^use(Suspense)?(Infinite)?Query$/.test(calleeName(c)) || !c.arguments[0]) continue;
+        queryIndex.push({ c, key: optionsKey(c.arguments[0], { fns: new Set(), lit: null }) });
+      }
+    }
+    return queryIndex.filter(({ key: k }) => [...key.fns].some((f) => k.fns.has(f)) || (key.lit && key.lit === k.lit)).map((q) => q.c);
+  }
+
   // ── the walk ──
   function pathFor(entry) {
     const steps = [];
@@ -1730,9 +1805,28 @@ export function analyze(ts, root, { tag = '' } = {}) {
         }
       }
     }
+    // `invalidateQueries({ queryKey })`: the lists on screen that read that key load again
+    function onReload(c, level, unc) {
+      addStep([rowFor(c)], { unc });
+      const a = c.arguments[0] && skipOuter(c.arguments[0]);
+      if (!a) return;
+      const key = ts.isObjectLiteralExpression(a) ? optionsKey(a, { fns: new Set(), lit: null }) : keyInfo(a, { fns: new Set(), lit: null });
+      for (const q of queriesFor(key).slice(0, 3)) {
+        if (steps.length > MAXSTEPS) return;
+        const u = unitOf(q);
+        if (!u) continue;
+        const owners = u.kind === 'hook' ? hookOwners(u) : [{ unit: u, call: q }];
+        addStep(owners.slice(0, 3).map((o) => rowFor(o.call)), { unc });
+        const qf = queryFnOf(q.arguments[0]);
+        const init = qf && (ts.isPropertyAssignment(qf) ? skipOuter(qf.initializer) : qf);
+        if (init && (ts.isMethodDeclaration(init) || isFnLike(init))) walkFn(init, level + 1, unc);
+        else if (init) handleTargets(resolveValue(init), rowFor(qf), level + 1, unc);
+      }
+    }
     function visitExpr(node, level, unc) {
       const v = (n) => {
         if (isFnLike(n)) return;   // runs later, when something calls it
+        if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && RELOADS.has(n.expression.name.text)) { onReload(n, level, unc); return; }
         ts.forEachChild(n, v);
         if (ts.isCallExpression(n)) onCall(n, level, unc);
       };
