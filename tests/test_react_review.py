@@ -101,7 +101,7 @@ class ReactReviewTest(unittest.TestCase):
         subprocess.run([sys.executable, GEN, '--repo', self.repo, '--react', '--from', 'HEAD~1', '--out', out],
                        check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         html = read(out)
-        for s in ('function chkChip(', "'grp sect','Problems"):
+        for s in ('function chkChip(', "grpHead('grp','Problems'"):
             self.assertIn(s, html)
 
 
