@@ -27,6 +27,7 @@ PALETTE = ['#3b82f6','#0ea5a4','#d97706','#db2777','#16a34a','#7c3aed','#ea580c'
 INPUT_PALETTE = ['#e8590c','#1098ad','#9c36b5','#2f9e44','#c2255c','#1971c2']
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from flowsegul_effects import timeline as effect_timeline  # noqa: E402
+import flowsegul_shapes as shapes  # noqa: E402
 SKIP_PARAMS = {'self', 'cls', 'db', 'body', 'request', 'session'}
 
 
@@ -257,6 +258,8 @@ class Index:
         self.facts_cache = {}  # qual -> value_facts (memoized)
         self.file_src = {}     # rel path -> exact source it was parsed from
         self.models = {}       # class name -> {code, file, lineno} (request/response schemas etc.)
+        self.class_nodes = {}  # class name -> its ClassDef, for the JSON shape of request/response models
+        self.shapes = shapes.Shapes(self, unparse)
         self.bases = {}        # class name -> [base class names], to match `except Base` to a subclass
         self.app_handlers = {} # exception name -> status (or None) from @app.exception_handler(...)
         self.raise_cache = {}  # qual -> own raise statements (filled by steps_for)
@@ -380,6 +383,7 @@ class Index:
                 add(n, None)
             elif isinstance(n, ast.ClassDef):
                 self.bases[n.name] = [unparse(b).split('.')[-1] for b in n.bases]
+                self.class_nodes[n.name] = n
                 self.models[n.name] = {'name': n.name, 'file': rel, 'lineno': n.lineno,
                                        'code': def_source(src, n),
                                        'fields': model_fields(n)}
@@ -1387,6 +1391,94 @@ def query_params(info, idx, path, depth=0):
     return out, open_
 
 
+# ── what a request must look like to reach a route: its body, and what comes back ──
+def route_body(info, idx, path):
+    """The JSON body a route reads: {'s': shape, 't': model name, 'req': must be sent}, {'form': 1}
+    for form fields and files, or None when it reads no body."""
+    fn = info['node']
+    a = fn.args
+    pos = [*getattr(a, 'posonlyargs', []), *a.args]
+    defaults = dict(zip([x.arg for x in pos][len(pos) - len(a.defaults):], a.defaults))
+    defaults.update({x.arg: d for x, d in zip(a.kwonlyargs, a.kw_defaults) if d is not None})
+    in_path = set(re.findall(r'{(\w+)', path))
+    S = idx.shapes
+    parts = []      # (key, shape, required, embed, type text)
+    for arg in pos + a.kwonlyargs:
+        name, ann, dflt = arg.arg, arg.annotation, defaults.get(arg.arg)
+        if name in ('self', 'cls') or name in in_path or ann is None:
+            continue
+        kind, call = _param_kind(ann, dflt)
+        if kind in ('Form', 'File'):
+            return {'form': 1}
+        if kind not in (None, 'Body'):
+            continue
+        if kind is None and (isinstance(dflt, ast.Call) and unparse(dflt.func).split('.')[-1] == 'Depends'):
+            continue
+        core = ann
+        if isinstance(ann, ast.Subscript) and unparse(ann.value).split('.')[-1] == 'Annotated':
+            sl = ann.slice
+            sl = getattr(sl, 'value', sl) if not isinstance(sl, ast.Tuple) else sl
+            core = sl.elts[0] if isinstance(sl, ast.Tuple) else sl
+            if any(isinstance(e, ast.Call) and unparse(e.func).split('.')[-1] == 'Depends'
+                   for e in (sl.elts if isinstance(sl, ast.Tuple) else [])):
+                continue
+        sh = S.ann(core, 0, False)
+        if kind is None:
+            # a model (or a list of them) is the body; a plain value is a query key
+            k = shapes._core(shapes._kinds(sh))
+            if k == 'any' or not (k & {'o', 'a'}):
+                continue
+        key = name
+        embed = False
+        if call is not None:
+            alias = shapes._const_str(shapes._kw(call, 'alias'))
+            key = alias or name
+            e = shapes._kw(call, 'embed')
+            embed = isinstance(e, ast.Constant) and e.value is True
+            first = call.args[0] if call.args else shapes._kw(call, 'default')
+            has_default = (first is not None and not (isinstance(first, ast.Constant) and first.value is Ellipsis)) \
+                or (call is not dflt and dflt is not None)
+        else:
+            has_default = dflt is not None
+        parts.append((key, sh, not has_default, embed, unparse(core)))
+    if not parts:
+        return None
+    if len(parts) == 1 and not parts[0][3]:
+        key, sh, req, _, text = parts[0]
+        return {'s': sh, 't': text, 'req': req}
+    # several body parameters: FastAPI reads each from a key of its own
+    return {'s': {'o': {k: [sh, 0 if req else 1, t] for k, sh, req, _, t in parts}, 'n': ''},
+            't': '', 'req': any(p[2] for p in parts)}
+
+
+def route_resp(info, idx, method, path):
+    """The shape a route answers with: `response_model=`, else its return annotation. None when
+    it can't be told (no annotation, a Response class, fields left out with response_model_exclude…)."""
+    fn = info['node']
+    dec = next((d for d in fn.decorator_list if Index._route(d) and Index._route(d)[0] == method), None)
+    ann = fn.returns
+    if dec is not None:
+        for k in dec.keywords:
+            if k.arg and (k.arg.startswith('response_model_ex') or k.arg == 'response_model_include'):
+                return None
+            if k.arg == 'status_code' and isinstance(k.value, ast.Constant) and k.value.value == 204:
+                return None
+            if k.arg == 'response_class':
+                return None
+        rm = shapes._kw(dec, 'response_model')
+        if rm is not None:
+            if isinstance(rm, ast.Constant) and rm.value is None:
+                return None
+            ann = rm
+    if ann is None:
+        return None
+    text = unparse(ann)
+    if re.search(r'\b(\w*Response|Iterator|Generator|AsyncIterator|AsyncGenerator)\b', text):
+        return None
+    sh = idx.shapes.ann(ann, 0, True)
+    return None if sh == 'any' else {'s': sh, 't': text}
+
+
 def route_facts(qual, idx, path, method):
     """How a request reaches this route: FastAPI tries routes in the order they were added, and
     that order is only known for sure within one file."""
@@ -1396,6 +1488,13 @@ def route_facts(qual, idx, path, method):
     out = {'file': info['file'], 'line': info['lineno'], 'order': order, 'query': q}
     if open_:
         out['open'] = True
+    if method.upper() not in ('GET', 'HEAD', 'DELETE', 'OPTIONS'):
+        body = route_body(info, idx, path)
+        if body:
+            out['body'] = body
+    resp = route_resp(info, idx, method.upper(), path)
+    if resp:
+        out['resp'] = resp
     return out
 
 
@@ -2162,6 +2261,10 @@ def link_http(eps, react):
             miss = sorted(k for k, req in rq.items() if req and k not in sent)
             if miss:
                 ln['miss'] = miss
+        # the body it sends and the type it expects back, against the route's models
+        marks = shapes.check_request(h, target['route'])
+        if marks:
+            ln['ty'] = [list(m) for m in marks]
         h['ln'] = ln
         # a route lists the calls that reach it (a shadowed call reaches the route declared first)
         if not h.get('inner') and h.get('row'):
@@ -2220,6 +2323,12 @@ def generate(args, repos, log=True):
     all_eps.sort(key=lambda e: (bool(e.get('other')), bool(e.get('affected')), e.get('group', '')))
     react = merge_react(react_parts) if react_parts else None
     link_http(all_eps, react)
+    for e in all_eps:            # the models' shapes are only for linking: keep them out of the page
+        for k in ('body', 'resp'):
+            (e.get('route') or {}).pop(k, None)
+    for h in ((react or {}).get('http') or {}).values():
+        for k in ('b', 'r', 'nb', 'bx', 'lax'):
+            h.pop(k, None)
     return all_eps, all_code, react
 
 

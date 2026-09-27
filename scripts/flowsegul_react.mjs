@@ -736,7 +736,9 @@ export function analyze(ts, root, { tag = '' } = {}) {
       const parts = evalStr(args[0], sub);
       if (!clientish && !(parts[0] && parts[0].t === 'lit' && /^(\/|https?:\/\/)/.test(parts[0].v))) return null;
       const upper = name === name.toUpperCase();   // openapi-fetch: client.GET('/items/{id}', { params })
-      return mk(name.toUpperCase(), args[0], upper ? args[1] : BODY_ARG.has(lower(name)) ? args[2] : args[1], { base, params: upper });
+      const pos = !upper && BODY_ARG.has(lower(name));   // axios: post(url, data, config)
+      return mk(name.toUpperCase(), args[0], upper ? args[1] : pos ? args[2] : args[1],
+        Object.assign({ base, params: upper }, pos ? { bodyArg: args[1] || null } : {}));
     }
     // request(OpenAPI, { method: 'POST', url: '/api/v1/items/' }) and the like
     for (const a of args) {
@@ -788,7 +790,16 @@ export function analyze(ts, root, { tag = '' } = {}) {
         if (qe && qe.e) q = keysOf(qe.e, qe.sub);
         else if (qe && qe.unknown) q = null;
       }
-      return { m, parts, base: d.base || null, q, sure: !!d.sure, src: urlE.e };
+      // the body: axios's data argument, or `body`/`data` in the config; {e, sub}, {none} or {unknown}
+      let body = { none: true };
+      if ('bodyArg' in d) body = d.bodyArg ? { e: d.bodyArg, sub } : { none: true };
+      else if (cfg) {
+        body = propOf(cfg.e, 'body', cfg.sub);
+        if (body.none && !d.fetch) body = propOf(cfg.e, 'data', cfg.sub);
+        // a form, not JSON: hey-api's urlSearchParamsBodySerializer, a form content type
+        if (/BodySerializer|x-www-form-urlencoded|multipart\/form-data/.test(skipOuter(cfg.e).getText())) body = { form: true };
+      }
+      return { m, parts, base: d.base || null, q, sure: !!d.sure, src: urlE.e, body };
     }
     const fn = fnOfCallee(c.expression, sub);
     const inner = fn && (wrappers.get(fn) || clientFns.get(fn));
@@ -875,6 +886,147 @@ export function analyze(ts, root, { tag = '' } = {}) {
     }
     for (const r of reqAt.values()) if (r.via) outerCalls.set(r.via, (outerCalls.get(r.via) || 0) + 1);
   }
+  // ── what a request sends and expects back, as plain JSON shapes the backend's can be checked against:
+  // 'str' | 'num' | 'bool' | 'null' | 'any' | {a: item} | {u: [shapes]} | {o: {key: [shape, optional]}, n: name}
+  const TF = ts.TypeFlags;
+  const strictNull = !!(program.getCompilerOptions().strict || program.getCompilerOptions().strictNullChecks);
+  const OPAQUE = /^(Date|Blob|File|FormData|Map|Set|WeakMap|ArrayBuffer|URLSearchParams|ReadableStream|Promise|Response|Headers)$/;
+  const sameShape = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  function tsShape(t, at, depth = 0, noUndef = false) {
+    if (!t || depth > 5) return 'any';
+    if (t.flags & (TF.Any | TF.Unknown | TF.Never | TF.TypeParameter | TF.ESSymbolLike)) return 'any';
+    if (t.flags & (TF.Undefined | TF.Void)) return noUndef ? null : 'null';
+    if (t.flags & TF.Null) return 'null';
+    if (t.flags & TF.StringLike) return 'str';
+    if (t.flags & (TF.NumberLike | TF.BigIntLike)) return 'num';
+    if (t.flags & TF.BooleanLike) return 'bool';
+    if (t.isUnion()) {
+      const parts = [];
+      for (const x of t.types) {
+        const sh = tsShape(x, at, depth, noUndef);
+        if (sh === null || sh === 'fn' || parts.some((p) => sameShape(p, sh))) continue;   // a setter's `(prev) => …` form
+        if (sh === 'any') return 'any';
+        parts.push(sh);
+      }
+      return parts.length === 1 ? parts[0] : parts.length ? { u: parts } : 'any';
+    }
+    if (checker.isArrayType(t)) return { a: tsShape(checker.getTypeArguments(t)[0], at, depth + 1) };
+    if (checker.isTupleType(t)) return 'any';
+    if (t.getCallSignatures().length) return 'fn';
+    if (!(t.flags & TF.Object) && !t.isIntersection()) return 'any';
+    const sym = t.aliasSymbol || t.symbol;
+    if (t.symbol && OPAQUE.test(t.symbol.name)) return 'any';
+    if (checker.getIndexInfosOfType(t).length) return 'any';     // Record<string, X>: any keys
+    const o = {};
+    for (const p of checker.getPropertiesOfType(t)) {
+      const opt = (p.flags & ts.SymbolFlags.Optional) ? 1 : 0;
+      const pt = checker.getTypeOfSymbolAtLocation(p, at);
+      let txt = checker.typeToString(pt).replace(/ \| undefined$/, '');
+      if (txt.length > 32) txt = '';
+      o[p.name] = [tsShape(pt, at, depth + 1, !!opt), opt, txt];
+      if (o[p.name][0] === null) o[p.name][0] = 'null';
+    }
+    let n = checker.typeToString(t);
+    if (n.length > 40) n = sym && !/^__/.test(sym.name) ? sym.name : '';
+    return { o, n };
+  }
+  // the value an expression stands for: a parameter a wrapper was passed, JSON.stringify(x) as x
+  function valueOf(x) {
+    let e = x.e, sub = x.sub;
+    for (let i = 0; i < 10 && e; i++) {
+      while (ts.isParenthesizedExpression(e) || ts.isNonNullExpression(e)) e = e.expression;
+      if (ts.isCallExpression(e) && calleeName(e) === 'stringify' && e.arguments[0]) { e = e.arguments[0]; continue; }
+      if (ts.isIdentifier(e)) {
+        const s2 = valSym(e);
+        if (s2 && sub && sub.has(s2)) { const y = sub.get(s2); if (!y) return null; e = y.e; sub = y.sub; continue; }
+      }
+      return e;
+    }
+    return null;
+  }
+  // what the request sends as its body: {b: shape} for JSON, {nb} for none, {bx} when it can't be read
+  function bodyOf(r) {
+    const b = r.body;
+    if (!b || b.form || b.unknown) return { bx: 1 };
+    if (b.none) return { nb: 1 };
+    const e = valueOf(b);
+    if (!e) return { bx: 1 };
+    const t = checker.getTypeAtLocation(e);
+    const sh = tsShape(t, e);
+    if (sh === 'any' || sh === 'str' || sh === 'fn') return { bx: 1 };   // a string body is already serialized: can't see in
+    const txt = checker.typeToString(t);
+    return { b: { s: sh, t: txt.length > 40 ? '' : txt } };
+  }
+  const propType = (t, name, at) => { const p = t.getProperty(name); return p ? checker.getTypeOfSymbolAtLocation(p, at) : null; };
+  function awaited(t) {
+    for (let i = 0; i < 4 && t; i++) {
+      const nm = t.symbol && t.symbol.name;
+      if (!/Promise(Like)?$/.test(nm || '')) break;
+      const args = checker.getTypeArguments(t) || [];
+      t = args[0] || null;
+    }
+    return t;
+  }
+  // `.then((r) => r.json()).then(setTotal)`, `const data: T = await res.json()`, `(await res.json()) as T`
+  function jsonExpected(c) {
+    let n = upOuter(c);
+    let jsonCall = null;
+    const p = n.parent;
+    if (p && ts.isPropertyAccessExpression(p) && p.name.text === 'then' && ts.isCallExpression(p.parent)) {
+      const f = p.parent.arguments[0];
+      const body = f && (ts.isArrowFunction(f) || ts.isFunctionExpression(f)) && ts.isArrowFunction(f) && !ts.isBlock(f.body) ? skipOuter(f.body) : null;
+      if (body && ts.isCallExpression(body) && calleeName(body) === 'json') {
+        const outer = upOuter(p.parent), q = outer.parent;
+        if (q && ts.isPropertyAccessExpression(q) && q.name.text === 'then' && ts.isCallExpression(q.parent) && q.parent.arguments[0]) {
+          const sig = checker.getTypeAtLocation(q.parent.arguments[0]).getCallSignatures()[0];
+          const prm = sig && sig.parameters[0];
+          return prm ? checker.getTypeOfSymbolAtLocation(prm, q.parent) : null;
+        }
+        if (ts.isAsExpression(q || {})) return checker.getTypeFromTypeNode(q.type);
+        return null;
+      }
+    }
+    // const res = await fetch(…); … res.json()
+    if (p && ts.isAwaitExpression(p) && ts.isVariableDeclaration(upOuter(p).parent) && ts.isIdentifier(upOuter(p).parent.name)) {
+      const vs = symOf(upOuter(p).parent.name), fn = enclosingFn(c);
+      const found = [];
+      const v = (x) => {
+        if (ts.isCallExpression(x) && calleeName(x) === 'json' && ts.isPropertyAccessExpression(x.expression)
+          && ts.isIdentifier(x.expression.expression) && symOf(x.expression.expression) === vs) found.push(x);
+        ts.forEachChild(x, v);
+      };
+      if (fn && fn.body) v(fn.body);
+      if (found.length !== 1) return null;
+      jsonCall = found[0];
+    }
+    if (!jsonCall) return null;
+    let e = jsonCall;
+    while (e.parent && (ts.isAwaitExpression(e.parent) || ts.isParenthesizedExpression(e.parent))) e = e.parent;
+    const q = e.parent;
+    if (q && ts.isAsExpression(q)) return checker.getTypeFromTypeNode(q.type);
+    if (q && ts.isVariableDeclaration(q) && q.type) return checker.getTypeFromTypeNode(q.type);
+    const ctx = checker.getContextualType(e);
+    return ctx ? awaited(ctx) : null;
+  }
+  // the type the code expects back: a client's generic (`api<Order>(…)`, `http.get<Order>`), a generated
+  // client's result, or what a fetch's `.json()` is used as. null when it's any or can't be told
+  function respOf(c, r) {
+    let t = awaited(checker.getTypeAtLocation(c));
+    if (!t) return null;
+    let noUndef = false;
+    if (t.getProperty('json') && t.getProperty('status') && !t.getProperty('data')) {
+      t = r.via || !r.sure ? null : jsonExpected(c);   // a plain fetch: follow its .json()
+    } else if (t.getProperty('data') && ['status', 'headers', 'error', 'request', 'response'].some((k) => t.getProperty(k))) {
+      t = propType(t, 'data', c);      // axios's response, a generated client's {data, error}, useQuery's result
+      noUndef = true;
+    }
+    if (!t) return null;
+    const sh = tsShape(t, c, 0, noUndef);
+    if (sh === 'any' || sh === 'fn' || sh === null) return null;
+    let txt = checker.typeToString(t).replace(/ \| undefined$/, '');
+    return { s: sh, t: txt.length > 40 ? '' : txt };
+  }
+
   const proxy = readProxy(root);
   const httpOut = {};
   // the request a call makes, as the page shows it: {m, u, id}; null for a wrapper's own inner call
@@ -892,6 +1044,12 @@ export function analyze(ts, root, { tag = '' } = {}) {
       httpOut[id] = Object.assign({ m: out.m, p: P2.p }, alt && alt !== P2.p ? { alt } : {}, P2.lead ? { lead: 1 } : {},
         P2.host ? { host: P2.host } : {}, P2.q ? { q: P2.q } : { qx: 1 }, P2.unres || !urlish(r.parts) ? { unres: 1 } : {},
         clientFns.get(fn) === c && outerCalls.get(fn) ? { inner: 1 } : {});
+      if (!(clientFns.get(fn) === c && outerCalls.get(fn))) {
+        Object.assign(httpOut[id], bodyOf(r));
+        const rs = respOf(c, r);
+        if (rs) httpOut[id].r = rs;
+        if (!strictNull) httpOut[id].lax = 1;
+      }
     }
     httpOf.set(c, out);
     return out;

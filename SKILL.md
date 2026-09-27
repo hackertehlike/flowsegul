@@ -63,8 +63,9 @@ python3 scripts/flowsegul_gen.py --changed --out /tmp/flowsegul.html   # then op
   callback props up the tree, the `useState` setter, the components that rerun, effects on that
   state and the requests they make. On by default for a repo with `.tsx` files. With a FastAPI
   backend too, each request links to the route it reaches, the route lists its callers, and red
-  marks flag `no route`, `GET ≠ POST`, a route declared earlier that catches it, and query keys
-  the route ignores or requires.
+  marks flag `no route`, `GET ≠ POST`, a route declared earlier that catches it, query keys
+  the route ignores or requires, body keys the Pydantic model lacks or needs, and response
+  fields whose type differs from the TypeScript one (`id: int ≠ string`).
   Needs `node` and the `typescript` package (the app's own, a global one, or `FLOWSEGUL_TS=DIR`).
   Reads the working tree; `--changed` etc. apply to routes only. Anything it can't pin down is
   marked uncertain (faded), never claimed.

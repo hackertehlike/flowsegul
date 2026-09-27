@@ -1574,6 +1574,10 @@ function apiChips([m,u,id]){
  if(ln.slash)h+='<span class="rc quiet" data-tip="'+esc(H.p+' → '+E.path)+'">307</span>';
  (ln.extra||[]).slice(0,3).forEach(k=>{h+='<span class="rc bad">no param '+esc(k)+'</span>';});
  (ln.miss||[]).slice(0,3).forEach(k=>{h+='<span class="rc bad">needs '+esc(k)+'</span>';});
+ // the body it sends and the type it expects back, against the route's models: red sure, grey maybe
+ const ty=ln.ty||[],tyc=([tone,t,tip])=>'<span class="rc '+(tone==='bad'?'bad':'quiet')+'"'+(tip?' data-tip="'+esc(tip)+'"':'')+'>'+esc(t)+'</span>';
+ ty.slice(0,3).forEach(x=>{h+=tyc(x);});
+ if(ty.length>3)h+='<span class="rc quiet" data-tip="'+esc(ty.slice(3).map(x=>x[1]).join('\n'))+'">+'+(ty.length-3)+'</span>';
  return h;
 }
 // route header: who calls it

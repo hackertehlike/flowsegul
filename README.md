@@ -98,7 +98,13 @@ the call, or says `no caller`.
 Red marks say where a request won't work as written: `no route`, `GET ≠ POST`, `goes to
 /orders/{order_id}` (a route declared earlier in the same file catches it), `no param n` (a query
 key the route doesn't read, which FastAPI silently ignores) and `needs item_count` (a required
-query key it doesn't send). A grey `307` is a missing or extra trailing slash; `route ?` is a URL
+query key it doesn't send). The body and the response are checked against the route's Pydantic
+models: `OrderIn: no qty` (a key the model doesn't have, dropped), `needs quantity` or `needs OrderIn`
+(nothing sent), `PreviewOut ≠ number` and `id: int ≠ string` (the type the frontend declares for
+the answer, from `api<Order>(…)`, axios generics, a generated client or what `res.json()` is used
+as) and `no items[].quantity` (a field the frontend reads that the response never has). Hover a
+mark for both declarations. Grey means maybe: a `None` the TypeScript type doesn't allow, a key
+TypeScript marks optional. A grey `307` is a missing or extra trailing slash; `route ?` is a URL
 built at run time. Requests are read through `fetch`, axios (instances with a `baseURL` too),
 `useSWR`, generated clients (hey-api, openapi-fetch, openapi-typescript-codegen) and your own
 wrappers like `api('/items')`. Vite's `server.proxy` rewrites, Next.js `rewrites()` and `VITE_*` /
