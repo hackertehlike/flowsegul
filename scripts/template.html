@@ -504,6 +504,73 @@ button.num{cursor:pointer}
 .rkey .rc.rerun{position:static;box-shadow:none;background:var(--chg-soft);padding:2px 6px;cursor:default}
 .rkey .dash{width:22px;height:14px;border-left:3px dashed var(--line2);background:var(--panel2);border-radius:3px}
 
+/* ── calm look (ideas borrowed from soft dashboard UIs) ─────────────────────────────────────────
+   1 calm canvas: boxes are separated by space and a soft shadow, not hairline borders
+   2 one accent: the page chrome is neutral, so colour on the map always means something
+   3 pills: every small button and chip is fully rounded
+   4 big count: the review bar leads with one large number and a quiet label
+   5 soft glow: a changed box glows orange instead of wearing a hard ring */
+:root{--bg:#eef0f3; --grid:#dcdfe5; --line:#e7e9ee; --panel2:#f3f4f7; --r:18px;
+ --shadow:0 1px 2px rgba(22,26,38,.04),0 10px 30px -12px rgba(22,26,38,.16);
+ --shadow-lg:0 2px 4px rgba(22,26,38,.05),0 22px 48px -16px rgba(22,26,38,.26);
+ --accent:#3b4254; --accent-ink:#161a26; --accent-soft:#161a2612; --accent-tk:#5b5bf038; --lit:#5b5bf0}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0f1116; --line:#22262f; --panel2:#1a1d25;
+ --accent:#c3c8d4; --accent-ink:#e8ebf2; --accent-soft:#e8ebf21a; --accent-tk:#8b8bff45; --lit:#8b8bff}}
+:root[data-theme=dark]{--bg:#0f1116; --line:#22262f; --panel2:#1a1d25;
+ --accent:#c3c8d4; --accent-ink:#e8ebf2; --accent-soft:#e8ebf21a; --accent-tk:#8b8bff45; --lit:#8b8bff}
+/* 1 calm canvas */
+.top{background:var(--bg);border-bottom:0;height:60px}
+.crumb{border-left:0}
+.side{background:var(--panel);border-right:0;margin:0 0 12px 12px;border-radius:var(--r);box-shadow:var(--shadow)}
+body.noside .side{margin-left:-264px}
+.stage{background-image:radial-gradient(circle at 1px 1px,var(--grid) .8px,transparent 0);background-size:26px 26px}
+.node{border-color:transparent}
+.nbody{padding:0 12px 12px;gap:6px}
+.nhead{padding:12px 12px 10px 14px}
+.step{border-radius:10px}
+pre.code{border-color:transparent;border-radius:12px}
+.ins{border-radius:10px}
+.float{border-color:transparent;border-radius:999px}
+.legend,.minimap{border-radius:16px}
+.rangebtn,.rangepop,.search label,.combo input{border-color:transparent}
+.rangebtn{background:var(--panel);box-shadow:var(--shadow-sm);border-radius:999px;height:34px;padding:0 12px 0 13px}
+.rangebtn:hover,.rangebtn.on{border-color:var(--line2)}
+.search label{border-radius:999px}
+/* 2 one accent: the logo and chrome go neutral; highlights on the map keep their colour */
+.logo{background:#161a26;box-shadow:inset 0 0 0 1px #ffffff1f}
+:focus-visible{outline-color:var(--lit)}
+.rangebtn svg{color:var(--muted)}
+.ep.on::before{background:var(--ink)}
+.rp-go{background:var(--ink);color:var(--panel)}
+.step.hl{outline-color:var(--lit)}
+.node.flash{animation-name:cfflash2}
+@keyframes cfflash2{0%,15%{box-shadow:0 0 0 4px var(--lit),var(--shadow-lg)}100%{box-shadow:0 0 0 4px transparent,var(--shadow)}}
+.node.svc{border-color:transparent;box-shadow:0 0 0 1.5px var(--line2),var(--shadow)}
+.num{background:var(--lit)} .num.o{color:var(--lit);box-shadow:inset 0 0 0 1.5px var(--lit)}
+.rrow.lit{border-left-color:var(--lit);background:color-mix(in srgb,var(--lit) 10%,var(--panel2))}
+.tk.on{box-shadow:0 0 0 1px color-mix(in srgb,var(--lit) 45%,transparent)}
+.stepbar{border-color:transparent}.stepbar button{background:var(--lit)} #sbcount{color:var(--lit)}
+/* 3 pills */
+.tb,.mchip,.m,.lay,.stc,.fx,.ub,.vwbtn,.codebtn,.chgbadge,.rc,.seg,.segb,.dock button,.dock .pct,.kbd,.ep{border-radius:999px}
+.tb .cnt{border-radius:999px}
+.ep{padding:7px 10px 7px 7px}
+.ep.on::before{display:none}
+.m{width:46px}
+.lay{padding:4px 8px}
+.chgbadge{padding:3px 7px}
+.fx{padding:5px 10px}
+/* 4 big count */
+.revbar{border-top:0;padding:12px 14px 14px}
+.revbar .lbl{justify-content:flex-start;align-items:baseline;gap:6px;margin-bottom:8px}
+.revbar .lbl b{font:600 28px/1 var(--sans);letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.revbar .lbl span{font-size:11.5px}
+.revbar .track{height:4px;border-radius:999px}
+.revbar .fill{background:var(--ok)}
+/* 5 soft glow on changed boxes */
+.node.changed{border-color:color-mix(in srgb,var(--chg) 55%,transparent);box-shadow:0 0 0 1px color-mix(in srgb,var(--chg) 30%,transparent),0 14px 44px -10px color-mix(in srgb,var(--chg) 55%,transparent),0 0 60px -6px var(--chg-soft)}
+.node.changed.viewed{border-color:transparent;box-shadow:var(--shadow)}
+.node.deleted{border-color:color-mix(in srgb,var(--del) 55%,transparent);box-shadow:0 14px 44px -10px color-mix(in srgb,var(--del) 45%,transparent)}
+.chgdot{box-shadow:0 0 8px 1px color-mix(in srgb,var(--chg) 60%,transparent)}
 @media (max-width:900px){.brand{width:auto}.brand h1 small,.crumb .sum,.tb .lbl{display:none}.minimap{display:none}}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 </style>
@@ -538,7 +605,7 @@ button.num{cursor:pointer}
  <nav class="side" id="sidebar">
   <div class="search"><label><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg><input id="q" type="search" placeholder="Filter endpoints" autocomplete="off" spellcheck="false"><kbd>/</kbd></label></div>
   <div class="eplist" id="side"></div>
-  <div class="revbar"><div class="lbl"><span>Reviewed</span><b id="revcount">0 / 0</b></div><div class="track"><div class="fill" id="revfill"></div></div></div>
+  <div class="revbar"><div class="lbl"><b id="revcount">0</b><span id="revof">of 0 reviewed</span></div><div class="track"><div class="fill" id="revfill"></div></div></div>
  </nav>
  <div class="stage" id="stage">
    <div id="world"><svg id="edges"></svg></div>
@@ -1154,7 +1221,7 @@ function updateRevProgress(){
  const done=graph.endpoints.filter(ep=>reviewed.has(revKey(ep))).length;
  const on=document.body.classList.contains('review');
  $('#revlabel').textContent=on?'Review '+done+'/'+total:'Review';
- $('#revcount').textContent=done+' / '+total;
+ $('#revcount').textContent=done;$('#revof').textContent='of '+total+' reviewed';
  $('#revfill').style.width=(total?done/total*100:0)+'%';
 }
 function toggleReview(){document.body.classList.toggle('review');const on=document.body.classList.contains('review');$('#revtoggle').classList.toggle('on',on);store.set('review',on);updateRevProgress();}
