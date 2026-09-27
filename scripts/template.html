@@ -478,6 +478,15 @@ a.rc.api:hover{border-color:var(--m-get)}
 a.rc.bad{text-decoration:none;cursor:pointer}
 a.rc.bad:hover{border-color:var(--del)}
 .rc.quiet{color:var(--ink2);border-style:dashed;margin-left:4px;cursor:default}
+.rc.api.fit{text-decoration:underline wavy var(--del);text-decoration-thickness:1px;text-underline-offset:3px;text-decoration-skip-ink:none}
+.rc.api.fitdim{text-decoration:underline wavy var(--muted);text-decoration-thickness:1px;text-underline-offset:3px;text-decoration-skip-ink:none}
+.fsq{text-decoration:underline wavy var(--del);text-decoration-thickness:1px;text-underline-offset:2px;text-decoration-skip-ink:none;cursor:default}
+.fsq.dim{text-decoration-color:var(--muted)}
+.rrow .rc.api{margin-top:4px}
+#tip.code{font:500 11px/1.45 var(--mono)}
+#tip.code b{font:600 10.5px/1.6 var(--sans);color:#9aa3b8}
+#tip.code .bad{color:#ff8b8b}
+#tip.code .dim{color:#b9bfcc;font-style:italic}
 .callers{display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap;font:600 11px/1 var(--ui,inherit);color:var(--ink2);margin-left:8px}
 .callers .rc{font-size:11px;padding:4px 7px;text-decoration:none;cursor:pointer;color:var(--def,var(--accent))}
 .callers .rc:hover{border-color:var(--accent)}
@@ -1711,7 +1720,7 @@ function rBox(U){
      row.setAttribute('aria-label',(st.name||st.setter)+' state, show where it is set');
      h+='<span class="sets">set in '+st.sites.length+' place'+(st.sites.length===1?'':'s')+'</span>';}
    (r.api||[]).forEach(a=>{h+=apiChips(a);});
-   row.innerHTML=h;body.appendChild(row);
+   row.innerHTML=h;fitMarks(row,r);body.appendChild(row);
  });
  if(U.code){
    const bar=el('div','codebar'),btn=el('button','codebtn'),pre=el('pre','code js');
@@ -1910,6 +1919,34 @@ function apiChips([m,u,id]){
  (ln.extra||[]).slice(0,3).forEach(k=>{h+='<span class="rc bad">no param '+esc(k)+'</span>';});
  (ln.miss||[]).slice(0,3).forEach(k=>{h+='<span class="rc bad">needs '+esc(k)+'</span>';});
  return h;
+}
+// a request that doesn't fit its route's models: a red squiggle under the key or type in the
+// call's code (under the route chip when neither is on the line), hover for the model's own lines
+function fitTip(f){
+ return f.models.map(m=>'<b>'+esc(m.at||m.n)+'</b>\n'+m.lines.map(([t,tone])=>tone?'<span class="'+tone+'">'+esc(t)+'</span>':esc(t)).join('\n')).join('\n\n');
+}
+function fitMarks(row,r){
+ (r.api||[]).forEach(([m,u,id])=>{
+   const H=HTTP[id],fits=H&&H.ln&&H.ln.fit;if(!fits)return;
+   const chip=row.querySelector('a.rc.api[data-go="e|'+CSS.escape(H.ln.to)+'"]');
+   let onChip=[];
+   fits.forEach(f=>{
+     const res=[...f.keys.map(k=>new RegExp('\\b'+k.replace(/[$]/g,'\\$')+'(?=\\s*\\??:)')),...(f.name?[new RegExp('\\b'+f.name+'\\b')]:[])];
+     const hit=res.map(re=>wrapFirst(row,re)).find(Boolean);
+     if(hit){hit.className=f.tone==='bad'?'fsq':'fsq dim';hit.dataset.tip=' ';hit.dataset.tipcode=fitTip(f);}
+     else onChip.push(f);
+   });
+   if(onChip.length&&chip){chip.classList.add(onChip.some(f=>f.tone==='bad')?'fit':'fitdim');
+     chip.dataset.tip=' ';chip.dataset.tipcode=onChip.map(fitTip).join('\n\n');}
+ });
+}
+// wrap the first match of `re` in the row's code text (not in its chips) in a span
+function wrapFirst(row,re){
+ const w=document.createTreeWalker(row,NodeFilter.SHOW_TEXT,{acceptNode:n=>n.parentElement.closest('.rc,.sets,.fsq')?NodeFilter.FILTER_REJECT:NodeFilter.FILTER_ACCEPT});
+ for(let n;(n=w.nextNode());){const m=re.exec(n.data);if(!m)continue;
+   const mid=n.splitText(m.index);mid.splitText(m[0].length);
+   const sp=document.createElement('span');mid.parentNode.replaceChild(sp,mid);sp.appendChild(mid);return sp;}
+ return null;
 }
 // route header: who calls it
 function callerChips(ep){
@@ -2196,7 +2233,7 @@ window.addEventListener('pageshow',()=>{$('#loading').hidden=true;});
 // ── tooltips: on hover and keyboard focus, stay while hovered, Esc dismisses ──
 {
  const tip=$('#tip');let owner=null,hideT=0;
- const show=t=>{clearTimeout(hideT);owner=t;tip.textContent=t.dataset.tip;t.setAttribute('aria-label',t.dataset.tip);
+ const show=t=>{clearTimeout(hideT);owner=t;if(t.dataset.tipcode){tip.innerHTML=t.dataset.tipcode;tip.classList.add('code');}else{tip.textContent=t.dataset.tip;tip.classList.remove('code');}t.setAttribute('aria-label',t.dataset.tipcode?tip.textContent:t.dataset.tip);
    // "N routes": each route in this map is a link that opens it
    if(t.classList.contains('ub')&&typeof startAsk!=='function'){tip.innerHTML=t.dataset.tip.split('\n').map(l=>{const E=graph.endpoints.find(ep=>(ep.method.toUpperCase()+' '+ep.path)===l);
      return E?'<a class="tiprt" data-ep="'+esc(E.id)+'">'+esc(l)+'</a>':'<span class="tiprt off">'+esc(l)+'</span>';}).join('');}
