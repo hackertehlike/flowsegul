@@ -245,8 +245,16 @@ body.review .revbar{display:block}
 #world.errfocus .errhot .step:not(.errhot){opacity:.45}
 .errhot.sq,.errhot.sqok,.step.errhot{text-decoration-thickness:2px}
 #edges.errfocus .ge{opacity:.08}
-#edges .errlab{opacity:1}
-#edges.errfocus .errlab:not(.errhot){opacity:.15}
+/* at rest only where an error starts (the raise line) and ends (the route's status chip) are red;
+   the trail between them (call rows, arrow labels) shows on hover of either end or when asked */
+.step:not(.raise) :is(.sq,.sqok){text-decoration-color:transparent}
+#world.errfocus .step:not(.raise) :is(.sq,.sqok).errhot{text-decoration-color:var(--del)}
+#world.errfocus .step:not(.raise) .sqok.errhot{text-decoration-color:var(--ok)}
+#world.asking .step.ask-hit:not(.raise) .sq{text-decoration-color:var(--del)}
+#world.asking .step.ask-hit:not(.raise) .sqok{text-decoration-color:var(--ok)}
+#edges .errlab{opacity:0;pointer-events:none;transition:opacity .12s}
+#edges.errfocus .errlab.errhot,#edges.asking .errlab.ask-on{opacity:1}
+#edges.asking .errpath.ask-on{opacity:1}
 #edges .errpath{opacity:0;transition:opacity .12s}
 #edges.errfocus .errpath.errhot{opacity:1;stroke-dasharray:6 4;animation:flow .6s linear infinite}
 
