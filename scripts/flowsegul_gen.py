@@ -2179,7 +2179,7 @@ def react_for_repo(repo, args, have_routes, log=True):
     if not explicit and (diffing or not has_tsx(repo)):
         return None
     if explicit and diffing and log:
-        print('  note: React mode reads the working tree as it is; against the base it only checks which states now clear.',
+        print('  note: React mode reads the working tree as it is; against the base it only marks states that are now erased.',
               file=sys.stderr)
     tag = os.path.basename(repo.rstrip('/'))
     parts = []
@@ -2228,16 +2228,18 @@ def react_base(repo, root, args, tag):
 
 
 def lost_when(cond):
-    """When a component unmounts, from the condition that keeps it: `showPromo` → `if !showPromo`."""
+    """When a component unmounts, from the condition that keeps it: `showPromo` → `when showPromo is false`."""
     if cond.startswith('key='):
-        return 'when key changes'
+        return 'when its key changes'
     if cond.startswith('if ') and cond.endswith(' return'):   # an early return before it
-        c = cond[3:-7]
+        c, v = cond[3:-7], 'true'
     elif cond.startswith('!'):
-        c = cond[1:]
+        c, v = cond[1:], 'true'
     else:
-        c = '!' + cond if re.fullmatch(r'[\w.?]+', cond) else '!(' + cond + ')'
-    return 'if ' + (c if len(c) <= 32 else c[:31] + '…')
+        c, v = cond, 'false'
+    if len(c) > 32:
+        c = c[:31] + '…'
+    return f'when {c} is {v}'
 
 
 def mark_new_clears(head, base):
@@ -2252,7 +2254,6 @@ def mark_new_clears(head, base):
     bstates = {}
     for s in base['states']:
         bstates.setdefault(s['u'], set()).add(s['name'] or s['setter'])
-    problems = head.setdefault('problems', [])
     for u in head['units']:
         cands = bunits.get(u['name'])
         if 'mount' not in u or not cands:
@@ -2270,8 +2271,8 @@ def mark_new_clears(head, base):
             row = head['rows'][s['row']]
             fl = row.setdefault('f', [])
             if not any(f[0] == 'clr' for f in fl):
-                fl.append(['clr', f'{name} lost {lost_when(new[0][0])}', new[0][1]])
-                problems.append(['clr', s['row']])
+                fl.append(['clr', f'{name} erased {lost_when(new[0][0])}', new[0][1]])
+                head.setdefault('problems', []).append(['clr', s['row']])
 
 
 def generate(args, repos, log=True):

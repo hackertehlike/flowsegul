@@ -1,15 +1,13 @@
-"""A small React + TypeScript app with the things React review checks look for, in two commits.
+"""A small React + TypeScript app in two commits, for the "state erased" mark of a diff.
 
 Used by tests/test_react_review.py and handy for trying the page by hand:
     python3 tests/react_review_fixture.py /tmp/ordersweb
     flowsegul --repo /tmp/ordersweb --react --changed --base HEAD~1
 
 First commit ("base"): an orders page. Second commit ("head", the PR): the coupon field moves
-into a promo panel that only shows while `showPromo` is on, so its typed draft is now lost when the panel closes.
-Along the way: an effect that reads `items` but lists only `[couponCode]`, a query whose data is
-used with no loading or error check (and one that checks both), a hook that wraps useQuery, a
-context read by two components, a component declared inside another, and a random key. Some
-that look alike but are fine: a ref, a literal, a helper that only sets state, `tags ?? []` (faded).
+into a promo panel that only shows while `showPromo` is on, so its typed draft is now erased when
+the panel closes. The rest (a context, a component declared inside another, a random key, a
+query without a loading check) is there to show that nothing else gets marked.
 """
 import os, subprocess, sys, textwrap
 

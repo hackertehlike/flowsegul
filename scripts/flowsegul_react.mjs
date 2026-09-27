@@ -1662,7 +1662,6 @@ export function analyze(ts, root, { tag = '' } = {}) {
     return f;
   }
 
-
   // ── query keys: which queries a `queryClient.invalidateQueries({ queryKey })` reloads ──
   // A key is known by the functions it is built through (`getCommentsQueryOptions(id).queryKey`,
   // a `commentKeys.all()` factory) and by its first word (`['comments', id]`): React Query
@@ -2061,364 +2060,14 @@ export function analyze(ts, root, { tag = '' } = {}) {
     }
   }
 
-  // ════════════════════════════════════════════════════════════════════════════════════════
-  // Review checks: small chips on real lines, the things a React diff hides
-  //  - `missing dep`: an effect / useCallback / useMemo reads a value of the component that its
-  //    deps array leaves out (the exhaustive-deps rule), with a squiggle under the read
-  //  - `read by N` on a context provider: the components that rerun when its value changes
-  //  - `no loading state` / `no error state`: a query or an effect's request whose data is used
-  //    without looking at whether it has arrived or failed
-  //  - `n lost: Counter inside Badge` / `open lost: random key` / `draft lost if !open`: a state that React throws away, because its component is declared inside
-  //    another one or gets a new random key each render (and, with a diff, a new mount condition)
-  // ════════════════════════════════════════════════════════════════════════════════════════
-  const problems = [];
-  // red: in the Problems list; otherwise a quiet chip (`read by 4`) or a faded one when unsure
-  const flag = (row, k, t, tip, red, unsure) => {
-    if (!row) return;
-    row.flags = row.flags || [];
-    if (row.flags.some((f) => f[0] === k && f[1] === t)) return;
-    row.flags.push(unsure ? [k, t, tip || '', 1] : [k, t, tip || '']);
-    if (red && !problems.some((p) => p[0] === k && p[1] === row)) problems.push([k, row]);
-  };
-  const squiggle = (node, tip) => {
-    const r = rowFor(node);
-    if (!r) return;
-    r.sq = r.sq || [];
-    if (!r.sq.some((q) => q[0] === node.getStart())) r.sq.push([node.getStart(), node.getEnd(), tip || '']);
-  };
+  // ── state a PR starts throwing away ──
+  // For each component with state: the conditions that unmount it (a condition around its tag,
+  // an early return before it, a key), its ancestors' too. flowsegul_gen compares them with the
+  // base of a diff and marks the state whose component now sits under a new one.
   const where = (node) => {
     const sf = node.getSourceFile();
     return rel(sf) + ':' + (startLine(node) + 1) + '\n' + lineText(sf, startLine(node)).trim();
   };
-  const within = (n, outer) => n.getStart() >= outer.getStart() && n.getEnd() <= outer.getEnd();
-  // the call a declaration's value comes from: `const [a, setA] = useState()` → useState, and the slot
-  function declSource(d) {
-    let slot = -1, vd = d;
-    if (ts.isBindingElement(d) && d.parent && ts.isArrayBindingPattern(d.parent)) { slot = d.parent.elements.indexOf(d); vd = d.parent.parent; }
-    if (!vd || !ts.isVariableDeclaration(vd) || !vd.initializer) return { vd: null };
-    const init = skipOuter(vd.initializer);
-    return { vd, slot, init, cn: ts.isCallExpression(init) ? calleeName(init) : '' };
-  }
-  // values React keeps the same between renders, which deps may leave out
-  function stableDecl(d) {
-    const s = declSource(d);
-    if (!s.vd) return false;
-    if (s.slot === 1 && /^(useState|useReducer|useTransition|useActionState)$/.test(s.cn)) return true;
-    if (s.slot === -1 && ts.isIdentifier(d.name) && /^(useRef|useEffectEvent)$/.test(s.cn)) return true;
-    // a const that is only ever a literal
-    if (s.slot === -1 && ts.isIdentifier(d.name) && d.parent && (d.parent.flags & ts.NodeFlags.Const)
-      && (ts.isStringLiteral(s.init) || ts.isNumericLiteral(s.init) || ts.isNoSubstitutionTemplateLiteral(s.init)
-        || s.init.kind === ts.SyntaxKind.TrueKeyword || s.init.kind === ts.SyntaxKind.FalseKeyword || s.init.kind === ts.SyntaxKind.NullKeyword)) return true;
-    return false;
-  }
-  // a function of the component that reads nothing of it (only setters, refs, module names) never goes stale
-  const pureCache = new Map();
-  function readsNothing(fn, u) {
-    if (pureCache.has(fn)) return pureCache.get(fn);
-    pureCache.set(fn, true);
-    let ok = true;
-    for (const it of idsIn(fn.getSourceFile(), fn.getStart(), fn.getEnd())) {
-      if (it.decl || it.pa || !it.sym) continue;
-      const d = (it.sym.declarations || [])[0];
-      if (!d || d.getSourceFile() !== u.sf || !within(d, u.fn) || within(d, fn)) continue;
-      let f = d.parent; while (f && !isFnLike(f)) f = f.parent;
-      if (f !== u.fn) continue;
-      if (!stableDecl(d)) { ok = false; break; }
-    }
-    pureCache.set(fn, ok);
-    return ok;
-  }
-  function componentStable(d, u) {
-    if (stableDecl(d)) return true;
-    let fn = ts.isFunctionDeclaration(d) ? d : null;
-    if (!fn && ts.isVariableDeclaration(d) && d.initializer) { const x = skipOuter(d.initializer); if (ts.isArrowFunction(x) || ts.isFunctionExpression(x)) fn = x; }
-    return !!(fn && readsNothing(fn, u));
-  }
-  const depText = (e) => skipOuter(e).getText().replace(/\?\./g, '.').replace(/\s+/g, '');
-
-  // ── missing dep ──
-  const DEPS_HOOKS = new Set(['useEffect', 'useLayoutEffect', 'useInsertionEffect', 'useCallback', 'useMemo']);
-  for (const c of calls) {
-    const cn = calleeName(c);
-    if (!DEPS_HOOKS.has(cn) || c.arguments.length < 2) continue;
-    // the function the hook is called in: a component, a hook, or one inside an object (`PanelComponent: ({ … }) => {…}`)
-    const scope = enclosingFn(c);
-    if (!scope || !scope.body) continue;
-    if (!unitByFn.has(scope)) ensureUnit(scope);
-    const u = unitByFn.get(scope);
-    if (!u) continue;
-    const cb = skipOuter(c.arguments[0]), dl = skipOuter(c.arguments[1]);
-    if (!isFnLike(cb) || !ts.isArrayLiteralExpression(dl)) continue;
-    const deps = dl.elements.map(depText);
-    const missing = new Map();   // path → first read
-    for (const it of idsIn(cb.getSourceFile(), cb.getStart(), cb.getEnd())) {
-      if (it.decl || it.pa || !it.sym) continue;
-      const d = (it.sym.declarations || [])[0];
-      if (!d || d.getSourceFile() !== u.sf || !within(d, u.fn) || within(d, cb)) continue;
-      if (!(ts.isVariableDeclaration(d) || ts.isBindingElement(d) || ts.isParameter(d) || ts.isFunctionDeclaration(d))) continue;
-      let f = d.parent; while (f && !isFnLike(f)) f = f.parent;
-      if (f !== u.fn) continue;   // the component's own values, not a nested function's
-      if (within(c, d)) continue;   // the callback of `const f = useCallback(() => … f() …)` calling itself
-      if (componentStable(d, u)) continue;
-      const n = it.node;
-      const p = n.parent;
-      if (ts.isJsxOpeningElement(p) || ts.isJsxSelfClosingElement(p) || ts.isJsxClosingElement(p)) continue;
-      // the path read: props.user.id, trimmed at a method call (props.onChange() needs props)
-      let path = [n.text], top = n;
-      while (top.parent && ts.isPropertyAccessExpression(top.parent) && top.parent.expression === top) { path.push(top.parent.name.text); top = top.parent; }
-      if (path.length > 1 && top.parent && ts.isCallExpression(top.parent) && top.parent.expression === top) path.pop();
-      if (path.length > 1 && path[path.length - 1] === 'current') path.pop();
-      // `x.y = …` writes, it doesn't read
-      if (top.parent && ts.isBinaryExpression(top.parent) && top.parent.left === top && top.parent.operatorToken.kind === ts.SyntaxKind.EqualsToken && path.length > 1) continue;
-      const ps = path.join('.');
-      if (deps.some((dp) => ps === dp || ps.startsWith(dp + '.'))) continue;
-      if (!missing.has(ps)) missing.set(ps, n);
-    }
-    for (const ps of [...missing.keys()]) if ([...missing.keys()].some((q) => ps.startsWith(q + '.'))) missing.delete(ps);
-    if (!missing.size) continue;
-    const names = [...missing.keys()];
-    const shown = '[' + dl.elements.map((e) => e.getText()).join(', ') + ']';
-    rowFor(c);   // the hook's own first line, for context
-    for (const [ps, n] of [...missing].slice(0, 4)) squiggle(n, ps + ' not in ' + shown);
-    flag(rowFor(dl), 'dep', 'missing dep', names.map((ps) => ps + '\n  ' + where(missing.get(ps)).split('\n').join('\n  ')).join('\n'), true);
-  }
-
-  // ── read by N ──
-  // readers: components calling useContext(Ctx), and components calling a hook that does
-  const ctxReaders = (ctx) => {
-    const out = new Map();
-    for (const call of ctxCalls.get(ctx) || []) {
-      const u = unitOf(call);
-      if (!u) continue;
-      if (u.kind === 'component') { if (!out.has(u)) out.set(u, call); }
-      else if (u.kind === 'hook') for (const o of hookOwners(u)) if (o.unit.kind === 'component' && !out.has(o.unit)) out.set(o.unit, o.call);
-    }
-    return out;
-  };
-  for (const [ctx, ops] of providers) {
-    const rd = ctxReaders(ctx);
-    if (!rd.size) continue;
-    const tip = [...rd].map(([u, call]) => u.name + '  ' + u.file + ':' + (startLine(call) + 1)).sort().join('\n');
-    for (const op of ops) flag(rowFor(op), 'read', 'read by ' + rd.size, tip, false);
-  }
-
-  // ── no loading state / no error state ──
-  const QUERY_FNS = new Set(['useQuery', 'useInfiniteQuery', 'useSWR', 'useSWRImmutable', 'useSWRInfinite']);
-  const LOAD_KEYS = new Set(['isLoading', 'isPending', 'isFetching', 'isInitialLoading', 'status', 'isSuccess', 'fetchStatus', 'isLoadingError', 'isPlaceholderData', 'isFetched', 'isFetchedAfterMount', 'isValidating']);
-  const ERR_KEYS = new Set(['error', 'isError', 'status', 'failureReason', 'isLoadingError', 'isRefetchError']);
-  const SKIP_LOAD = /\b(suspense|placeholderData|initialData|fallbackData|keepPreviousData)\b/;
-  const SKIP_ERR = /\b(suspense|throwOnError|useErrorBoundary|onError)\b/;
-  // errors handled once for the whole app: QueryClient/QueryCache options, an axios response interceptor, SWRConfig onError
-  let globalErr = false;
-  for (const sf of sources) {
-    const v = (n) => {
-      if (globalErr) return;
-      if (ts.isNewExpression(n) && ts.isIdentifier(n.expression) && /^(QueryClient|QueryCache|MutationCache)$/.test(n.expression.text)) {
-        const w = (m) => {
-          if (ts.isPropertyAssignment(m) || ts.isShorthandPropertyAssignment(m) || ts.isMethodDeclaration(m)) {
-            const k = m.name && m.name.getText();
-            if (k === 'onError' || ((k === 'throwOnError' || k === 'useErrorBoundary') && !(ts.isPropertyAssignment(m) && m.initializer.kind === ts.SyntaxKind.FalseKeyword))) { globalErr = true; return; }
-          }
-          ts.forEachChild(m, w);
-        };
-        (n.arguments || []).forEach(w);
-      }
-      if (ts.isCallExpression(n) && calleeName(n) === 'use' && n.arguments.length >= 2 && /interceptors\.response$/.test(skipOuter(n.expression).expression.getText())) globalErr = true;
-      if ((ts.isJsxOpeningElement(n) || ts.isJsxSelfClosingElement(n)) && n.tagName.getText() === 'SWRConfig' && /\bonError\b/.test(n.getText())) globalErr = true;
-      ts.forEachChild(n, v);
-    };
-    v(sf);
-    if (globalErr) break;
-  }
-  // a hook that returns a query as it is: `export const useUsers = () => useQuery({...})`
-  const queryHooks = new Map();   // hook unit → the query call inside
-  const queryCallOf = (c, depth = 0) => {
-    if (depth > 4) return null;
-    const cn = calleeName(c);
-    if (QUERY_FNS.has(cn)) return c;
-    const callee = skipOuter(c.expression);
-    const r = ts.isIdentifier(callee) ? unitFromSym(symOf(callee)) : null;
-    if (!r || r.unit.kind !== 'hook') return null;
-    if (queryHooks.has(r.unit)) return queryHooks.get(r.unit);
-    queryHooks.set(r.unit, null);
-    let q = null;
-    for (const e of returnsOf(r.unit.fn)) { const x = skipOuter(e); if (ts.isCallExpression(x)) { q = queryCallOf(x, depth + 1); if (q) break; } }
-    queryHooks.set(r.unit, q);
-    return q;
-  };
-  // is `e` looked at before it's used: `if (!data)`, `data ? … : …`, `data && …`, `data == null`
-  // the end of a read chain: `roles?.length` is looked at where `!roles?.length` is
-  const chainTop = (e) => {
-    let x = upOuter(e);
-    while (x.parent && (ts.isPropertyAccessExpression(x.parent) || ts.isElementAccessExpression(x.parent)) && x.parent.expression === x) x = upOuter(x.parent);
-    return x;
-  };
-  const checked = (e) => {
-    const x = chainTop(e), p = x.parent;
-    if (!p) return false;
-    if (ts.isPrefixUnaryExpression(p) && p.operator === ts.SyntaxKind.ExclamationToken) return true;
-    if (ts.isCallExpression(p) && p.arguments.includes(x) && /^(Boolean|isEmpty|isNil)$/.test(calleeName(p))) return true;
-    if (ts.isTypeOfExpression(p)) return true;
-    if ((ts.isIfStatement(p) || ts.isConditionalExpression(p) || ts.isWhileStatement(p)) && p.expression === x) return true;
-    if (ts.isConditionalExpression(p) && p.condition === x) return true;
-    if (ts.isBinaryExpression(p)) {
-      const k = p.operatorToken.kind;
-      if (k === ts.SyntaxKind.AmpersandAmpersandToken) return true;
-      if ([ts.SyntaxKind.EqualsEqualsToken, ts.SyntaxKind.EqualsEqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsToken, ts.SyntaxKind.ExclamationEqualsEqualsToken].includes(k)) return true;
-    }
-    return false;
-  };
-  // a read that already copes with no data yet: `data ?? []`, `data || []`, `data?.items`
-  const fallback = (e) => {
-    const x = upOuter(e), p = x.parent;
-    if (!p) return false;
-    if (ts.isBinaryExpression(p) && p.left === x && [ts.SyntaxKind.QuestionQuestionToken, ts.SyntaxKind.BarBarToken].includes(p.operatorToken.kind)) return true;
-    if ((ts.isPropertyAccessExpression(p) || ts.isElementAccessExpression(p) || ts.isCallExpression(p)) && p.expression === x && p.questionDotToken) return true;
-    // handed to a child as a prop, or named in a deps list: whoever gets it decides
-    if (ts.isJsxExpression(p) && p.parent && ts.isJsxAttribute(p.parent)) return true;
-    if (ts.isArrayLiteralExpression(p) && p.parent && ts.isCallExpression(p.parent) && p.parent.arguments[1] === p && /^use/.test(calleeName(p.parent))) return true;
-    return false;
-  };
-  // reads through a plain alias count as reads: `const ca = data as Ca` → every read of ca
-  function aliasReads(list, depth = 0) {
-    const out = [];
-    for (const e of list) {
-      const x = upOuter(e), p = x.parent;
-      if (depth < 3 && p && ts.isVariableDeclaration(p) && p.initializer === x && ts.isIdentifier(p.name)) out.push(...aliasReads(refs.get(symOf(p.name)) || [], depth + 1));
-      else out.push(e);
-    }
-    return out;
-  }
-  // how a query's result is read: {keys, data: [expressions reading data]} or null when it's passed on whole
-  function resultUse(c) {
-    const x = upOuter(c), vd = x.parent;
-    if (!vd || !ts.isVariableDeclaration(vd) || vd.initializer !== x) return null;
-    const keys = new Set(), data = [];
-    if (ts.isObjectBindingPattern(vd.name)) {
-      for (const el of vd.name.elements) {
-        if (el.dotDotDotToken) return null;
-        const k = el.propertyName ? el.propertyName.getText() : el.name.getText();
-        keys.add(k);
-        if (k === 'data') {
-          if (!ts.isIdentifier(el.name)) { data.push(el.name); continue; }
-          if (el.initializer) keys.add('#default');
-          data.push(...aliasReads(refs.get(symOf(el.name)) || []));
-        }
-      }
-      return { keys, data };
-    }
-    if (!ts.isIdentifier(vd.name)) return null;
-    for (const r of refs.get(symOf(vd.name)) || []) {
-      const p = upOuter(r).parent;
-      if (!p || !ts.isPropertyAccessExpression(p) || p.expression !== upOuter(r)) return null;
-      keys.add(p.name.text);
-      if (p.name.text === 'data') data.push(...aliasReads([p]));
-    }
-    return { keys, data };
-  }
-  for (const c of calls) {
-    const u = unitOf(c);
-    if (!u || u.kind !== 'component') continue;
-    const q = queryCallOf(c);
-    if (!q) continue;
-    const use = resultUse(c);
-    if (!use || !use.data.length) continue;
-    const opts = c.getText() + (q !== c ? q.getText() : '');
-    const byPos = use.data.slice().sort((a, b) => a.getStart() - b.getStart());
-    const tip = where(byPos.find((e) => !fallback(e)) || byPos[0]);
-    const seen = use.data.some(checked);
-    // every read has a fallback (or `data = []`): it shows an empty or default view while loading, maybe on purpose
-    const soft = use.keys.has('#default') || use.data.every(fallback);
-    if (![...use.keys].some((k) => LOAD_KEYS.has(k)) && !seen && !SKIP_LOAD.test(opts)) flag(rowFor(c), 'load', 'no loading state', tip, !soft, soft);
-    if (!globalErr && ![...use.keys].some((k) => ERR_KEYS.has(k)) && !SKIP_ERR.test(opts)) flag(rowFor(c), 'err', 'no error state', tip, true);
-  }
-  // an effect that requests and stores the answer in a state: `.then(setTotal)`
-  for (const u of units) {
-    if (u.kind === 'fn') continue;
-    for (const ef of u.effects) {
-      const cb = ef.cb;
-      const reqs = [...reqAt.keys()].filter((rc) => rc.getSourceFile() === u.sf && within(rc, cb) && httpCall(rc));
-      if (!reqs.length) continue;
-      const set = u.states.filter((S) => S.setterSym && (refs.get(S.setterSym) || []).some((r) => within(r, cb)));
-      if (!set.length) continue;
-      const reqRow = rowFor(reqs[0]);
-      // another state set in the same effect (setLoading(true), setStatus('done')) is its loading state
-      const loading = set.length > 1 || set.some((S) => (refs.get(S.valueSym) || []).some((r) => !within(r, cb) && checked(r)));
-      const used = set.flatMap((S) => (refs.get(S.valueSym) || []).filter((r) => !within(r, cb))).sort((a, b) => a.getStart() - b.getStart());
-      if (!used.length) continue;
-      const soft = used.every(fallback);
-      if (!loading) flag(reqRow, 'load', 'no loading state', where(used[0]), !soft, soft);
-      let caught = false;
-      const v = (n) => {
-        if (caught) return;
-        if (ts.isTryStatement(n) && n.catchClause) caught = true;
-        else if (ts.isCallExpression(n) && (calleeName(n) === 'catch' || (calleeName(n) === 'then' && n.arguments.length > 1))) caught = true;
-        else ts.forEachChild(n, v);
-      };
-      v(cb);
-      // the request itself may sit in a try, in the client function the effect calls
-      const inner = (reqAt.get(reqs[0]) || {}).inner || reqs[0];
-      for (let n = inner; n && !caught && n !== cb; n = n.parent) {
-        if (ts.isTryStatement(n.parent) && n.parent.tryBlock === n && n.parent.catchClause) caught = true;
-        if (isFnLike(n)) break;
-      }
-      // an axios-style client with a response interceptor handles errors for the whole app; fetch doesn't go through it
-      if (globalErr && !/^(fetch|\$fetch|ofetch)$/.test(calleeName(inner))) caught = true;
-      if (!caught) flag(reqRow, 'err', 'no error state', where(reqs[0]), true);
-    }
-  }
-
-  // ── state that clears ──
-  // `key={Math.random()}` (or Date.now(), uuid()): a new key each render, so the child starts over
-  const RANDOM_KEY = /^(Math\.random|Date\.now|uuid|uuidv4|v4|nanoid|crypto\.randomUUID|performance\.now)\s*\(/;
-  for (const u of units) {
-    for (const r of u.renders) {
-      const key = r.op.attributes.properties.find((p) => ts.isJsxAttribute(p) && attrName(p) === 'key');
-      const e = key && key.initializer && ts.isJsxExpression(key.initializer) && key.initializer.expression;
-      if (!e || !RANDOM_KEY.test(skipOuter(e).getText())) continue;
-      const own = r.child.states;
-      if (!own.length) continue;
-      squiggle(e, 'new key each render');
-      for (const S of own) flag(rowFor(r.op), 'clr', (S.name || S.setter) + ' lost: random key', where(e), true);
-    }
-  }
-  // a component declared inside another: a new type each render, so its state starts over
-  for (const u of units) {
-    if (u.kind !== 'component') continue;
-    const v = (n) => {
-      if (n !== u.fn && unitByFn.has(n)) return;
-      let name = null, fn = null;
-      if (ts.isFunctionDeclaration(n) && n !== u.fn && n.name && /^[A-Z]/.test(n.name.text)) { name = n.name; fn = n; }
-      else if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && /^[A-Z]/.test(n.name.text) && n.initializer) {
-        const r = unwrapFn(n.initializer); if (r.fn) { name = n.name; fn = r.fn; }
-      }
-      if (fn && containsJsx(fn)) {
-        const sym = symOf(name);
-        const used = (refs.get(sym) || []).find((x) => (ts.isJsxOpeningElement(x.parent) || ts.isJsxSelfClosingElement(x.parent)) && x.parent.tagName === x);
-        if (used) {
-          const own = [];
-          const w = (m) => {
-            if (ts.isVariableDeclaration(m) && ts.isArrayBindingPattern(m.name) && m.initializer && /^(useState|useReducer)$/.test(calleeName(skipOuter(m.initializer)) || '')) own.push(m);
-            if (m !== fn && isFnLike(m)) return;
-            ts.forEachChild(m, w);
-          };
-          if (fn.body) ts.forEachChild(fn.body, w);
-          for (const d of own) {
-            const el = d.name.elements[0];
-            const nm = el && ts.isBindingElement(el) ? el.name.getText() : 'state';
-            const stmt = d.parent && d.parent.parent && ts.isVariableStatement(d.parent.parent) ? d.parent.parent : d;
-            squiggle(name, 'declared inside ' + u.name);
-            flag(rowFor(stmt), 'clr', nm + ' lost: ' + name.text + ' inside ' + u.name, where(name), true);
-          }
-        }
-        return;
-      }
-      ts.forEachChild(n, v);
-    };
-    ts.forEachChild(u.fn.body || u.fn, v);
-  }
-  // what unmounts a component: a condition around its tag, an early return before it, a key.
-  // Each ancestor's conditions count too. With a diff, flowsegul_gen compares these with the base.
   const mountCache = new Map();
   function siteConds(site) {
     const out = [];
@@ -2528,7 +2177,6 @@ export function analyze(ts, root, { tag = '' } = {}) {
     const starts = sf.getLineStarts();
     const p0 = starts[r.a], p1 = r.b + 1 < starts.length ? starts[r.b + 1] : sf.text.length;
     let t = text, marks = marksFor(sf, p0, p1, map, text.length, null);
-    for (const [q0, q1, tip] of r.sq || []) { const o0 = map(q0), o1 = map(q1); if (o0 >= 0 && o1 > o0) marks.push([o0, o1, 'q', tip]); }
     const CAP = 360;
     if (t.length > CAP) { t = t.slice(0, CAP - 1) + '…'; marks = marks.filter((m) => m[1] <= CAP - 1); }
     r.text = t; r.marks = marks;
@@ -2605,7 +2253,6 @@ export function analyze(ts, root, { tag = '' } = {}) {
     if (r.api.length) rowsOut[r.id].api = r.api.map((x) => [x.m, x.u, x.id]);
     if (r.kids.length) rowsOut[r.id].kids = r.kids;
     if (r.unc) rowsOut[r.id].unc = 1;
-    if (r.flags) rowsOut[r.id].f = r.flags;
   }
   const stateOut = states.filter((S) => S.row).map((S) => {
     const d = setterData.get(S);
@@ -2663,7 +2310,6 @@ export function analyze(ts, root, { tag = '' } = {}) {
     version: 1, root: path.basename(root), tag,
     units: outUnits, rows: rowsOut, states: stateOut, actions: actOut,
     http: Object.fromEntries(Object.entries(httpOut).filter(([, h]) => h.row)),
-    problems: problems.map(([k, r]) => [k, r.id]),
     stats: { files: sources.length, components: units.filter((u) => u.kind === 'component').length, ms: Date.now() - t0, typescript: ts.version },
   };
 }

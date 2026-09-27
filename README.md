@@ -87,23 +87,15 @@ named by `FLOWSEGUL_TS`. Labels and paths come from the code by fixed rules. Any
 followed for sure (props passed on with `{...props}`, values from a context) is drawn faded as
 uncertain.
 
-**Problems.** A `Problems` list at the top of the sidebar collects what a React diff hides; each
-one opens its component with the line lit, and the mark sits on that line:
+When a click saves something and then refreshes a list (`queryClient.invalidateQueries(...)`), the
+path goes on to the component showing that list and the request it sends again (`GET /comments`).
+With an action picked, its boxes line up left to right in the order the steps reach them.
 
-- `missing dep` after an effect's (or `useCallback` / `useMemo`'s) deps list, with a squiggle under
-  the value it reads and leaves out. Same rule and the same results as eslint's `exhaustive-deps`.
-- `no loading state` / `no error state` on a query (`useQuery`, `useSWR`, a hook that returns one)
-  or an effect's request whose data is used without checking whether it has arrived or failed.
-  Faded when every read has a fallback (`data ?? []`); no `no error state` when the app handles
-  errors in one place (a `QueryCache` `onError`, `throwOnError`, an axios response interceptor).
-- `n lost: Counter inside Badge` / `open lost: random key` on a `useState` whose value React throws
-  away on every render: its component is declared inside another one (a new function each time),
-  or gets a new `key={Math.random()}` each time. With `--changed` / `--from`, also a state that the
-  base kept and the change now loses (`draft lost if !showPromo`), because its component (or one above it) now sits under a new
-  condition (`{showPromo && <CouponField />}`), after an early return, or behind a new key. Hover
-  for the line responsible.
-
-A context provider's line says how many components read it (`read by 4`; hover for which).
+**State a diff erases.** With `--changed` / `--from`, a `useState` whose component the change
+puts under a new condition (`{showPromo && <CouponField />}`), after an early return, or behind a
+new key gets a red mark on its line, `draft erased when showPromo is false`: whatever the user
+typed there now starts over each time the condition flips. Hover for the line responsible; a
+`Problems` list at the top of the sidebar collects them.
 
 ### Frontend requests linked to their routes
 
@@ -175,8 +167,8 @@ python3 -m unittest discover -s tests -v
 
 A smoke test builds a tiny FastAPI repo, runs the generator in normal and `--changed` modes, and
 checks the HTML it writes. CI runs it on Linux and macOS. `tests/test_react.py` checks React mode
-on a small checkout app (`tests/react_fixture.py`), and `tests/test_react_review.py` the Problems
-checks on a two-commit orders app (`tests/react_review_fixture.py`); both skip when Node or
+on a small checkout app (`tests/react_fixture.py`), and `tests/test_react_review.py` the erased-state
+mark on a two-commit orders app (`tests/react_review_fixture.py`); both skip when Node or
 `typescript` isn't found.
 
 ## Claude Code skill

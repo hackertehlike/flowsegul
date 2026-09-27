@@ -66,11 +66,10 @@ python3 scripts/flowsegul_gen.py --changed --out /tmp/flowsegul.html   # then op
   marks flag `no route`, `GET ≠ POST`, a route declared earlier that catches it, and query keys
   the route ignores or requires.
   Needs `node` and the `typescript` package (the app's own, a global one, or `FLOWSEGUL_TS=DIR`).
-  A `Problems` list flags `missing dep` (eslint's exhaustive-deps rule, with a squiggle), `no
-  loading state` / `no error state` on queries and effect requests, and `draft lost …` on state
-  React throws away; provider lines say `read by N`.
-  Reads the working tree; with `--changed` etc. it also compares with the base to flag state that
-  is now lost (a new condition, early return or key above its component). Anything it can't pin
+  A click that refreshes a list (`invalidateQueries`) leads on to that list and its request.
+  Reads the working tree; with `--changed` etc. it also compares with the base and marks state
+  the change now erases (`draft erased when showPromo is false`: a new condition, early return or
+  key above its component). Anything it can't pin
   down is marked uncertain (faded), never claimed.
 
 **Coverage guarantee (`--changed` / `--from`):** every changed *function* is drawn as a node in

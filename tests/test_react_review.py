@@ -1,4 +1,4 @@
-"""React review checks: missing dep, read by N, no loading / error state, and state that clears.
+"""React review: a state that a diff starts throwing away (`draft erased when showPromo is false`).
 
 Runs the analyzer on tests/react_review_fixture.py (two commits: an orders page, then a PR that
 moves the coupon field under a promo panel that can close). Skips without node + typescript.
@@ -58,51 +58,11 @@ class ReactReviewTest(unittest.TestCase):
                     out.append((units[r['u']]['name'], r['t'], f, rid))
         return out
 
-    def test_missing_dep(self):
-        deps = self.flagged('dep')
-        self.assertEqual(len(deps), 1, deps)
-        name, text, f, rid = deps[0]
-        self.assertEqual((name, text, f[1]), ('PriceLine', '}, [couponCode]);', 'missing dep'))
-        self.assertTrue(f[2].startswith('items.length\n'), f[2])
-        self.assertIn(['dep', rid], self.d['problems'])
-        # a squiggle under the read, on the fetch line
-        fetch = next(r for r in self.d['rows'].values() if r['t'].startswith('fetch(`/orders/preview'))
-        q = [m for m in fetch['m'] if m[2] == 'q']
-        self.assertEqual(len(q), 1)
-        self.assertEqual(fetch['t'][q[0][0]:q[0][1]], 'items')
-        # OrdersPage's effect reads a literal, a ref and a helper that only sets state: all fine
-        self.assertFalse([x for x in deps if x[0] == 'OrdersPage'])
-
-    def test_read_by(self):
-        reads = self.flagged('read')
-        self.assertEqual([(n, f[1]) for n, _, f, _ in reads], [('OrdersPage', 'read by 2')])
-        self.assertEqual(reads[0][2][2].split('\n')[0].split()[0], 'Badge')
-        self.assertFalse([p for p in self.d['problems'] if p[0] == 'read'])
-
-    def test_loading_and_error(self):
-        load = {(n, t.split('=')[0].strip()): f for n, t, f, _ in self.flagged('load')}
-        err = {(n, t.split('=')[0].strip()): f for n, t, f, _ in self.flagged('err')}
-        orders = ('OrdersPage', 'const { data }')
-        self.assertIn(orders, load)                # through the useOrders hook, data.length with no check
-        self.assertIn(orders, err)
-        self.assertIn('data.length', load[orders][2])
-        tags = ('OrdersPage', 'const { data: tags }')
-        self.assertEqual(load[tags][3:], [1])      # `tags ?? []`: faded, not a problem
-        self.assertIn(tags, err)
-        self.assertFalse([k for k in load if 'stats' in k[1]])   # checks isLoading and error
-        price = [k for k in load if k[0] == 'PriceLine']
-        self.assertEqual(len(price), 1)            # the fetch in the effect, stored with .then(setTotal)
-        self.assertEqual(len(self.d['problems']), len({tuple(p) for p in self.d['problems']}))
-        faded_rows = {rid for _, _, f, rid in self.flagged('load') if f[3:] == [1]}
-        self.assertFalse([p for p in self.d['problems'] if p[0] == 'load' and p[1] in faded_rows])
-
-    def test_state_that_clears(self):
-        clr = {f[1]: (n, t, f) for n, t, f, _ in self.flagged('clr')}
-        self.assertEqual(set(clr), {'n lost: Counter inside Badge', 'open lost: random key'})   # no diff given: only the always-bad ones
-        self.assertEqual(clr['n lost: Counter inside Badge'][1], 'const [n, setN] = useState(0);')    # Counter is declared inside Badge
-        self.assertIn('function Counter() {', clr['n lost: Counter inside Badge'][2][2])
-        self.assertEqual(clr['open lost: random key'][1], '<Tip key={Math.random()} />')
-        # every component with state says what unmounts it
+    def test_nothing_marked_without_a_diff(self):
+        self.assertFalse(self.flagged('clr'))
+        self.assertNotIn('problems', self.d)
+        self.assertFalse([r for r in self.d['rows'].values() if r.get('f') or any(m[2] == 'q' for m in r.get('m', []))])
+        # every component with state says what unmounts it, for the comparison
         coupon = next(u for u in self.d['units'] if u['name'] == 'CouponField')
         self.assertIn('showPromo', [k for k, _ in coupon['mount']])
 
@@ -113,21 +73,21 @@ class ReactReviewTest(unittest.TestCase):
         self.assertEqual(p.returncode, 0, p.stderr)
         d = page_data(read(out))
         clr = {f[1]: (n, t, f, rid) for n, t, f, rid in self.flagged('clr', d)}
-        self.assertIn('draft lost if !showPromo', clr)
-        n, t, f, rid = clr['draft lost if !showPromo']
+        self.assertIn('draft erased when showPromo is false', clr)
+        n, t, f, rid = clr['draft erased when showPromo is false']
         self.assertEqual((n, t), ('CouponField', 'const [draft, setDraft] = useState("");'))
         self.assertIn('{showPromo && <CouponField onApply={onApply} />}', f[2])
         self.assertIn(['clr', rid], d['problems'])
         # PriceLine and Badge sit where they were: nothing new unmounts them
-        self.assertEqual(set(clr), {'draft lost if !showPromo', 'n lost: Counter inside Badge', 'open lost: random key'})
+        self.assertEqual(set(clr), {'draft erased when showPromo is false'})
 
     def test_lost_when(self):
         from flowsegul_gen import lost_when
-        self.assertEqual(lost_when('showPromo'), 'if !showPromo')
-        self.assertEqual(lost_when('!open'), 'if open')
-        self.assertEqual(lost_when('if stats.isLoading return'), 'if stats.isLoading')
-        self.assertEqual(lost_when('a > 1'), 'if !(a > 1)')
-        self.assertEqual(lost_when('key={id}'), 'when key changes')
+        self.assertEqual(lost_when('showPromo'), 'when showPromo is false')
+        self.assertEqual(lost_when('!open'), 'when open is true')
+        self.assertEqual(lost_when('if stats.isLoading return'), 'when stats.isLoading is true')
+        self.assertEqual(lost_when('a > 1'), 'when a > 1 is false')
+        self.assertEqual(lost_when('key={id}'), 'when its key changes')
 
     def test_same_base_adds_nothing(self):
         import flowsegul_gen
@@ -136,12 +96,12 @@ class ReactReviewTest(unittest.TestCase):
         flowsegul_gen.mark_new_clears(head, analyze(self.repo))
         self.assertEqual(json.dumps(head, sort_keys=True), before)
 
-    def test_page_draws_checks(self):
+    def test_page_draws_the_mark(self):
         out = os.path.join(self.tmp.name, 'page2.html')
-        subprocess.run([sys.executable, GEN, '--repo', self.repo, '--react', '--out', out],
+        subprocess.run([sys.executable, GEN, '--repo', self.repo, '--react', '--from', 'HEAD~1', '--out', out],
                        check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         html = read(out)
-        for s in ('function chkChip(', "'grp sect','Problems", 'class="rsq"', '.rc.chk.unc'):
+        for s in ('function chkChip(', "'grp sect','Problems"):
             self.assertIn(s, html)
 
 
