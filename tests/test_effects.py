@@ -65,6 +65,11 @@ class SideEffects(unittest.TestCase):
     def test_type_alias_names_the_model(self):
         self.assertEqual(self.strip('PATCH /me')[0][0], 'add User')
 
+    def test_client_from_import_self_attr_and_depends(self):
+        # a module-level client imported from another file, self.client set in __init__, and a
+        # client handed in by Depends(provider) are all httpx clients; the GET is left out
+        self.assertEqual([i[0] for i in self.strip('PUT /graph/me')], ['PUT', 'PATCH', 'DELETE'])
+
     def test_read_only_route_has_no_strip(self):
         self.assertEqual(self.eps['GET /orders/{order_id}'], {})
 

@@ -129,8 +129,53 @@ class _Walk:
             return None
         return '.'.join(x for x in (mod, attr) if x)
 
+    def type_path(self, text, rel):
+        """Full dotted name of the class a type text names, through `rel`'s imports:
+        'Annotated[httpx.AsyncClient, Depends(get_client)]' → 'httpx.AsyncClient'."""
+        for w in re.findall(r'[A-Za-z_][\w.]*', re.sub(r'(["\']).*?\1', '', text or '')):
+            if w in _NOT_CLASS or w in ('Depends', 'Security') or ('.' not in w and not w[0].isupper()):
+                continue
+            first, _, rest = w.partition('.')
+            p = self.imported(first, rel)
+            return (p + ('.' + rest if rest else '')) if p else w
+        return None
+
+    def returned_type(self, func_expr, F):
+        """What an in-repo function (a Depends provider, a factory) is annotated to return."""
+        q = self.idx.resolve(ast.Call(func=func_expr, args=[], keywords=[]), F['cls'], F['qual'])
+        info = self.idx.funcs.get(q)
+        return self.type_path(info['returns'], info['file']) if info and info['returns'] else None
+
+    def name_type(self, name, F):
+        """Full dotted class of a variable: its annotation or `x = Cls()`, a Depends provider's
+        return type, or a module-level object imported from another file (`from app.clients import http`)."""
+        t = F['types'].get(name)
+        if t:
+            if '.' not in t and not t[:1].isupper() and not t.startswith(('Annotated', 'Optional')):
+                return self.returned_type(ast.Name(id=t), F)      # x = get_client()
+            return self.type_path(t, F['rel'])
+        for pname, dep in self.G.dependencies(F['info'], self.idx):
+            if pname == name:
+                return self.returned_type(dep.args[0], F)
+        imp = self.idx.imports.get(F['rel'], {}).get(name)
+        if imp and imp[1]:
+            f = self.idx.module_file(F['rel'], imp[0], imp[2])
+            t = self.idx.module_types.get(f, {}).get(imp[1]) if f else None
+            if t:
+                return self.type_path(t, f)
+        return None
+
+    def attr_type(self, attr, F):
+        """`self.client` with `self.client = httpx.AsyncClient()` in the class (or a base)."""
+        cls = F['cls']
+        for c in [cls] + self.idx.bases.get(cls, []) if cls else []:
+            for rel, types in self.idx.attr_types.get(c, []):
+                if attr in types:
+                    return self.type_path(types[attr], rel)
+        return None
+
     def dotted(self, e, F, depth=0):
-        """Full dotted name of a callee, through imports and known local types:
+        """Full dotted name of a callee, through imports and known types:
         `client.post` with `client = httpx.AsyncClient()` → 'httpx.AsyncClient.post'."""
         parts = []
         while isinstance(e, ast.Attribute):
@@ -138,16 +183,14 @@ class _Walk:
             e = e.value
         if isinstance(e, ast.Call) and depth < 4:
             base = self.dotted(e.func, F, depth + 1)
+        elif isinstance(e, ast.Name) and e.id == 'self' and parts:
+            base = self.attr_type(parts[-1], F)
+            if base:
+                parts.pop()
+            else:
+                base = 'self'
         elif isinstance(e, ast.Name):
-            base = None
-            t = F['types'].get(e.id)
-            if t and depth < 4:
-                t = re.split(r'[\[(|]', t)[0].strip()
-                first, _, rest = t.partition('.')
-                p = self.imported(first, F['rel']) if first != e.id else None
-                base = (p + ('.' + rest if rest else '')) if p else t
-            if base is None:
-                base = self.imported(e.id, F['rel']) or e.id
+            base = (self.name_type(e.id, F) if depth < 4 else None) or self.imported(e.id, F['rel']) or e.id
         else:
             return None
         return '.'.join([base] + parts[::-1]) if base else None
