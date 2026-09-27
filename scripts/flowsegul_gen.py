@@ -25,6 +25,9 @@ import argparse, ast, copy, fnmatch, hashlib, html, json, os, re, shutil, subpro
 
 PALETTE = ['#3b82f6','#0ea5a4','#d97706','#db2777','#16a34a','#7c3aed','#ea580c','#0891b2','#4f46e5','#059669']
 INPUT_PALETTE = ['#e8590c','#1098ad','#9c36b5','#2f9e44','#c2255c','#1971c2']
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from flowsegul_types import findings as type_findings, run_checker  # noqa: E402
+
 SKIP_PARAMS = {'self', 'cls', 'db', 'body', 'request', 'session'}
 
 
@@ -1202,7 +1205,7 @@ def steps_for(info, idx):
                                 + (', ' if call.args and call.keywords else '')
                                 + ', '.join(f'{k.arg}={unparse(k.value)}' for k in call.keywords), 60),
                 'ret': one_line(idx.funcs[qual]['returns'], 46), 'uses': uses, '_qual': qual,
-                'bind': bindings_for(call, idx.funcs[qual]),
+                'bind': bindings_for(call, idx.funcs[qual]), '_call': call, '_line': disp.lineno,
                 '_catch': [h for blk in catching for h in blk],
             })
             first = False
@@ -1639,12 +1642,28 @@ def build_endpoint(entry_qual, idx, meta, depth, tag, changed_q=frozenset(), cha
                 seen.add(cq); order.append(cq)
     flow, recv, facts = trace_values(order, entry_qual, idx, nid)
     nodes = []
+    tkeys = {}   # id(type finding) -> key shared by its squiggle and its arrow label
+    tkey = lambda f: tkeys.setdefault(id(f), 'ty' + str(len(tkeys)))
     for q in order:
         info = idx.funcs[q]
-        steps = []
+        try:
+            tf = type_findings(info, idx)
+        except Exception as e:   # a type check that trips must never cost the map
+            if not getattr(idx, 'type_warned', False):
+                idx.type_warned = True
+                print(f'  types: skipped {info["file"]}:{info["lineno"]} ({type(e).__name__}: {e})', file=sys.stderr)
+            tf = {'calls': {}, 'rows': []}
+        steps, at_line = [], {}
         for s0 in steps_for(info, idx):
             s = {k: v for k, v in s0.items() if not k.startswith('_')}
             s['target'] = f"{tag}__{s['target']}"
+            tm = [{'got': f['got'], 'want': f['want'], 'at': '' if f.get('text') else f['at'],
+                   'tip': f['tip'], 'dim': f['dim'], 'where': f['where'], 'key': tkey(f)}
+                  for f in tf['calls'].get(s0.get('_call'), [])]
+            if tm:
+                s['tm'] = tm
+            if s.get('expr') and s0.get('_line'):
+                at_line.setdefault(s0['_line'], s)
             # errors the callee lets out: stopped by an `except` around this call, or passing through
             esc, caught = [], []
             for t, st, origin, text in escapes(s0['_qual'], idx):
@@ -1677,6 +1696,16 @@ def build_endpoint(entry_qual, idx, meta, depth, tag, changed_q=frozenset(), cha
               for r in idx.raise_cache.get(q, [])]
         if rs:
             n['raises'] = rs
+        rows = []
+        for f in tf['rows']:
+            t = {'text': f['text'], 'at': f['at'], 'got': f['got'], 'want': f['want'],
+                 'tip': f['tip'], 'dim': f['dim'], 'key': tkey(f)}
+            if f['line'] in at_line:   # a line the box already shows: squiggle it there
+                at_line[f['line']].setdefault('tm', []).append(dict(t, where='here', text=None))
+            else:
+                rows.append(t)
+        if rows:
+            n['types'] = rows
         ub = (used_by or {}).get(q, [])
         if len(ub) > 1:
             n['usedBy'] = ub
@@ -1807,6 +1836,11 @@ def process_repo(repo, args):
     for rel, why in idx.skipped:   # say so, rather than silently leave its routes and functions out
         print(f'  skipped {rel}: can\'t parse it with Python {sys.version_info[0]}.{sys.version_info[1]} '
               f'({why})', file=sys.stderr)
+    # the repo's own mypy/pyright, when it has one: only for the working tree, which is what it checks
+    types_how = getattr(args, 'types', 'auto')
+    if ref and types_how == 'auto':
+        types_how = 'off'
+    idx.type_ext = run_checker(repo, dirs, types_how, log=lambda m: print(m, file=sys.stderr))
     if not idx.funcs:
         return [], {}
 
@@ -2325,6 +2359,10 @@ def main():
                     'Diffs FROM..TO directly (no merge-base), and implies --changed.')
     ap.add_argument('--to', dest='commit_to', metavar='REF',
                     help='the "after" commit for --from (default: the working tree / HEAD)')
+    ap.add_argument('--types', default='auto', metavar='auto|off|FILE',
+                    help='mismatched types: "auto" (default) also runs the repo\'s mypy or pyright when '
+                    'it sets one up and it is installed; "off" skips that; FILE reads saved mypy output '
+                    'or pyright --outputjson')
     ap.add_argument('--depth', type=int, default=6)
     ap.add_argument('--title', default='Call-Flow Explorer')
     ap.add_argument('--template', default=os.path.join(os.path.dirname(__file__), 'template.html'))

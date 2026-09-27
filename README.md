@@ -63,6 +63,7 @@ e.g. `domain` or `billing`. To name things your own way, add a `.flowsegul.json`
 | `--repo DIR` / `--workspace DIR` | Point at specific repo(s) instead of auto-discovery. |
 | `--out FILE` | Write to a specific path (default: a temp file). |
 | `--depth N` | Call-graph recursion depth (default 6). |
+| `--types off\|FILE` | Don't run the repo's mypy/pyright, or read its saved output from FILE. |
 | `--serve` | Serve locally instead of writing a file (`flowsegul serve`); `--port`, `--no-open`. |
 
 Run `flowsegul --help` for the full list.
@@ -120,6 +121,16 @@ wrappers like `api('/items')`. Vite's `server.proxy` rewrites, Next.js `rewrites
   `.coupon`, `.items`). Hovering a value lights it wherever it goes, with parts of it (`payload.items`)
   outlined dashed. The request model's panel says which function reads each field, and which fields
   nothing reads.
+- **Mismatched types** — where a value is handed to a function (or back) in a type the other side
+  doesn't take, the arrow carrying it gets a red label (`str ≠ UUID`, `bytes ≠ str`,
+  `Customer | None ≠ Customer`) and the value gets a red squiggle; hover it for the two
+  declarations. flowsegul reads the annotations itself: parameters, `-> type`, schema fields, and
+  well-known calls (`os.getenv` is `str | None`, `.encode()` is `bytes`, `db.get(User, id)` is
+  `User | None`). A `None` counts as checked after an `if`/`assert` that stops; one tested without
+  stopping is grey. Bytes going into an f-string, `==` against text, `str(b)` or `b + "text"` are
+  marked too. A route's return value isn't, other than `None`: FastAPI converts it to the
+  response model. When the repo sets up mypy or pyright and it's installed, its findings are added
+  and turn matching grey marks red (`--types off` skips that, `--types FILE` reads saved output).
 - **Full route paths** — prefixes from `APIRouter(prefix=…)` and `include_router(…, prefix=…)`
   (also a constant or `settings.API_V1_STR`) are joined into the path. FastAPI dependencies
   (`Depends(get_current_user)`, `Annotated[…, Depends(…)]`) are drawn as calls.

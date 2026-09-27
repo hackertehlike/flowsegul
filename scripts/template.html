@@ -235,6 +235,11 @@ body.review .revbar{display:block}
 .sqok{text-decoration-color:var(--ok)}
 .step.raise{background:transparent;border-left-color:var(--del)}
 .step.raise.handled{border-left-color:var(--line2)}
+/* mismatched types: the value's type ≠ the type where it lands. Grey when a check before it may
+   already rule the None out */
+.sq.dim{text-decoration-color:var(--muted)}
+.step.tmis{background:transparent;border-left-color:var(--del)}
+.step.tmis.dim{border-left-color:var(--line2)}
 .ub{flex:none;font:600 10px/1 var(--mono);color:var(--muted);background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:3px 5px;margin-left:6px;vertical-align:1px;cursor:default;white-space:nowrap}
 .stchips{display:flex;gap:4px;flex:none}
 .stc{position:relative;font:700 11px/1 var(--mono);border-radius:6px;padding:4px 6px;border:1px solid var(--line);color:var(--ink2);background:var(--panel2);cursor:default}
@@ -723,6 +728,7 @@ function build(ep){
    (n.raises||[]).forEach(r=>{const m=/^raise\s+/.test(r.text)?r.text.replace(/^raise\s+/,''):r.text;
      const row=el('div','step raise'+(r.esc?'':' handled'),'<span class="kw">raise</span> '+(r.esc?'<span class="sq" data-err="'+esc(r.t)+'" data-tip="'+esc(r.t)+'">'+esc(m)+'</span>':esc(m)));
      row.dataset.err=r.t;body.appendChild(row);});
+   (n.types||[]).forEach(t=>body.appendChild(tmRow(t)));
    if(c.code||n.diff||n.base!=null){   // deleted nodes have no HEAD code but do have a removal diff
      const pre=el('pre','code');
      const flags=diffFlags(n.diff||'');
@@ -760,7 +766,7 @@ function build(ep){
  });
 
  // edges: every node's steps that target another node
- ep.nodes.forEach(n=>{(n.steps||[]).forEach(s=>{if(s.target&&nodes[s.target])edges.push({src:n.id,dst:s.target,color:(s.var&&s.var!=='return')?varColor[s.var]:'var(--edge)',rowVar:s.var,label:s.arg||'',ret:s.ret||'',bind:s.bind||[],keys:edgeKeys(n.id,s),esc:s.esc||[],caught:s.caught||[]});});});
+ ep.nodes.forEach(n=>{(n.steps||[]).forEach(s=>{if(s.target&&nodes[s.target])edges.push({src:n.id,dst:s.target,color:(s.var&&s.var!=='return')?varColor[s.var]:'var(--edge)',rowVar:s.var,label:s.arg||'',ret:s.ret||'',bind:s.bind||[],keys:edgeKeys(n.id,s),esc:s.esc||[],caught:s.caught||[],tm:s.tm||[]});});});
  // schema edges: only the response shape (dashed). The request model is shown as a node but not
  // wired with an arrow — it's the input type, not a call, so an arrow would just be documentation.
  (ep.modelEdges||[]).forEach(m=>{if(m.kind==='resp'&&nodes[m.src]&&nodes[m.dst])
@@ -821,6 +827,23 @@ function renderIns(n,nv){
  });
  return box;
 }
+// where each mismatched value sits in a line of code: [{a,b,t}] sorted, non-overlapping
+function tmSpans(src,tms){
+ const out=[];
+ tms.forEach(t=>{const at=t.at;let i=-1,from=0;
+   while((i=src.indexOf(at,from))>=0){const pre=src[i-1],post=src[i+at.length];
+     if(!(pre&&/[\w.]/.test(pre))&&!(post&&/\w/.test(post)))break;from=i+1;}
+   if(i>=0&&!out.some(o=>i<o.b&&i+at.length>o.a))out.push({a:i,b:i+at.length,t});});
+ return out.sort((x,y)=>x.a-y.a);
+}
+const tmLabel=t=>t.want?t.got+' ≠ '+t.want:t.got;
+const tmOpen=t=>'<span class="sq ty'+(t.dim?' dim':'')+'" data-err="'+esc(t.key)+'" data-tip="'+esc(t.tip)+'">';
+function tmRow(t){
+ const sp=tmSpans(t.text,[t]),a=sp.length?sp[0].a:-1,b=a+t.at.length;
+ const code=a<0?esc(t.text):esc(t.text.slice(0,a))+tmOpen(t)+esc(t.text.slice(a,b))+'</span>'+esc(t.text.slice(b));
+ const row=el('div','step tmis'+(t.dim?' dim':''),code.replace(/^return\b/,'<span class="kw">return</span>'));
+ row.dataset.err=t.key;return row;
+}
 function renderStep(s,nv){
  const row=el('div','step'+(s.var==='return'?' ret':''));
  const col=(s.var&&s.var!=='return')?nv[s.var]:null;
@@ -829,11 +852,16 @@ function renderStep(s,nv){
    : vchip(s.var,col)+' <span class="arw">=</span> ';
  // every coloured name in the call, with the field it reads (payload.customer_id stays one token)
  let expr='',m;const re=/([A-Za-z_][A-Za-z0-9_]*)|([\s\S])/g,src=s.expr;
+ // a value handed over in the wrong type gets a squiggle under just that argument
+ const spans=tmSpans(src,(s.tm||[]).filter(t=>t.at));let open=null;
  while((m=re.exec(src))){
+   if(!open&&spans.length&&m.index>=spans[0].a){open=spans.shift();expr+=tmOpen(open.t);}
    const w=m[1];
    if(w&&nv[w]&&src[m.index-1]!=='.'){const t=fieldTail(src,re.lastIndex);re.lastIndex+=t.length;expr+=vchip(w,nv[w],t,w+t);}
    else expr+=esc(m[0]);
+   if(open&&re.lastIndex>=open.b){expr+='</span>';open=null;}
  }
+ if(open)expr+='</span>';
  // an error this call can let through gets a red squiggle; one handled right here gets a green one
  if(s.esc&&s.esc.length)expr='<span class="sq" data-err="'+esc(s.esc.join(' '))+'" data-tip="'+esc(s.esc.join(' · '))+'">'+expr+'</span>';
  else if(s.caught&&s.caught.length)expr='<span class="sqok" data-err="'+esc(s.caught.map(c=>c[0]).join(' '))+'" data-st="'+esc(String(s.caught[0][1]||''))+'" data-tip="'+esc(s.caught.map(c=>c[0]+' → '+(c[1]||'handled')).join(' · '))+'">'+expr+'</span>';
@@ -850,7 +878,7 @@ function layout(){
  // open space between boxes rather than overlapping them.
  let maxLab=0;
  groupEdges().forEach(g=>{
-   const f=(g.label||'').length+(g.items.length>1?4:0);
+   const f=Math.max((g.label||'').length+(g.items.length>1?4:0),...g.items.map(e=>Math.max(0,...(e.tm||[]).map(t=>tmLabel(t).length))));
    const vars=[...new Set(g.items.filter(e=>e.rowVar).map(e=>e.rowVar==='return'?'response':e.rowVar))];
    const rets=[...new Set(g.items.map(e=>e.ret).filter(Boolean))];
    const r=vars.length?((rets.length===1?rets[0].length+2:0)+vars.join(', ').length+2):0;
@@ -936,7 +964,14 @@ function drawEdges(){
    // errors crossing this call: red = let through to the caller, green = the caller handles it
    const escT=[...new Set([].concat(...g.items.map(e=>e.esc||[])))];
    const cgt=[...new Map([].concat(...g.items.map(e=>e.caught||[])).map(c=>[c[0],c])).values()];
-   let errAt=null;   // where the error label sits: under the return arrow's pills, else under the call's label
+   let errAt=null,retDrawn=false;   // where the error label sits: under the return arrow's pills, else under the call's label
+   // mismatched types: on the arrow that carries the value, the arriving type ≠ the expected one
+   const tms=[...new Map([].concat(...g.items.map(e=>e.tm||[])).filter(t=>t.where!=='here').map(t=>[t.key,t])).values()];
+   const tmText=(list,x,y)=>{list.forEach((t,k)=>{labels+='<text class="errlab elab ty" data-err="'+esc(t.key)+'" data-tip="'+esc(t.tip)+'" x="'+x+'" y="'+(y+14*k)+'" text-anchor="middle" fill="'+(t.dim?'var(--muted)':'var(--del)')+'">'+esc(tmLabel(t))+'</text>';});return y+14*list.length;};
+   const callT=tms.filter(t=>t.where==='call');let retT=tms.filter(t=>t.where!=='call');
+   const tmPath=(list,d)=>{if(list.length)ret+='<path class="errpath" data-err="'+esc(list.map(t=>t.key).join(' '))+'" d="'+d+'" fill="none" stroke="'+(list.every(t=>t.dim)?'var(--muted)':'var(--del)')+'" stroke-width="2.4"/>';};
+   const fwdD='M'+jx+','+ry+' C'+fc1+','+ry+' '+fc2+','+fy+' '+fx+','+fy;
+   if(callT.length){const m=bez(jx,ry,fc1,ry,fc2,fy,fx,fy,0.5);errAt=[m[0],tmText(callT,m[0],m[1]+12)];tmPath(callT,fwdD);}
    const errLabels=(x,y)=>{
      let k=0;
      if(escT.length)labels+='<text class="errlab elab" data-err="'+esc(escT.join(' '))+'" data-tip="'+esc(escT.join('\n'))+'" x="'+x+'" y="'+(y+14*k++)+'" text-anchor="middle" fill="var(--del)">'+esc(escT.join(', '))+'</text>';
@@ -958,12 +993,14 @@ function drawEdges(){
        // small type note above, then a value PILL per produced variable (it "travels" back to the caller)
        if(typ)labels+='<text data-g="'+i+'"'+dv+' x="'+m[0]+'" y="'+(m[1]+2)+'" class="'+gc+' elab ret" text-anchor="middle" fill="var(--muted)">'+typ+' →</text>';
        rvars.forEach((e,k)=>{const fin=e.rowVar==='return';labels+=pill(m[0],m[1]+18+k*21,fin?'response':e.rowVar,fin?'var(--accent)':(e.color||rcol),false,i,dv);});
-       errAt=[m[0],m[1]+18+rvars.length*21+4];
+       tmPath(retT,'M'+sx+','+sy+' C'+rc1+','+(sy+26)+' '+rc2+','+(ey+26)+' '+ex+','+ey);
+       errAt=[m[0],tmText(retT,m[0],m[1]+18+rvars.length*21+4)];retT=[];retDrawn=true;
        if(escT.length||cgt.length)ret+='<path class="errpath" data-err="'+esc(escT.concat(cgt.map(c=>c[0])).join(' '))+'" d="M'+sx+','+sy+' C'+rc1+','+(sy+26)+' '+rc2+','+(ey+26)+' '+ex+','+ey+'" fill="none" stroke="'+(escT.length?'var(--del)':'var(--ok)')+'" stroke-width="2.4"/>';
      }
    }
+   if(retT.length){const m=bez(jx,ry,fc1,ry,fc2,fy,fx,fy,0.5);tmPath(retT,fwdD);errAt=[m[0],tmText(retT,m[0],(errAt?errAt[1]:m[1]+12))];}
    if(escT.length||cgt.length){
-     if(!errAt){const m=bez(jx,ry,fc1,ry,fc2,fy,fx,fy,0.5);errAt=[m[0],m[1]+12];
+     if(!retDrawn){const m=bez(jx,ry,fc1,ry,fc2,fy,fx,fy,0.5);errAt=errAt||[m[0],m[1]+12];
        ret+='<path class="errpath" data-err="'+esc(escT.concat(cgt.map(c=>c[0])).join(' '))+'" d="M'+jx+','+ry+' C'+fc1+','+ry+' '+fc2+','+fy+' '+fx+','+fy+'" fill="none" stroke="'+(escT.length?'var(--del)':'var(--ok)')+'" stroke-width="2.4"/>';}
      errLabels(errAt[0],errAt[1]);
    }
@@ -1002,8 +1039,8 @@ function setErr(src){
  document.querySelectorAll('#world [data-err],#edges [data-err],#epinfo [data-err],#epinfo [data-st]').forEach(e=>{if(errMatch(e,H)){e.classList.add('errhot');
    const st=e.closest('.step');if(st)st.classList.add('errhot');const card=e.closest('.node');if(card)card.classList.add('errhot');}});
 }
-document.addEventListener('mouseover',e=>{const t=e.target.closest&&e.target.closest('.sq,.sqok,.errlab,.stc[data-err],.step.raise');if(t)setErr(t);});
-document.addEventListener('mouseout',e=>{const t=e.target.closest&&e.target.closest('.sq,.sqok,.errlab,.stc[data-err],.step.raise');if(t&&!(e.relatedTarget&&t.contains(e.relatedTarget)))setErr(null);});
+document.addEventListener('mouseover',e=>{const t=e.target.closest&&e.target.closest('.sq,.sqok,.errlab,.stc[data-err],.step.raise,.step.tmis');if(t)setErr(t);});
+document.addEventListener('mouseout',e=>{const t=e.target.closest&&e.target.closest('.sq,.sqok,.errlab,.stc[data-err],.step.raise,.step.tmis');if(t&&!(e.relatedTarget&&t.contains(e.relatedTarget)))setErr(null);});
 
 // variable spotlight: hover any variable → it lights up everywhere (chips, code tokens, and every
 // arrow that carries it), while the rest fades. This is the "trace this value" view.
