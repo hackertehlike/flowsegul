@@ -504,73 +504,127 @@ button.num{cursor:pointer}
 .rkey .rc.rerun{position:static;box-shadow:none;background:var(--chg-soft);padding:2px 6px;cursor:default}
 .rkey .dash{width:22px;height:14px;border-left:3px dashed var(--line2);background:var(--panel2);border-radius:3px}
 
-/* ── calm look (ideas borrowed from soft dashboard UIs) ─────────────────────────────────────────
-   1 calm canvas: boxes are separated by space and a soft shadow, not hairline borders
-   2 one accent: the page chrome is neutral, so colour on the map always means something
-   3 pills: every small button and chip is fully rounded
-   4 big count: the review bar leads with one large number and a quiet label
-   5 soft glow: a changed box glows orange instead of wearing a hard ring */
-:root{--bg:#eef0f3; --grid:#dcdfe5; --line:#e7e9ee; --panel2:#f3f4f7; --r:18px;
- --shadow:0 1px 2px rgba(22,26,38,.04),0 10px 30px -12px rgba(22,26,38,.16);
- --shadow-lg:0 2px 4px rgba(22,26,38,.05),0 22px 48px -16px rgba(22,26,38,.26);
- --accent:#3b4254; --accent-ink:#161a26; --accent-soft:#161a2612; --accent-tk:#5b5bf038; --lit:#5b5bf0}
-@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0f1116; --line:#22262f; --panel2:#1a1d25;
- --accent:#c3c8d4; --accent-ink:#e8ebf2; --accent-soft:#e8ebf21a; --accent-tk:#8b8bff45; --lit:#8b8bff}}
-:root[data-theme=dark]{--bg:#0f1116; --line:#22262f; --panel2:#1a1d25;
- --accent:#c3c8d4; --accent-ink:#e8ebf2; --accent-soft:#e8ebf21a; --accent-tk:#8b8bff45; --lit:#8b8bff}
-/* 1 calm canvas */
-.top{background:var(--bg);border-bottom:0;height:60px}
+/* ── soft look (borrowed from soft dashboard UIs) ────────────────────────────────────────────────
+   neutral grey canvas, near-white round cards with no borders, pill chips and buttons, one bright
+   accent (lime in the default theme), a dot-matrix review count, and a warm glow on changed boxes.
+   Changed / error / ok colours never change, in any theme. */
+:root{--bg:#e4e4e2; --grid:#cfcfcc; --panel:#f8f8f7; --panel2:#efefed; --raise:#ffffff; --chip:#ececea;
+ --line:#e6e6e3; --line2:#d6d6d2; --ink:#18181b; --ink2:#3f3f46; --muted:#71717a; --faint:#a1a1aa; --r:26px;
+ --shadow-sm:0 1px 2px rgba(0,0,0,.04);
+ --shadow:0 1px 2px rgba(0,0,0,.03),0 18px 40px -18px rgba(0,0,0,.18);
+ --shadow-lg:0 2px 4px rgba(0,0,0,.04),0 28px 60px -20px rgba(0,0,0,.28);
+ --accent:#3f3f46; --accent-ink:#18181b; --accent-soft:#18181b0f;
+ --lit:#6f8c00; --lit-fill:#d7f542; --lit-on:#18181b; --accent-tk:#c5e62a55;
+ --glow1:#ff8a3d; --glow2:#ff6aa0}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0e0e10; --grid:#26262a; --panel:#18181b; --panel2:#202024; --raise:#232327; --chip:#232327;
+ --line:#26262a; --line2:#34343a; --ink:#f4f4f5; --ink2:#d4d4d8; --muted:#a1a1aa; --faint:#63636b;
+ --accent:#d4d4d8; --accent-ink:#f4f4f5; --accent-soft:#ffffff12; --lit:#d7f542; --lit-fill:#d7f542; --lit-on:#18181b; --accent-tk:#d7f54240}}
+:root[data-theme=dark]{--bg:#0e0e10; --grid:#26262a; --panel:#18181b; --panel2:#202024; --raise:#232327; --chip:#232327;
+ --line:#26262a; --line2:#34343a; --ink:#f4f4f5; --ink2:#d4d4d8; --muted:#a1a1aa; --faint:#63636b;
+ --accent:#d4d4d8; --accent-ink:#f4f4f5; --accent-soft:#ffffff12; --lit:#d7f542; --lit-fill:#d7f542; --lit-on:#18181b; --accent-tk:#d7f54240}
+/* canvas and cards */
+.top{background:var(--bg);border-bottom:0;height:66px;padding:0 16px 0 18px}
 .crumb{border-left:0}
-.side{background:var(--panel);border-right:0;margin:0 0 12px 12px;border-radius:var(--r);box-shadow:var(--shadow)}
-body.noside .side{margin-left:-264px}
-.stage{background-image:radial-gradient(circle at 1px 1px,var(--grid) .8px,transparent 0);background-size:26px 26px}
-.node{border-color:transparent}
-.nbody{padding:0 12px 12px;gap:6px}
-.nhead{padding:12px 12px 10px 14px}
-.step{border-radius:10px}
-pre.code{border-color:transparent;border-radius:12px}
-.ins{border-radius:10px}
-.float{border-color:transparent;border-radius:999px}
-.legend,.minimap{border-radius:16px}
-.rangebtn,.rangepop,.search label,.combo input{border-color:transparent}
-.rangebtn{background:var(--panel);box-shadow:var(--shadow-sm);border-radius:999px;height:34px;padding:0 12px 0 13px}
-.rangebtn:hover,.rangebtn.on{border-color:var(--line2)}
-.search label{border-radius:999px}
-/* 2 one accent: the logo and chrome go neutral; highlights on the map keep their colour */
-.logo{background:#161a26;box-shadow:inset 0 0 0 1px #ffffff1f}
-:focus-visible{outline-color:var(--lit)}
+.brand h1{font-weight:500;letter-spacing:-.02em}
+.logo{background:#18181b;box-shadow:inset 0 0 0 1px #ffffff1f;border-radius:50%}
+.side{background:var(--panel);border-right:0;margin:0 0 14px 14px;border-radius:var(--r);box-shadow:var(--shadow)}
+body.noside .side{margin-left:-266px}
+.stage{background-image:radial-gradient(circle at 1px 1px,var(--grid) .9px,transparent 0);background-size:14px 14px}
+.node{border-color:transparent;background:var(--panel)}
+.nhead{padding:16px 16px 12px 18px}
+.nbody{padding:0 14px 16px;gap:6px}
+.step{border-radius:12px;background:var(--panel2);border-left-width:3px}
+pre.code{border-color:transparent;border-radius:16px;background:var(--panel2)}
+.ins{border-radius:14px;border-color:var(--line2)}
+.float{border-color:transparent;border-radius:999px;background:color-mix(in srgb,var(--panel) 92%,transparent)}
+.legend,.minimap{border-radius:22px}
+.rangebtn,.rangepop,.search label,.combo input,.thpop{border-color:transparent}
+.rangepop{border-radius:22px}
+/* pills and round buttons */
+.tb,.mchip,.m,.lay,.stc,.fx,.ub,.vwbtn,.codebtn,.chgbadge,.rc,.seg,.segb,.dock button,.dock .pct,.ep,.rp-go,.rp-cmdline button{border-radius:999px}
+.tb{background:var(--raise);box-shadow:var(--shadow-sm),0 4px 12px -6px rgba(0,0,0,.12);height:36px;padding:0 14px;font-weight:500}
+.tb.icon{width:36px}
+.tb:hover{background:var(--raise);border-color:var(--line2)}
+.tb.on{background:var(--ink);color:var(--bg)}
+.tb.chgon.on{background:var(--chg);color:#fff}
+.tb .cnt{border-radius:999px;background:var(--lit-fill);color:var(--lit-on)}
+.tb.chgon.on .cnt{background:#fff;color:var(--chg)}
+.tools{gap:6px}.tsep{background:transparent}
+.rangebtn{background:var(--raise);box-shadow:var(--shadow-sm),0 4px 12px -6px rgba(0,0,0,.12);border-radius:999px;height:36px;padding:0 14px}
 .rangebtn svg{color:var(--muted)}
-.ep.on::before{background:var(--ink)}
-.rp-go{background:var(--ink);color:var(--panel)}
-.step.hl{outline-color:var(--lit)}
-.node.flash{animation-name:cfflash2}
-@keyframes cfflash2{0%,15%{box-shadow:0 0 0 4px var(--lit),var(--shadow-lg)}100%{box-shadow:0 0 0 4px transparent,var(--shadow)}}
-.node.svc{border-color:transparent;box-shadow:0 0 0 1.5px var(--line2),var(--shadow)}
-.num{background:var(--lit)} .num.o{color:var(--lit);box-shadow:inset 0 0 0 1.5px var(--lit)}
-.rrow.lit{border-left-color:var(--lit);background:color-mix(in srgb,var(--lit) 10%,var(--panel2))}
-.tk.on{box-shadow:0 0 0 1px color-mix(in srgb,var(--lit) 45%,transparent)}
-.stepbar{border-color:transparent}.stepbar button{background:var(--lit)} #sbcount{color:var(--lit)}
-/* 3 pills */
-.tb,.mchip,.m,.lay,.stc,.fx,.ub,.vwbtn,.codebtn,.chgbadge,.rc,.seg,.segb,.dock button,.dock .pct,.kbd,.ep{border-radius:999px}
-.tb .cnt{border-radius:999px}
-.ep{padding:7px 10px 7px 7px}
+.search label{border-radius:999px;background:var(--panel2);height:36px}
+.ep{padding:8px 12px 8px 8px;margin-bottom:2px}
+.ep.on{background:var(--raise);box-shadow:var(--shadow-sm),0 6px 16px -8px rgba(0,0,0,.18)}
 .ep.on::before{display:none}
-.m{width:46px}
-.lay{padding:4px 8px}
-.chgbadge{padding:3px 7px}
-.fx{padding:5px 10px}
-/* 4 big count */
-.revbar{border-top:0;padding:12px 14px 14px}
-.revbar .lbl{justify-content:flex-start;align-items:baseline;gap:6px;margin-bottom:8px}
-.revbar .lbl b{font:600 28px/1 var(--sans);letter-spacing:-.03em;font-variant-numeric:tabular-nums}
-.revbar .lbl span{font-size:11.5px}
-.revbar .track{height:4px;border-radius:999px}
-.revbar .fill{background:var(--ok)}
-/* 5 soft glow on changed boxes */
-.node.changed{border-color:color-mix(in srgb,var(--chg) 55%,transparent);box-shadow:0 0 0 1px color-mix(in srgb,var(--chg) 30%,transparent),0 14px 44px -10px color-mix(in srgb,var(--chg) 55%,transparent),0 0 60px -6px var(--chg-soft)}
-.node.changed.viewed{border-color:transparent;box-shadow:var(--shadow)}
-.node.deleted{border-color:color-mix(in srgb,var(--del) 55%,transparent);box-shadow:0 14px 44px -10px color-mix(in srgb,var(--del) 45%,transparent)}
-.chgdot{box-shadow:0 0 8px 1px color-mix(in srgb,var(--chg) 60%,transparent)}
+.ep.on .t{color:var(--ink)}
+.m{width:48px;padding:5px 0}
+.lay{padding:4px 9px;font-weight:600}
+.chgbadge{padding:3px 8px}
+.stc{border-color:transparent;background:var(--chip);padding:5px 9px}
+.stc.ok{background:color-mix(in srgb,var(--ok) 14%,var(--panel));border-color:transparent}
+.stc.bad{background:var(--del)}
+.mchip{border-color:transparent;background:var(--chip);padding:5px 10px}
+.fx{border-color:transparent;background:var(--chip);padding:6px 11px}
+.fx.commit{border-color:transparent}
+.fx.via,.fx.unk{border-color:var(--muted)}
+.fx.risk{border-color:transparent}
+.fxstrip{padding:8px 10px;border-radius:22px}
+.vwbtn,.codebtn{border-color:transparent;background:var(--chip)}
+.seg{border-color:transparent;background:var(--chip)}
+.segb.on{background:var(--raise)}
+.rp-go{background:var(--lit-fill);color:var(--lit-on)}
+.dock{padding:5px}
+.dock button,.dock .pct{border-radius:999px}
+/* one bright accent for "you are here" */
+:focus-visible{outline-color:var(--lit)}
+.step.hl{outline-color:var(--lit);outline-width:2px}
+.node.flash{animation-name:cfflash2}
+@keyframes cfflash2{0%,15%{box-shadow:0 0 0 4px var(--lit-fill),var(--shadow-lg)}100%{box-shadow:0 0 0 4px transparent,var(--shadow)}}
+.node.svc{border-color:transparent;box-shadow:0 0 0 2px var(--lit-fill),var(--shadow)}
+.num{background:var(--lit-fill);color:var(--lit-on)} .num.o{background:var(--panel);color:var(--lit);box-shadow:inset 0 0 0 1.5px var(--lit)}
+.rrow.lit{border-left-color:var(--lit);background:color-mix(in srgb,var(--lit-fill) 22%,var(--panel2))}
+.tk.on{box-shadow:0 0 0 1px color-mix(in srgb,var(--lit) 55%,transparent)}
+.stepbar{border-color:transparent}.stepbar button{background:var(--lit-fill);color:var(--lit-on)} #sbcount{color:var(--ink)}
+.chgnav{border-color:transparent}
+/* dot-matrix review count */
+.revbar{border-top:0;padding:14px 16px 16px}
+.revbar .lbl{justify-content:flex-start;align-items:flex-end;gap:8px;margin-bottom:10px}
+.revbar .lbl b{display:flex;gap:4px;color:var(--ink)}
+.revbar .lbl b svg{height:40px;width:auto;display:block}
+.revbar .lbl span{font-size:11.5px;padding-bottom:2px}
+.revbar .track{height:6px;border-radius:999px;background:var(--chip)}
+.revbar .fill{background:var(--lit-fill);border-radius:999px}
+/* warm glow on changed boxes */
+.node.changed{border-color:transparent;box-shadow:0 0 0 1.5px color-mix(in srgb,var(--glow1) 60%,transparent),0 24px 70px -18px color-mix(in srgb,var(--glow1) 75%,transparent),0 0 90px -10px color-mix(in srgb,var(--glow2) 22%,transparent)}
+.node.changed .nhead{background:radial-gradient(120% 180% at 12% 0%,color-mix(in srgb,var(--glow1) 30%,transparent),color-mix(in srgb,var(--glow2) 12%,transparent) 55%,transparent 80%)}
+.node.changed.viewed{box-shadow:var(--shadow)}
+.node.changed.viewed .nhead{background:none}
+.node.deleted{border-color:transparent;box-shadow:0 0 0 1.5px color-mix(in srgb,var(--del) 60%,transparent),0 24px 60px -18px color-mix(in srgb,var(--del) 55%,transparent)}
+.chgdot{box-shadow:0 0 10px 2px color-mix(in srgb,var(--glow1) 65%,transparent)}
+.chgbadge{background:linear-gradient(90deg,var(--glow1),var(--glow2))}
+.node.viewed .chgbadge{background:var(--faint)}
+/* colour themes: surfaces and the accent change; changed / error / ok colours never do */
+:root[data-palette=sand]{--bg:#ebe6dd;--grid:#d6cfc2;--panel:#fbf8f3;--panel2:#f2ede5;--raise:#fffdf9;--chip:#ece6dc;--line:#e6e0d5;--line2:#d6cdbf;--lit:#0f766e;--lit-fill:#99e2d6;--lit-on:#0b3b37;--accent-tk:#99e2d640}
+@media (prefers-color-scheme:dark){:root[data-palette=sand]:not([data-theme=light]){--bg:#12100d;--grid:#2b271f;--panel:#1b1814;--panel2:#23201a;--raise:#27231d;--chip:#28241e;--line:#2e2923;--line2:#3b352d;--lit:#5eead4;--lit-fill:#5eead4;--lit-on:#0b3b37;--accent-tk:#5eead440}}
+:root[data-palette=sand][data-theme=dark]{--bg:#12100d;--grid:#2b271f;--panel:#1b1814;--panel2:#23201a;--raise:#27231d;--chip:#28241e;--line:#2e2923;--line2:#3b352d;--lit:#5eead4;--lit-fill:#5eead4;--lit-on:#0b3b37;--accent-tk:#5eead440}
+:root[data-palette=sage]{--bg:#e3e9e3;--grid:#cbd5cb;--panel:#f8fbf8;--panel2:#edf2ed;--raise:#ffffff;--chip:#e6ece6;--line:#dde5dd;--line2:#cad5ca;--lit:#2563eb;--lit-fill:#bcd4ff;--lit-on:#10254d;--accent-tk:#bcd4ff40}
+@media (prefers-color-scheme:dark){:root[data-palette=sage]:not([data-theme=light]){--bg:#0d110e;--grid:#222d25;--panel:#151b17;--panel2:#1c231e;--raise:#1f2721;--chip:#1f2821;--line:#243029;--line2:#2f3d34;--lit:#93c5fd;--lit-fill:#93c5fd;--lit-on:#10254d;--accent-tk:#93c5fd40}}
+:root[data-palette=sage][data-theme=dark]{--bg:#0d110e;--grid:#222d25;--panel:#151b17;--panel2:#1c231e;--raise:#1f2721;--chip:#1f2821;--line:#243029;--line2:#2f3d34;--lit:#93c5fd;--lit-fill:#93c5fd;--lit-on:#10254d;--accent-tk:#93c5fd40}
+:root[data-palette=lilac]{--bg:#e9e6f1;--grid:#d4cfe4;--panel:#fbfaff;--panel2:#f1eff8;--raise:#ffffff;--chip:#ebe8f4;--line:#e3dff0;--line2:#d1cae4;--lit:#6d4fe0;--lit-fill:#d9ccff;--lit-on:#2b1a6b;--accent-tk:#d9ccff40}
+@media (prefers-color-scheme:dark){:root[data-palette=lilac]:not([data-theme=light]){--bg:#100e16;--grid:#28233a;--panel:#18161f;--panel2:#1f1c28;--raise:#23202d;--chip:#23202e;--line:#2a2638;--line2:#373248;--lit:#c4b5fd;--lit-fill:#c4b5fd;--lit-on:#2b1a6b;--accent-tk:#c4b5fd40}}
+:root[data-palette=lilac][data-theme=dark]{--bg:#100e16;--grid:#28233a;--panel:#18161f;--panel2:#1f1c28;--raise:#23202d;--chip:#23202e;--line:#2a2638;--line2:#373248;--lit:#c4b5fd;--lit-fill:#c4b5fd;--lit-on:#2b1a6b;--accent-tk:#c4b5fd40}
+.thwrap{position:relative}
+.thpop{position:absolute;top:calc(100% + 8px);right:0;width:236px;background:var(--panel);border-radius:16px;box-shadow:var(--shadow-lg);padding:10px;z-index:30;animation:pop .18s var(--ease)}
+.thpop[hidden]{display:none}
+.thpop .seg{display:flex;width:100%;margin:0 0 8px;border:0}
+.thpop .seg .segb{flex:1}
+.thsw{display:grid;grid-template-columns:repeat(4,1fr);gap:4px}
+.thsw button{display:flex;flex-direction:column;align-items:center;gap:5px;border:0;background:none;border-radius:12px;padding:7px 0 6px;cursor:pointer;font:600 10.5px/1 var(--sans);color:var(--muted)}
+.thsw button:hover{background:var(--panel2);color:var(--ink)}
+.thsw button.on{color:var(--ink);background:var(--panel2)}
+.thsw i{width:26px;height:26px;border-radius:50%;box-shadow:inset 0 0 0 1px #0000001a;display:grid;place-items:center}
+.thsw i b{width:9px;height:9px;border-radius:50%}
+.thsw button.on i{box-shadow:inset 0 0 0 1px #0000001a,0 0 0 2px var(--panel),0 0 0 3.5px var(--ink2)}
 @media (max-width:900px){.brand{width:auto}.brand h1 small,.crumb .sum,.tb .lbl{display:none}.minimap{display:none}}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 </style>
@@ -597,7 +651,7 @@ pre.code{border-color:transparent;border-radius:12px}
   <button class="tb chgon" id="chgtoggle" data-tip="Step through changed functions  (N)" hidden><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2.5"/><path d="M8 1.5v4M8 10.5v4"/></svg><span class="lbl">Changes</span><span class="cnt" id="chgcount"></span></button>
   <button class="tb" id="revtoggle" data-tip="Check off flows as you review them  (R)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="m5.5 8.2 1.7 1.7 3.3-3.6"/></svg><span class="lbl" id="revlabel">Review</span></button>
   <span class="tsep"></span>
-  <button class="tb icon" id="theme" data-tip="Light / dark  (T)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor" stroke="none"/></svg></button>
+  <span class="thwrap"><button class="tb icon" id="theme" data-tip="Colours  (T switches light / dark)" aria-haspopup="dialog"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor" stroke="none"/></svg></button><div class="thpop" id="thpop" hidden role="dialog" aria-label="Colours"><div class="seg" id="thmode"><button class="segb" data-t="light">Light</button><button class="segb" data-t="dark">Dark</button></div><div class="thsw" id="thsw"><button data-p="mist"><i style="background:#e4e4e2"><b style="background:#d7f542"></b></i>Mist</button><button data-p="sand"><i style="background:#ebe6dd"><b style="background:#5ed4c4"></b></i>Sand</button><button data-p="sage"><i style="background:#e3e9e3"><b style="background:#7aa7ff"></b></i>Sage</button><button data-p="lilac"><i style="background:#e9e6f1"><b style="background:#a78bfa"></b></i>Lilac</button></div></div></span>
   <button class="tb icon" id="help" data-tip="Shortcuts & tips  (?)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M6.3 6.3a1.8 1.8 0 1 1 2.4 1.7c-.5.2-.7.6-.7 1.1"/><circle cx="8" cy="11.3" r=".4" fill="currentColor"/></svg></button>
  </div>
 </header>
@@ -651,7 +705,7 @@ pre.code{border-color:transparent;border-radius:12px}
   <div class="kr"><span>Review mode</span><span><kbd>R</kbd></span></div>
   <div class="kr"><span>Mark current reviewed</span><span><kbd>X</kbd></span></div>
   <div class="kr"><span>Sidebar / minimap</span><span><kbd>[</kbd><kbd>M</kbd></span></div>
-  <div class="kr"><span>Theme</span><span><kbd>T</kbd></span></div>
+  <div class="kr"><span>Light / dark (colours: the ◐ button)</span><span><kbd>T</kbd></span></div>
   <div class="kr"><span>Scroll wheel: pan ⇄ zoom</span><span><kbd>W</kbd></span></div>
   <h5>Canvas</h5>
   <div class="how">Scroll or drag empty space to pan. Pinch or hold <kbd>Ctrl</kbd>/<kbd>⌘</kbd> while scrolling to zoom. With a mouse, flip the Pan / Zoom switch in the bottom-left bar (or press <kbd>W</kbd>) to zoom with the wheel. Drag a box by its header to move it. Click or drag the minimap to jump.</div>
@@ -1216,12 +1270,15 @@ $('#chgprev').onclick=()=>gotoChg(-1);
 $('#chgtoggle').onclick=()=>{chgNavOn=!chgNavOn;$('#chgtoggle').classList.toggle('on',chgNavOn);setupChgNav();};
 
 // review mode: manually check flows off as reviewed (persisted; never auto-marked on visit)
+// review count drawn as dot-matrix digits (5×7 dots each); screen readers get the plain number
+const DOTS={0:'01110100011001110101110011000101110',1:'00100011000010000100001000010001110',2:'01110100010000100010001000100011111',3:'11111000100010000010000011000101110',4:'00010001100101010010111110001000010',5:'11111100001111000001000011000101110',6:'00110010001000011110100011000101110',7:'11111000010001000100010000100001000',8:'01110100011000101110100011000101110',9:'01110100011000101111000010001001100'};
+function dotDigits(n){return '<span class="sr" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">'+n+'</span>'+String(n).split('').map(d=>{let c='';const m=DOTS[d];for(let i=0;i<35;i++){const x=i%5,y=(i/5)|0;c+='<circle cx="'+(x*4+2)+'" cy="'+(y*4+2)+'" r="1.45" fill="currentColor" opacity="'+(m[i]==='1'?1:.16)+'"/>';}return '<svg viewBox="0 0 20 28" aria-hidden="true">'+c+'</svg>';}).join('');}
 function updateRevProgress(){
  const total=graph.endpoints.length;
  const done=graph.endpoints.filter(ep=>reviewed.has(revKey(ep))).length;
  const on=document.body.classList.contains('review');
  $('#revlabel').textContent=on?'Review '+done+'/'+total:'Review';
- $('#revcount').textContent=done;$('#revof').textContent='of '+total+' reviewed';
+ $('#revcount').innerHTML=dotDigits(done);$('#revof').textContent='of '+total+' reviewed';
  $('#revfill').style.width=(total?done/total*100:0)+'%';
 }
 function toggleReview(){document.body.classList.toggle('review');const on=document.body.classList.contains('review');$('#revtoggle').classList.toggle('on',on);store.set('review',on);updateRevProgress();}
@@ -1386,7 +1443,19 @@ $('#legend').open=store.get('legend',false);
 const root=document.documentElement;
 function setTheme(t){root.setAttribute('data-theme',t);store.set('theme',t);if(curEp)drawEdges();}
 {const t=store.get('theme',null);if(t)root.setAttribute('data-theme',t);}
-$('#theme').onclick=()=>{const cur=root.getAttribute('data-theme')||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light');setTheme(cur==='dark'?'light':'dark');};
+const curTheme=()=>root.getAttribute('data-theme')||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light');
+function toggleTheme(){setTheme(curTheme()==='dark'?'light':'dark');syncThPop();}
+function setPalette(p){if(p==='mist')root.removeAttribute('data-palette');else root.setAttribute('data-palette',p);store.set('palette',p);syncThPop();if(curEp)drawEdges();}
+{const p=store.get('palette','mist');if(p!=='mist')root.setAttribute('data-palette',p);}
+function syncThPop(){const t=curTheme(),p=root.getAttribute('data-palette')||'mist';
+ $('#thmode').querySelectorAll('.segb').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
+ $('#thsw').querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.p===p));}
+function closeThPop(){$('#thpop').hidden=true;$('#theme').classList.remove('on');}
+$('#theme').onclick=e=>{e.stopPropagation();const p=$('#thpop');if(!p.hidden)return closeThPop();syncThPop();p.hidden=false;$('#theme').classList.add('on');};
+$('#thmode').onclick=e=>{const b=e.target.closest('.segb');if(b){setTheme(b.dataset.t);syncThPop();}};
+$('#thsw').onclick=e=>{const b=e.target.closest('button');if(b)setPalette(b.dataset.p);};
+$('#thpop').addEventListener('click',e=>e.stopPropagation());
+document.addEventListener('click',()=>{if(!$('#thpop').hidden)closeThPop();});
 
 // title: the generator writes --title into <title>; mirror it in the header
 {const t=document.title.replace(/\s*[—·|-]\s*Call-Flow Explorer\s*$/,'')||'Call-Flow Explorer';$('#apptitle').innerHTML=esc(t)+'<small>'+(t==='Call-Flow Explorer'?'flowsegul':'Call-flow explorer')+'</small>';}
@@ -1922,7 +1991,7 @@ window.addEventListener('keydown',e=>{
  if((e.metaKey||e.ctrlKey)&&(e.key==='k'||e.key==='K')){e.preventDefault();if(document.body.classList.contains('noside'))toggleSide();$('#q').focus();$('#q').select();return;}
  if(e.metaKey||e.ctrlKey||e.altKey)return;
  const typing=e.target.closest&&e.target.closest('input,textarea,[contenteditable]');
- if(e.key==='Escape'){toggleHelp(false);closeDrawer();closeRange();if(RMODE&&!typing)rEsc();return;}
+ if(e.key==='Escape'){toggleHelp(false);closeDrawer();closeRange();closeThPop();if(RMODE&&!typing)rEsc();return;}
  if(typing)return;
  const k=e.key;
  if(k==='/'){e.preventDefault();if(document.body.classList.contains('noside'))toggleSide();$('#q').focus();$('#q').select();}
@@ -1945,7 +2014,7 @@ window.addEventListener('keydown',e=>{
  else if(k==='g'||k==='G'){e.preventDefault();openRange();}
  else if(k==='w'||k==='W'){setScrollMode(scrollMode==='zoom'?'pan':'zoom');}
  else if(k==='['){toggleSide();}
- else if(k==='t'||k==='T'){$('#theme').click();}
+ else if(k==='t'||k==='T'){toggleTheme();}
 });
 
 if(store.get('review',false))toggleReview();
