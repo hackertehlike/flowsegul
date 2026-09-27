@@ -810,6 +810,21 @@ def none_only(got, want):
     return (shown(got), pretty(want)) if rest == pretty(want) else (NONE, pretty(want))
 
 
+def none_only_mark(f):
+    """Is this finding only about a None (`str | None ≠ str`, `None ≠ CustomerOut`)?"""
+    parts = split_top(f['got']) if f['got'] else []
+    return f['got'] == NONE or (NONE in parts and without_none(f['got']) == f['want'])
+
+
+def changed_lines(diff_text):
+    """New-side line numbers a `git diff -U0` touches."""
+    out = set()
+    for m in re.finditer(r'^@@ -\S+ \+(\d+)(?:,(\d+))? @@', diff_text, re.M):
+        start, n = int(m.group(1)), int(m.group(2) if m.group(2) is not None else 1)
+        out.update(range(start, start + n))
+    return out
+
+
 def shown(t):
     """Type text for the map: '? | None' (a query's .first()) reads as '… | None'."""
     return pretty(t).replace('?', '…') if t else t

@@ -92,6 +92,41 @@ class MismatchedTypes(unittest.TestCase):
                       marks(eps['GET /customers/{customer_id}/email']))
 
 
+class ChangedView(unittest.TestCase):
+    """In the PR view an unchecked None is only marked on lines the branch changed."""
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        repo = types_fixture.make(os.path.join(cls.tmp.name, 'typeshop'))
+        run = lambda *a: subprocess.run(['git', *a], cwd=repo, check=True, capture_output=True)
+        run('checkout', '-q', '-b', 'feature')
+        path = os.path.join(repo, 'app/services/customers.py')
+        with open(path) as f:
+            src = f.read()
+        # edit email_of's return line, and load's signature only: its `return self.repo.get(...)` stays
+        src = src.replace('return customer.email', 'return customer.email.lower()')
+        src = src.replace('    def load(self, customer_id: UUID) -> Customer:',
+                          '    def load(self, customer_id: UUID) -> Customer:  # loads one')
+        with open(path, 'w') as f:
+            f.write(src)
+        run('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qam', 'change')
+        cls.eps = endpoints(repo, '--changed', '--base', 'main')
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def test_only_new_none_marks(self):
+        m = marks(self.eps['POST /customers/'])
+        # str ≠ UUID is not about a None: always shown
+        self.assertIn(('create_customer', 'call', 'payload.customer_id', 'str ≠ UUID', False), m)
+        # load's None hand-off is on a line the branch didn't touch
+        self.assertFalse([x for x in m if 'None' in x[3]])
+        m = marks(self.eps['GET /customers/{customer_id}/email'])
+        # the edited line keeps its (grey) mark
+        self.assertIn(('CustomerService.email_of', 'row', 'customer.email', 'Customer | None ≠ Customer', True), m)
+
+
 class Parsing(unittest.TestCase):
     def test_type_text(self):
         self.assertEqual(ft.members('Optional[Customer]'), ['Customer', 'None'])

@@ -127,7 +127,8 @@ wrappers like `api('/items')`. Vite's `server.proxy` rewrites, Next.js `rewrites
   declarations. flowsegul reads the annotations itself: parameters, `-> type`, schema fields, and
   well-known calls (`os.getenv` is `str | None`, `.encode()` is `bytes`, `db.get(User, id)` is
   `User | None`). A `None` counts as checked after an `if`/`assert` that stops; one tested without
-  stopping is grey. Bytes going into an f-string, `==` against text, `str(b)` or `b + "text"` are
+  stopping is grey. In the PR view (`--changed`) an unchecked `None` is only marked on lines the
+  change touches, so code that writes `str | None` by habit doesn't light up everywhere. Bytes going into an f-string, `==` against text, `str(b)` or `b + "text"` are
   marked too. A route's return value isn't, other than `None`: FastAPI converts it to the
   response model. When the repo sets up mypy or pyright and it's installed, its findings are added
   and turn matching grey marks red (`--types off` skips that, `--types FILE` reads saved output).

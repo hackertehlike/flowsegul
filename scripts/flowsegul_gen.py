@@ -26,7 +26,7 @@ import argparse, ast, copy, fnmatch, hashlib, html, json, os, re, shutil, subpro
 PALETTE = ['#3b82f6','#0ea5a4','#d97706','#db2777','#16a34a','#7c3aed','#ea580c','#0891b2','#4f46e5','#059669']
 INPUT_PALETTE = ['#e8590c','#1098ad','#9c36b5','#2f9e44','#c2255c','#1971c2']
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from flowsegul_types import findings as type_findings, run_checker  # noqa: E402
+from flowsegul_types import findings as type_findings, run_checker, none_only_mark, changed_lines  # noqa: E402
 
 SKIP_PARAMS = {'self', 'cls', 'db', 'body', 'request', 'session'}
 
@@ -1653,6 +1653,12 @@ def build_endpoint(entry_qual, idx, meta, depth, tag, changed_q=frozenset(), cha
                 idx.type_warned = True
                 print(f'  types: skipped {info["file"]}:{info["lineno"]} ({type(e).__name__}: {e})', file=sys.stderr)
             tf = {'calls': {}, 'rows': []}
+        nl = getattr(idx, 'none_lines', None)
+        if nl is not None:
+            keep = lambda f: not none_only_mark(f) or (info['file'] in nl and (
+                nl[info['file']] is None or f['line'] in nl[info['file']]))
+            tf = {'calls': {c: [f for f in fl if keep(f)] for c, fl in tf['calls'].items()},
+                  'rows': [f for f in tf['rows'] if keep(f)]}
         steps, at_line = [], {}
         for s0 in steps_for(info, idx):
             s = {k: v for k, v in s0.items() if not k.startswith('_')}
@@ -1850,6 +1856,13 @@ def process_repo(repo, args):
         cf = changed_rel_files(repo, base, ref, merge_base=not exact)
         changed_q, changed_m, diffs, deleted, top = changed_defs(idx, repo, base, ref, cf,
                                                                  merge_base=not exact, dirs=dirs)
+        # in the PR view an unchecked None is only marked on lines the change touches: code that
+        # annotates `str | None` by habit would otherwise light up everywhere
+        mb = diff_base(repo, base, ref, merge_base=not exact)
+        idx.none_lines = {}
+        for rel in cf:
+            d = git(repo, 'diff', '-U0', mb, *([ref] if ref else []), '--', rel)
+            idx.none_lines[rel] = changed_lines(d) if d else None   # None: a new, untracked file
 
     def flow_touches_changed(qual):
         """Affected if the endpoint's flow reaches a changed FUNCTION, or its request/response
