@@ -214,6 +214,9 @@ body.review .revbar{display:block}
 #edges .ge{transition:opacity .15s}
 #edges.linking .ge{opacity:.1}
 #edges.linking .ge.on{opacity:1}
+/* a call's arguments are already written on its row: the arrow repeats them only while you look at it */
+#edges .arglab{opacity:0;pointer-events:none;transition:opacity .12s}
+#edges.linking .arglab.on,#edges.spot .arglab.vhot,#edges.asking .arglab.ask-on{opacity:1}
 /* lit arrows get a gentle "flow" animation so direction reads at a glance */
 #edges.linking path.ge.on,#edges.spot path.vhot{stroke-dasharray:7 5;animation:flow .6s linear infinite}
 @keyframes flow{to{stroke-dashoffset:-12}}
@@ -917,6 +920,10 @@ function renderIns(n,nv){
  const rows=new Map(), callers=new Set((n.recv||[]).map(r=>r[2]));
  (n.recv||[]).forEach(([p,text,caller])=>{const r=rows.get(p)||{src:[],reads:[]};const t=text===p?'':text;if(!r.src.some(x=>x[0]===t))r.src.push([t,caller]);rows.set(p,r);});
  Object.entries(n.reads||{}).forEach(([p,paths])=>{const r=rows.get(p)||{src:[],reads:[]};r.reads=paths;rows.set(p,r);});
+ // a field already written on one of the rows below (payload.items) isn't listed again under `reads`
+ const said=(n.steps||[]).map(s=>s.expr||'').join('\n');
+ rows.forEach((r,p)=>{r.reads=r.reads.filter(x=>x.includes('[]')||!new RegExp('(^|[^\\w.])'+reEsc(p+x)+'(?!\\w)').test(said));
+   if(!r.reads.length&&!r.src.some(([t])=>t))rows.delete(p);});
  if(!rows.size)return null;
  const box=el('div','ins');
  rows.forEach((r,p)=>{
@@ -1034,7 +1041,7 @@ function drawEdges(){
    const argToks=(g.label.match(/[A-Za-z_][A-Za-z0-9_]*/g)||[]);
    const consumed=[...new Set(argToks.filter(t=>pvcolor[t]))];
    const allConsumed=argToks.length>0 && argToks.every(t=>pvcolor[t]);
-   if(g.label && !allConsumed){const m=bez(jx,ry,fc1,ry,fc2,fy,fx,fy,0.5);const badge=n>1?' <tspan fill="var(--muted)" font-weight="700">×'+n+'</tspan>':'';labels+='<text data-g="'+i+'"'+dv+' x="'+m[0]+'" y="'+(m[1]-5)+'" class="'+gc+' gf elab" text-anchor="middle" fill="'+col+'">'+argTspans(g.label,col)+badge+'</text>';}
+   if(g.label && !allConsumed){const m=bez(jx,ry,fc1,ry,fc2,fy,fx,fy,0.5);const badge=n>1?' <tspan fill="var(--muted)" font-weight="700">×'+n+'</tspan>':'';labels+='<text data-g="'+i+'"'+dv+' x="'+m[0]+'" y="'+(m[1]-5)+'" class="'+gc+' gf elab arglab" text-anchor="middle" fill="'+col+'">'+argTspans(g.label,col)+badge+'</text>';}
    // a value that lands under another name says so: subtotal → total
    const renamed=v=>{for(const e of g.items)for(const b of e.bind||[])if(b.from===v&&!b.path&&b.p!==v)return v+' → '+b.p;return v;};
    consumed.forEach((v,k)=>{const t=renamed(v),pw=Math.max(30,t.length*7+16);labels+=pill(fx-pw/2-5,fy+k*21,t,pvcolor[v]||'var(--edge)',true,i,dv,'f');});
@@ -1967,7 +1974,7 @@ function traceRoutes(nid,S){
  while(NB(cur)&&!NB(cur).entry&&!seen.has(cur)){seen.add(cur);const cs=callersOf(cur);if(!cs.length)break;chain.unshift({c:cs[0].c,s:cs[0].s,to:cur});cur=cs[0].c.id;}
  S.push({nid:cur,t:'head',code:curEp.method.toUpperCase()+' '+curEp.path});
  chain.forEach(({c,s,to})=>S.push({nid:c.id,t:'row',rv:s.var,g:[gIndex(c.id,to,s.var),'f'],code:callShort(s,to)}));
- const n=NB(nid);S.push({nid,t:'head',code:short(n.title)+'('+sigParams(nid).join(', ')+')',box:''});
+ const n=NB(nid);   // the last call in the chain already names this box, so it isn't listed again
  graph.endpoints.forEach(e=>{if(e!==curEp&&(e.nodes||[]).some(x=>x.fnKey===n.fnKey))S.extra.push(e);});
 }
 function questionsFor(nid){const n=NB(nid),qs=[];
@@ -2087,7 +2094,8 @@ function anchorOf(st){
  const nd=nodes[st.nid];if(!nd)return null;const card=nd.el;
  if(st.t==='row')return rowOf(st.nid,st.rv);
  if(st.t==='raise')return card.querySelectorAll('.step.raise')[st.ri]||null;
- if(st.t==='ins')return [...card.querySelectorAll('.ins .in')].find(r=>{const v=r.querySelector('.vchip');return v&&v.dataset.var===st.v;});
+ if(st.t==='ins')return [...card.querySelectorAll('.ins .in')].find(r=>{const v=r.querySelector('.vchip');return v&&v.dataset.var===st.v;})
+   ||[...card.querySelectorAll('.nbody [data-var]')].find(x=>x.dataset.var===st.v&&x.getClientRects().length);   // no line of its own: the first row that uses it
  if(st.t==='var')return [...card.querySelectorAll('.nbody [data-var]')].find(x=>x.dataset.var===st.v&&(x.dataset.path||'')===(st.path||'')&&x.getClientRects().length)
    ||[...card.querySelectorAll('.nbody [data-var]')].find(x=>x.dataset.var===st.v&&x.getClientRects().length);
  if(st.t==='code'){const pre=card.querySelector('pre.code');return pre&&!pre.hidden?[...pre.querySelectorAll('.dl')].find(l=>l.textContent.trim()===st.line):null;}
