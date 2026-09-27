@@ -1978,6 +1978,10 @@ def process_repo(repo, args):
         for n in e['nodes']:
             h.update((n.get('diff') or code.get(n['fnKey'], {}).get('code') or '').encode('utf-8', 'replace'))
         e['sig'] = h.hexdigest()[:10]
+        for n in e['nodes']:   # a "viewed" mark on a changed function holds for this exact diff only
+            if n.get('changed'):
+                src = n.get('diff') or code.get(n['fnKey'], {}).get('code') or ''
+                n['vsig'] = hashlib.sha1(src.encode('utf-8', 'replace')).hexdigest()[:10]
     return endpoints, code
 
 
