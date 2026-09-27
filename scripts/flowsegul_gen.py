@@ -2060,10 +2060,10 @@ def run_react(root, tag):
 
 def merge_react(parts):
     """One React map from several apps (ids are already namespaced by tag)."""
-    out = {'version': 1, 'units': [], 'rows': {}, 'states': [], 'actions': [], 'apps': [], 'http': {}}
+    out = {'version': 1, 'units': [], 'rows': {}, 'states': [], 'actions': [], 'apps': [], 'http': {}, 'problems': []}
     for p in parts:
         out['units'] += p['units']; out['rows'].update(p['rows']); out['http'].update(p.get('http') or {})
-        out['states'] += p['states']; out['actions'] += p['actions']
+        out['states'] += p['states']; out['actions'] += p['actions']; out['problems'] += p.get('problems') or []
         out['apps'].append({'root': p.get('label') or p.get('root'), 'stats': p.get('stats', {})})
     return out
 
@@ -2179,7 +2179,7 @@ def react_for_repo(repo, args, have_routes, log=True):
     if not explicit and (diffing or not has_tsx(repo)):
         return None
     if explicit and diffing and log:
-        print('  note: React mode reads the working tree as it is; --changed/--branch/--from apply to routes only.',
+        print('  note: React mode reads the working tree as it is; against the base it only checks which states now clear.',
               file=sys.stderr)
     tag = os.path.basename(repo.rstrip('/'))
     parts = []
@@ -2197,8 +2197,68 @@ def react_for_repo(repo, args, have_routes, log=True):
                 a['group'] = os.path.basename(sub) + ('/' + a['group'] if a['group'] else '')
         for a in data['actions']:
             a['group'] = a['group'] or tag
+        if explicit and diffing:
+            try:
+                mark_new_clears(data, react_base(repo, root, args, f'{tag}{i}' if i else tag))
+            except ReactError as e:
+                print(f'  skipped comparing React state with the base: {e}', file=sys.stderr)
         parts.append(data)
     return parts
+
+
+def react_base(repo, root, args, tag):
+    """The same React app as it was at the base of the comparison (read from a `git archive`)."""
+    if args.commit_from:
+        base = git(repo, 'rev-parse', '--verify', '--quiet', args.commit_from)
+    else:
+        base = diff_base(repo, prefer_remote(repo, args.base), args.branch)
+    if not base:
+        raise ReactError('no base commit to compare with')
+    with tempfile.TemporaryDirectory() as tmp:
+        arc = subprocess.run(['git', '-C', repo, 'archive', base], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        if arc.returncode != 0:
+            raise ReactError(f'git archive {base[:10]} failed')
+        subprocess.run(['tar', '-x', '-C', tmp], input=arc.stdout, check=True)
+        sub = os.path.join(tmp, os.path.relpath(root, repo))
+        if not os.path.isdir(sub):
+            return None
+        if os.path.isdir(os.path.join(root, 'node_modules')) and not os.environ.get('FLOWSEGUL_TS'):
+            os.symlink(os.path.join(root, 'node_modules'), os.path.join(sub, 'node_modules'))
+        return run_react(sub, tag + '~base')
+
+
+def mark_new_clears(head, base):
+    """A state that the base kept and the head throws away: its component (or one above it) now
+    sits under a condition, after an early return, or behind a key it didn't have before."""
+    if not base:
+        return
+    bunits = {}
+    for u in base['units']:
+        if 'mount' in u:
+            bunits.setdefault(u['name'], []).append(u)
+    bstates = {}
+    for s in base['states']:
+        bstates.setdefault(s['u'], set()).add(s['name'] or s['setter'])
+    problems = head.setdefault('problems', [])
+    for u in head['units']:
+        cands = bunits.get(u['name'])
+        if 'mount' not in u or not cands:
+            continue
+        b = next((x for x in cands if x['file'] == u['file']), cands[0])
+        had = {k for k, _ in b['mount']}
+        new = [(k, where) for k, where in u['mount'] if k not in had]
+        if not new:
+            continue
+        kept = bstates.get(b['id'], set())
+        for s in head['states']:
+            name = s['name'] or s['setter']
+            if s['u'] != u['id'] or name not in kept:
+                continue
+            row = head['rows'][s['row']]
+            fl = row.setdefault('f', [])
+            if not any(f[0] == 'clr' for f in fl):
+                fl.append(['clr', f'{name} clears', new[0][1]])
+                problems.append(['clr', s['row']])
 
 
 def generate(args, repos, log=True):
