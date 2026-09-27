@@ -1703,10 +1703,21 @@ def build_endpoint(entry_qual, idx, meta, depth, tag, changed_q=frozenset(), cha
             n['recv'] = recv[q]
         if facts[q]['reads']:
             n['reads'] = facts[q]['reads']
-        rs = [{'t': r['t'], 'text': r['text'],
-               'esc': not r['status'] and app_status(r['t'], idx) is None
-                      and not caught_by(r['t'], r['_catch'], idx)}
-              for r in idx.raise_cache.get(q, [])]
+        if facts[q]['aliases']:   # `items = payload.items`, `for i in items`: for click-to-trace
+            n['alias'] = {k: list(v) for k, v in facts[q]['aliases'].items()}
+        rs = []
+        for r in idx.raise_cache.get(q, []):
+            here = caught_by(r['t'], r['_catch'], idx)
+            a = app_status(r['t'], idx)
+            x = {'t': r['t'], 'text': r['text'],
+                 'esc': not r['status'] and a is None and not here}
+            # what the client gets if nothing on the way up handles it: the raise's own HTTP status,
+            # an app-level handler's, else 500. `here` = an `except` in this same function stops it.
+            if here:
+                x['here'] = True
+            elif r['status'] or a:
+                x['st'] = str(r['status'] or a)
+            rs.append(x)
         if rs:
             n['raises'] = rs
         ub = (used_by or {}).get(q, [])
