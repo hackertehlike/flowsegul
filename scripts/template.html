@@ -482,8 +482,8 @@ button.num{cursor:pointer}
 .go{color:inherit;text-decoration:none;cursor:pointer;border-radius:3px}
 .go.tag{color:var(--def)}
 .go:hover{text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:2px}
-.rflash{outline:2px solid var(--accent);outline-offset:3px;animation:rflash 1.2s ease-out forwards}
-@keyframes rflash{0%,45%{outline-color:var(--accent)}100%{outline-color:transparent}}
+.rflash{outline:2px solid var(--lit);outline-offset:3px;animation:rflash 1.2s ease-out forwards}
+@keyframes rflash{0%,45%{outline-color:var(--lit)}100%{outline-color:transparent}}
 .stepbar{top:14px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:4px;padding:4px;border-color:color-mix(in srgb,var(--accent) 45%,var(--line));border-radius:20px;max-width:calc(100% - 260px)}
 .stepbar[hidden]{display:none}
 .stepbar.idle{opacity:.5}
@@ -583,6 +583,10 @@ pre.code{border-color:transparent;border-radius:16px;background:var(--panel2)}
 .node.svc{border-color:transparent;box-shadow:0 0 0 2px var(--lit-fill),var(--shadow)}
 .num{background:var(--lit-fill);color:var(--lit-on)} .num.o{background:var(--panel);color:var(--lit);box-shadow:inset 0 0 0 1.5px var(--lit)}
 .rrow.lit{border-left-color:var(--lit);background:color-mix(in srgb,var(--lit-fill) 22%,var(--panel2))}
+.rrow.lit.unc{background:color-mix(in srgb,var(--lit-fill) 8%,var(--panel2))}
+/* the step the arrows are on: solid fill + ring, so it stands apart from the rest of the path */
+.rrow.cur,.rrow.lit.cur{background:color-mix(in srgb,var(--lit-fill) 70%,var(--panel2));border-left-color:var(--lit);box-shadow:inset 0 0 0 2px var(--lit);color:var(--ink)}
+.rrow.cur .num.o{background:var(--lit-fill);color:var(--lit-on);box-shadow:none}
 .tk.on{box-shadow:0 0 0 1px color-mix(in srgb,var(--lit) 55%,transparent)}
 .stepbar{border-color:transparent}.stepbar button{background:var(--lit-fill);color:var(--lit-on)} #sbcount{color:var(--ink)}
 .chgnav{border-color:transparent}
