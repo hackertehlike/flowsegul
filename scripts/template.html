@@ -334,6 +334,16 @@ pre.code.diff .dfile{color:var(--muted)}
 .chgbadge{display:inline-block;margin-left:6px;font:700 8.5px/1 var(--sans);letter-spacing:.07em;padding:3px 5px;border-radius:4px;background:var(--chg);color:#fff;vertical-align:1px}
 .chgbadge.new{background:var(--ok)}
 .chgbadge.del{background:var(--del)}
+/* per-function "Viewed" tick (GitHub-style): a viewed box folds shut and drops its changed glow */
+.vwbtn{flex:none;display:inline-flex;align-items:center;gap:5px;font:600 10.5px/1 var(--sans);color:var(--muted);background:none;border:1px solid var(--line);border-radius:6px;padding:4px 7px 4px 5px;margin-top:-1px;cursor:pointer;transition:all .12s}
+.vwbtn i{width:11px;height:11px;border-radius:3px;border:1.5px solid var(--line2);display:grid;place-items:center;font:700 8px/1 var(--sans);font-style:normal;color:transparent}
+.vwbtn:hover{border-color:var(--ok);color:var(--ink)}
+.node.viewed .vwbtn{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 45%,var(--line))}
+.node.viewed .vwbtn i{background:var(--ok);border-color:var(--ok);color:#fff}
+.node.changed.viewed{border-color:var(--line);box-shadow:var(--shadow)}
+.node.viewed .chgbadge{background:var(--faint)}
+.node.viewed .ntitle{color:var(--muted)}
+.chgdot.allviewed{background:none;box-shadow:inset 0 0 0 1.5px var(--faint)}
 .seg{display:inline-flex;padding:2px;gap:2px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;align-self:flex-start;margin-top:3px}
 .segb{font:600 11px/1 var(--sans);border:0;background:none;color:var(--muted);border-radius:6px;padding:5px 10px;cursor:pointer}
 .segb:hover{color:var(--ink)}
@@ -568,6 +578,7 @@ button.num{cursor:pointer}
   <div class="kr"><span>Zoom</span><span><kbd>+</kbd><kbd>−</kbd><kbd>0</kbd></span></div>
   <div class="kr"><span>Show / hide all code</span><span><kbd>C</kbd></span></div>
   <div class="kr"><span>Next changed function</span><span><kbd>N</kbd><kbd>⇧N</kbd></span></div>
+  <div class="kr"><span>Mark changed function viewed</span><span><kbd>V</kbd></span></div>
   <div class="kr"><span>Next / previous step of an action</span><span><kbd>N</kbd><kbd>⇧N</kbd></span></div>
   <div class="kr"><span>Back to where you jumped from</span><span><kbd>Alt</kbd><kbd>←</kbd></span></div>
   <div class="kr"><span>Review mode</span><span><kbd>R</kbd></span></div>
@@ -682,6 +693,16 @@ function saveReviewed(s){try{localStorage.setItem(REVKEY,JSON.stringify([...s]))
 const reviewed=loadReviewed();
 // a review mark belongs to the code it was given for: new commits to that route clear it
 const revKey=ep=>ep.id+(ep.sig?'@'+ep.sig:'');
+// "Viewed" on a changed function: one mark per function (shared by every route that calls it),
+// tied to that function's diff, so a new edit to it brings it back
+const VWKEY='flowsegul_viewed';
+const viewed=(()=>{try{return new Set(JSON.parse(localStorage.getItem(VWKEY)||'[]'));}catch(e){return new Set();}})();
+const vwKey=n=>(n.fnKey||n.title)+'@'+(n.vsig||'');
+const isViewed=n=>!!(n&&n.changed&&viewed.has(vwKey(n)));
+function setViewed(n,on){on?viewed.add(vwKey(n)):viewed.delete(vwKey(n));try{localStorage.setItem(VWKEY,JSON.stringify([...viewed]));}catch(e){}
+ const card=nodes[n.id]&&nodes[n.id].el;
+ if(card){card.classList.toggle('viewed',on);card.classList.toggle('shut',on);relayout();}
+ updateViewedCounts();}
 
 // "Class.method" → dim class, bold method, and let long names break after the dot rather than mid-word
 function titleHtml(t){const i=(t||'').lastIndexOf('.');return i>0?'<span class="cls">'+esc(t.slice(0,i+1))+'</span><wbr>'+esc(t.slice(i+1)):esc(t||'');}
@@ -724,12 +745,14 @@ function build(ep){
    const callMarks={};
    (n.steps||[]).forEach(s=>{if(s.target&&nameById[s.target])
      callMarks[nameById[s.target]]={color:(s.var&&s.var!=='return')?varColor[s.var]:'var(--accent)',target:s.target};});
-   const card=el('div','node enter '+n.layer+(n.entry?' svc':'')+(n.changed?' changed':'')+(n.deleted?' deleted':''));card.dataset.id=n.id;
+   const vw=isViewed(n);
+   const card=el('div','node enter '+n.layer+(n.entry?' svc':'')+(n.changed?' changed':'')+(n.deleted?' deleted':'')+(vw?' viewed shut':''));card.dataset.id=n.id;
    card.style.animationDelay=Math.min(idx*35,300)+'ms';
    const head=el('div','nhead');
    const badge=n.changed?'<span class="chgbadge'+(n.deleted?' del':n.isnew?' new':'')+'">'+(n.deleted?'DELETED':n.isnew?'NEW':'CHANGED')+'</span>':'';
-   head.innerHTML='<span class="lay '+esc(n.layer)+'">'+esc(n.layer)+'</span><span class="ntitle">'+titleHtml(n.title)+badge+(n.usedBy?'<span class="ub" data-tip="'+esc(n.usedBy.join('\n'))+'">'+n.usedBy.length+' routes</span>':'')+'<div class="nsub">'+esc(n.sub||'')+'</div></span><button class="ncaret" title="collapse">'+ICON_CARET+'</button>';
+   head.innerHTML='<span class="lay '+esc(n.layer)+'">'+esc(n.layer)+'</span><span class="ntitle">'+titleHtml(n.title)+badge+(n.usedBy?'<span class="ub" data-tip="'+esc(n.usedBy.join('\n'))+'">'+n.usedBy.length+' routes</span>':'')+'<div class="nsub">'+esc(n.sub||'')+'</div></span>'+(n.changed?'<button class="vwbtn" data-tip="Folds this function away until it changes again  (V)"><i>✓</i>Viewed</button>':'')+'<button class="ncaret" title="collapse">'+ICON_CARET+'</button>';
    card.appendChild(head);
+   if(n.changed)head.querySelector('.vwbtn').onclick=(e)=>{e.stopPropagation();setViewed(n,!card.classList.contains('viewed'));};
    const body=el('div','nbody');
    // one row per statement; extra calls in the same statement have no expr — they still get an
    // arrow (edge), but we don't render a blank duplicate row for them.
@@ -1109,11 +1132,16 @@ function setupChgNav(){
  if(!chgNavOn||!chgList.length){nav.hidden=true;return;}
  nav.hidden=false; updateChgLabel();
 }
-function updateChgLabel(){$('#chglabel').textContent=chgList.length?(chgIdx>=0?(chgIdx+1)+' of '+chgList.length+' changed':chgList.length+' changed here'):'no changes here';}
+function updateChgLabel(){
+ const nv=chgList.filter(id=>isViewed(nodes[id].def)).length;
+ $('#chglabel').textContent=chgList.length?(chgIdx>=0?(chgIdx+1)+' of '+chgList.length+' changed':chgList.length+' changed here')+(nv?' · '+nv+' viewed':''):'no changes here';}
 function gotoChg(delta){
  if(!chgNavOn){chgNavOn=true;$('#chgtoggle').classList.add('on');setupChgNav();}
  if(!chgList.length)return;
- chgIdx=chgIdx<0?(delta>0?0:chgList.length-1):(chgIdx+delta+chgList.length)%chgList.length;
+ const open=i=>!isViewed(nodes[chgList[i]].def), anyOpen=chgList.some((_,i)=>open(i));
+ let i=chgIdx<0?(delta>0?0:chgList.length-1):(chgIdx+delta+chgList.length)%chgList.length;
+ for(let t=0;anyOpen&&!open(i)&&t<chgList.length;t++)i=(i+delta+chgList.length)%chgList.length;
+ chgIdx=i;
  updateChgLabel(); focusNode(nodes[chgList[chgIdx]]);
 }
 $('#chgnext').onclick=()=>gotoChg(1);
@@ -1172,7 +1200,7 @@ $('#drawer').addEventListener('click',e=>{
 let drag=null, edgeRaf=0;
 function scheduleEdges(){if(edgeRaf)return;edgeRaf=requestAnimationFrame(()=>{edgeRaf=0;drawEdges();});}
 function makeDraggable(card,nd,handle){
- handle.addEventListener('pointerdown',e=>{if(e.button!==0||e.target.closest('.ncaret'))return;drag={nd,sx:e.clientX,sy:e.clientY,ox:nd.x,oy:nd.y};dragMoved=false;card.classList.add('dragging');e.stopPropagation();e.preventDefault();});
+ handle.addEventListener('pointerdown',e=>{if(e.button!==0||e.target.closest('.ncaret,.vwbtn'))return;drag={nd,sx:e.clientX,sy:e.clientY,ox:nd.x,oy:nd.y};dragMoved=false;card.classList.add('dragging');e.stopPropagation();e.preventDefault();});
  handle.querySelector('.ncaret').addEventListener('click',e=>{e.stopPropagation();card.classList.toggle('shut');relayout();});
 }
 let pan=false,px,py,vx,vy;
@@ -1672,7 +1700,7 @@ graph.endpoints.forEach((ep,i)=>{
  const nchg=(ep.nodes||[]).filter(n=>n.changed).length; anyChg+=nchg; (ep.nodes||[]).forEach(n=>{if(n.changed)chgFns.add(n.fnKey||n.title);});
  const d=el('div','ep'+(nchg?' haschg':'')+(reviewed.has(revKey(ep))?' reviewed':''));
  d.tabIndex=0;
- d.innerHTML='<span class="m '+esc(ep.method.toUpperCase())+'">'+esc(ep.method)+'</span><span class="eptext"><div class="t">'+esc(ep.title)+'</div><div class="p">'+esc(ep.path)+'</div></span>'+(nchg?'<span class="chgdot" title="'+nchg+' changed"></span>':'')+'<button class="revchk" title="mark reviewed (X)">✓</button>';
+ d.innerHTML='<span class="m '+esc(ep.method.toUpperCase())+'">'+esc(ep.method)+'</span><span class="eptext"><div class="t">'+esc(ep.title)+'</div><div class="p">'+esc(ep.path)+'</div></span>'+(nchg?'<span class="chgdot"></span>':'')+'<button class="revchk" title="mark reviewed (X)">✓</button>';
  d.onclick=()=>selectEp(ep,d);
  d.onkeydown=e=>{if(e.key==='Enter'){selectEp(ep,d);}};
  d.querySelector('.revchk').onclick=(e)=>{e.stopPropagation();markReviewed(ep,d);};
@@ -1696,7 +1724,18 @@ if(RX&&RX.actions.length){
  if(!graph.endpoints.length)$('#q').placeholder='Filter actions';
 }
 function markReviewed(ep,d){const on=d.classList.toggle('reviewed');on?reviewed.add(revKey(ep)):reviewed.delete(revKey(ep));saveReviewed(reviewed);updateRevProgress();}
-if(anyChg){$('#chgtoggle').hidden=false;$('#chgcount').textContent=chgFns.size;}
+// viewed progress: toolbar count reads "3/7 viewed" once anything is viewed; a route whose changed
+// functions are all viewed turns its dot into a hollow ring
+function updateViewedCounts(){
+ const all=new Map();
+ epEls.forEach(({ep,d})=>{const ch=(ep.nodes||[]).filter(n=>n.changed);ch.forEach(n=>all.set(vwKey(n),n));
+   const dot=d.querySelector('.chgdot');if(!dot)return;const nv=ch.filter(isViewed).length;
+   dot.classList.toggle('allviewed',nv===ch.length);dot.title=ch.length+' changed'+(nv?', '+(nv===ch.length?'all':nv)+' viewed':'');});
+ const nv=[...all.values()].filter(isViewed).length;
+ $('#chgcount').textContent=nv?nv+'/'+all.size+' viewed':all.size;
+ if(chgNavOn&&chgList.length)updateChgLabel();
+}
+if(anyChg){$('#chgtoggle').hidden=false;updateViewedCounts();}
 
 // filter: matches title, path, method or group; groups hide when empty
 $('#q').addEventListener('input',()=>{
@@ -1803,6 +1842,11 @@ window.addEventListener('pageshow',()=>{$('#loading').hidden=true;});
  window.addEventListener('keydown',e=>{if(e.key==='Escape'&&tip.classList.contains('on')){tip.classList.remove('on');e.stopImmediatePropagation();}},true);
 }
 
+// V marks the changed box under the pointer, else the one the Changes stepper is on
+let hoverNode=null;
+world.addEventListener('mouseover',e=>{const c=e.target.closest('.node');hoverNode=c?c.dataset.id:null;});
+world.addEventListener('mouseleave',()=>{hoverNode=null;});
+function vwTarget(){const id=(hoverNode&&nodes[hoverNode]&&nodes[hoverNode].def.changed)?hoverNode:(chgIdx>=0?chgList[chgIdx]:null);return id&&nodes[id]?nodes[id].def:null;}
 // ── keyboard ──
 window.addEventListener('keydown',e=>{
  if(e.altKey&&e.key==='ArrowLeft'&&!(e.target.closest&&e.target.closest('input,textarea,[contenteditable]'))){
@@ -1829,6 +1873,7 @@ window.addEventListener('keydown',e=>{
  else if(k==='k'||k==='ArrowUp'&&!e.target.closest('pre')){e.preventDefault();stepEp(-1);}
  else if(k==='r'||k==='R'){toggleReview();}
  else if(k==='x'||k==='X'){const c=epEls.find(x=>x.ep===curEp);if(c){if(!document.body.classList.contains('review'))toggleReview();markReviewed(c.ep,c.d);}}
+ else if(k==='v'||k==='V'){const t=vwTarget();if(t){const on=!isViewed(t);setViewed(t,on);if(on&&chgNavOn)gotoChg(1);}}
  else if(k==='m'||k==='M'){toggleMap();}
  else if(k==='g'||k==='G'){e.preventDefault();openRange();}
  else if(k==='w'||k==='W'){setScrollMode(scrollMode==='zoom'?'pan':'zoom');}
