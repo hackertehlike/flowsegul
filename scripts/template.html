@@ -238,7 +238,8 @@ body.review .revbar{display:block}
 .sqok{text-decoration-color:var(--ok)}
 .step.raise{background:transparent;border-left-color:var(--del)}
 .step.raise.handled{border-left-color:var(--line2)}
-.ub{flex:none;font:600 10px/1 var(--mono);color:var(--muted);background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:3px 5px;margin-left:6px;vertical-align:1px;cursor:default;white-space:nowrap}
+.ub:hover{border-color:var(--accent);color:var(--accent)}
+.ub{flex:none;font:600 10px/1 var(--mono);color:var(--muted);background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:3px 5px;margin-left:6px;vertical-align:1px;cursor:pointer;white-space:nowrap}
 .stchips{display:flex;gap:4px;flex:none}
 .stc{position:relative;font:700 11px/1 var(--mono);border-radius:6px;padding:4px 6px;border:1px solid var(--line);color:var(--ink2);background:var(--panel2);cursor:default}
 .stc.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 40%,var(--line))}
@@ -1968,19 +1969,17 @@ function failUp(x,r,below,asked,S,seen){
    else failUp(c.id,r,below,asked,S,seen);});
  if(NB(x)&&NB(x).entry&&x===asked&&!callersOf(x).length){const st=routeStatus(r);S.push({nid:x,t:'head',err:bad,chip:st,http:!bad,code:st,box:curEp.method.toUpperCase()+' '+curEp.path});}
 }
-// which routes reach it: the call chain from this route down, plus the other routes that call it too
-function traceRoutes(nid,S){
- const chain=[];let cur=nid;const seen=new Set();
- while(NB(cur)&&!NB(cur).entry&&!seen.has(cur)){seen.add(cur);const cs=callersOf(cur);if(!cs.length)break;chain.unshift({c:cs[0].c,s:cs[0].s,to:cur});cur=cs[0].c.id;}
- S.push({nid:cur,t:'head',code:curEp.method.toUpperCase()+' '+curEp.path});
- chain.forEach(({c,s,to})=>S.push({nid:c.id,t:'row',rv:s.var,g:[gIndex(c.id,to,s.var),'f'],code:callShort(s,to)}));
- const n=NB(nid);   // the last call in the chain already names this box, so it isn't listed again
- graph.endpoints.forEach(e=>{if(e!==curEp&&(e.nodes||[]).some(x=>x.fnKey===n.fnKey))S.extra.push(e);});
-}
+// which other routes reach it: this route's own path is already the map, so only the others, to jump to
+function otherRoutes(nid){const n=NB(nid),here=curEp.method.toUpperCase()+' '+curEp.path,out=[];
+ const byKey=k=>graph.endpoints.find(e=>e.method&&e.method.toUpperCase()+' '+e.path===k);
+ (n.usedBy||[]).forEach(k=>{if(k===here)return;const e=byKey(k);if(e&&!out.includes(e))out.push(e);});
+ graph.endpoints.forEach(e=>{if(e!==curEp&&!out.includes(e)&&(e.nodes||[]).some(x=>x.fnKey===n.fnKey))out.push(e);});
+ return out;}
+function traceRoutes(nid,S){otherRoutes(nid).forEach(e=>S.extra.push(e));}
 function questionsFor(nid){const n=NB(nid),qs=[];
  boxParams(n).forEach(p=>qs.push({k:'from',p,html:'Where does <code>'+esc(p)+'</code> come from?'}));
  if(raisesBelow(nid).length)qs.push({k:'fail',html:'Why can this fail?'});
- if(!n.entry)qs.push({k:'routes',html:'Which routes reach this?'});
+ if(!n.entry&&otherRoutes(nid).length)qs.push({k:'routes',html:'Which other routes reach this?'});
  return qs;}
 
 // the question menu
@@ -2007,6 +2006,7 @@ askPop.addEventListener('keydown',e=>{
  else if(e.key!=='Enter'&&e.key!==' ')return;
  e.stopPropagation();
 });
+world.addEventListener('click',e=>{const u=e.target.closest('.ub');if(u&&!RMODE){e.stopPropagation();const c=u.closest('.node');startAsk(c.dataset.id,{k:'routes'});}},true);
 world.addEventListener('click',e=>{const b=e.target.closest('.askbtn');if(b){e.stopPropagation();openAsk(b.closest('.node'));}},true);
 document.addEventListener('pointerdown',e=>{if(!askPop.hidden&&!e.target.closest('#askpop,.askbtn'))closeAsk(false);});
 
@@ -2034,12 +2034,12 @@ function startAsk(nid,q){
  const nm=esc(q.p+(q.path||''));
  const head={from:'<span class="hk">←</span> '+nm+' <span class="hk">'+esc(t)+'</span>',
    value:nm+' <span class="hk">'+esc(t)+'</span>',
-   fail:esc(t)+'() <span class="tag" style="color:var(--del)">raise</span>',routes:'<span class="hk">→</span> '+esc(t)+'()'}[q.k];
+   fail:esc(t)+'() <span class="tag" style="color:var(--del)">raise</span>',routes:esc(t)+'() <span class="hk">also in</span>'}[q.k];
  ASK={nid,q,steps:S.list,extra:S.extra,more:S.more,head,here,opened:[]};
  // everything the answer points at has to be visible: open collapsed boxes, and code for code lines
  S.list.forEach(st=>{const nd=nodes[st.nid];if(!nd)return;nd.el.classList.remove('shut');
    if(st.t==='code'){const pre=nd.el.querySelector('pre.code');if(pre&&pre.hidden){setNodeCode(nd.el,true);ASK.opened.push(nd.el);}}});
- renderAskList();relayout();requestAnimationFrame(()=>requestAnimationFrame(fitAnswer));
+ renderAskList();relayout();if(S.list.length)requestAnimationFrame(()=>requestAnimationFrame(fitAnswer));
  const f=$('#asklist .ast');if(f)f.focus({preventScroll:true});
 }
 // bring the answer into view right of the step list: never zooms in, never below 50%
@@ -2067,9 +2067,9 @@ function renderAskList(){
  const items=ASK.steps.map((st,i)=>{const inb=st.box&&st.box!==prev?'<span class="in">'+esc(st.box)+'</span>':'';prev=st.box;
    const frag=st.chip?'<span class="schip'+(st.http?' http':'')+'">'+esc(st.code)+'</span>':'<code>'+esc(st.code)+'</code>';
    return '<li><button class="ast" data-i="'+i+'"><span class="askn'+(st.err?' err':st.ok?' ok':'')+(i===ASK.here?' here':'')+'">'+(i+1)+'</span><span class="tx">'+frag+(st.tag?'<span class="tag'+(st.ok?' ok':'')+'">'+esc(st.tag)+'</span>':'')+inb+'</span></button></li>';}).join('')
-  +ASK.extra.map(e=>'<li><button class="ast" data-ep="'+esc(e.id)+'"><span class="askn more">+</span><span class="tx"><code>'+esc(e.method.toUpperCase()+' '+e.path)+'</code></span></button></li>').join('')
+  +ASK.extra.map(e=>'<li><button class="ast" data-ep="'+esc(e.id)+'"><span class="m '+esc(e.method.toUpperCase())+'">'+esc(e.method)+'</span><span class="tx"><code style="overflow-wrap:normal">'+esc(e.path).replace(/\//g,'/<wbr>')+'</code></span></button></li>').join('')
   +(ASK.more?'<li><span class="ast" style="cursor:default"><span class="askn more">+'+ASK.more+'</span></span></li>':'')
-  +(!ASK.steps.length?'<li><span class="ast" style="cursor:default;color:var(--muted)">not traced</span></li>':'');
+  +(!ASK.steps.length&&!ASK.extra.length?'<li><span class="ast" style="cursor:default;color:var(--muted)">not traced</span></li>':'');
  box.innerHTML='<div class="al-h"><span>'+ASK.head+'</span><button class="al-x" aria-label="Clear" data-tip="Clear  (Esc)">✕</button></div><ol>'+items+'</ol>';
  box.style.top=(stage.classList.contains('hasfx')?$('#fxstrip').offsetHeight+24:14)+'px';
  box.hidden=false;
@@ -2115,7 +2115,7 @@ function paintAsk(){
  svg.querySelectorAll('.ask-on').forEach(e=>e.classList.remove('ask-on'));
  document.querySelectorAll('#epinfo .askhot').forEach(e=>e.classList.remove('askhot'));
  marks.innerHTML='';
- const on=!!ASK&&!RMODE;world.classList.toggle('asking',on);svg.classList.toggle('asking',on);
+ const on=!!ASK&&!RMODE&&ASK.steps.length>0;world.classList.toggle('asking',on);svg.classList.toggle('asking',on);
  if(!on)return;
  const onN=new Set([ASK.nid]),G=groupEdges(),stack=new Map();let html='';
  ASK.steps.forEach((st,i)=>{
