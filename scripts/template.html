@@ -1366,7 +1366,8 @@ function rShownSet(){
    A.steps.forEach(st=>(st.rr||[]).forEach(([u,row])=>{if(s.has(u)&&row)need.add(row);}));}
  if(rv.pin){const st=RS[rv.pin];[st.row].concat(st.hops,st.sites).forEach(addRow);st.sigs.forEach(u=>s.add(u));}
  rv.extra.forEach(u=>s.add(u));
- [...s].forEach(u=>{
+ // an action's boxes line up in step order (rLayout), so the tree between them isn't needed
+ if(!A)[...s].forEach(u=>{
    if(!RU[u]||RU[u].kind!=='component')return;
    const prev=new Map([[u,null]]),q=[[u,0]];let hit=null;
    for(let i=0;i<q.length&&!hit;i++){const [x,d]=q[i];if(d>=6)continue;
@@ -1421,6 +1422,7 @@ function rBuild(force){
 // columns by render-tree depth, parent left of child; within a column, under the row that renders it
 function rLayout(){
  const ids=Object.keys(nodes);if(!ids.length){drawMinimap();return;}
+ if(rv.base)return rStepLayout(ids);
  const comps=ids.filter(id=>RU[id].kind!=='fn');
  const depths=[...new Set(comps.map(id=>RU[id].depth||0))].sort((a,b)=>a-b);
  const colOf=id=>RU[id].kind==='fn'?depths.length:depths.indexOf(RU[id].depth||0);
@@ -1440,6 +1442,28 @@ function rLayout(){
    col.forEach(id=>{const nd=nodes[id];const want=ys.get(id);if(isFinite(want))y=Math.max(y,want-10);nd.x=x;nd.y=y;place(nd);y+=nd.el.offsetHeight+26;w=Math.max(w,nd.el.offsetWidth);});
    x+=w+56;
  }
+ drawMinimap();
+}
+
+// an action: left to right in the order its steps first reach each box; boxes first reached on the
+// same step (the ones that rerun) stack in one column; each box's first lit line sits on one line
+function rStepLayout(ids){
+ const first=new Map(),firstRow=new Map();
+ rv.base.steps.forEach((st,i)=>{
+   st.r.forEach(r=>{const u=RR[r]&&RR[r].u;if(u&&!first.has(u)){first.set(u,i);firstRow.set(u,r);}});
+   (st.rr||[]).forEach(([u,row])=>{if(!first.has(u)){first.set(u,i);if(row)firstRow.set(u,row);}});
+ });
+ const keys=[...new Set(ids.map(id=>first.has(id)?first.get(id):1e9))].sort((a,b)=>a-b);
+ const LINE=150;let x=24;
+ keys.forEach(k=>{
+   const col=ids.filter(id=>(first.has(id)?first.get(id):1e9)===k).sort((a,b)=>a<b?-1:1);
+   let y=24,w=340;
+   col.forEach((id,j)=>{const nd=nodes[id];const e=firstRow.has(id)&&rEl(firstRow.get(id));
+     const off=e?e.offsetTop:24;
+     if(j===0)y=Math.max(24,LINE-off);
+     nd.x=x;nd.y=y;place(nd);y+=nd.el.offsetHeight+26;w=Math.max(w,nd.el.offsetWidth);});
+   x+=w+56;
+ });
  drawMinimap();
 }
 
