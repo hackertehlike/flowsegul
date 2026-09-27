@@ -9,6 +9,7 @@ A shape is the same on both sides (flowsegul_react.mjs writes the TypeScript one
 """
 import ast
 import difflib
+import re
 
 STR = {'str', 'bytes', 'EmailStr', 'NameEmail', 'UUID', 'UUID1', 'UUID3', 'UUID4', 'UUID5', 'datetime',
        'date', 'time', 'timedelta', 'AnyUrl', 'AnyHttpUrl', 'HttpUrl', 'FileUrl', 'PostgresDsn', 'SecretStr',
@@ -242,54 +243,55 @@ def _pick(parts, k):
 
 
 class Check:
-    """What one side of a request has against what the other side declares, as columns to draw
-    one above the other: each is [frontend text, Python text, tone], '' where a side has nothing.
-    tone 'bad' is red, 'dim' grey (maybe), 'ok' a matching key shown for context.
-    `got` is the value that arrives, `want` what the receiving side declares."""
+    """Where one side of a request doesn't fit what the other side declares. Each issue is
+    (tone, frontend word, Python field, Python model it belongs to, note): tone 'bad' is red,
+    'dim' grey (maybe); the frontend word is what to underline in the call's code ('' when the
+    frontend has nothing there); the note is a short code comment to put on the Python field's
+    line. `got` is the value that arrives, `want` what the receiving side declares."""
 
-    def __init__(self, lax):
+    def __init__(self, lax, sending):
         self.lax = lax            # TypeScript without strict null checks: every type may be null
-        self.cols = []
+        self.sending = sending    # the frontend sends a body, rather than reading a response
+        self.issues = []
+        self.verb = 'sends' if sending else 'reads'
 
-    def add(self, tone, ts, py):
-        if [ts, py] not in [c[:2] for c in self.cols]:
-            self.cols.append([ts, py, tone])
+    def add(self, tone, word, key, model, note):
+        it = (tone, word, key, model.get('n') if model else '', note)
+        if it not in [x[:5] for x in self.issues]:
+            self.issues.append(it + (model,))
 
-    def value(self, got, want, path, gtext, wtext, sending, depth=0):
-        """`sending`: the frontend sends `got` to Python (a body); otherwise Python sends it back."""
+    def value(self, got, want, owner, key, gtext, wtext, depth=0):
         if depth > 5 or got == 'any' or want == 'any':
             return
         gp, wp = _kinds(got), _kinds(want)
         gk, wk = _core(gp), _core(wp)
         if gk == 'any' or wk == 'any':
             return
-        pre = path + ': ' if path else ''
-        ts_, py_ = (gtext, wtext) if sending else (wtext, gtext)
-        cell = lambda: (pre + (ts_ or '?'), pre + (py_ or '?'))
+        ts_ = gtext if self.sending else wtext
         if gk and wk and not (gk & wk):
             # the body's "3" still becomes 3: Pydantic reads numbers and booleans from strings
-            soft = sending and gk == {'str'} and wk <= {'num', 'bool'}
-            self.add('dim' if soft else 'bad', *cell())
+            soft = self.sending and gk == {'str'} and wk <= {'num', 'bool'}
+            self.add('dim' if soft else 'bad', key, key, owner, 'frontend %s %s' % (self.verb, ts_ or '?'))
             return
         # null where the other side doesn't allow it
         if 'null' in gp and 'null' not in wp and not self.lax:
-            self.add('bad' if not gk else 'dim', *cell())
+            note = 'frontend may send null' if self.sending else 'frontend reads %s' % (ts_ or '?')
+            self.add('bad' if not gk else 'dim', key, key, owner, note)
         if len(gk) != 1 or gk != wk:
             return
         k = next(iter(gk))
         if k == 'a':
-            self.value(_pick(gp, 'a')['a'], _pick(wp, 'a')['a'], (path or '') + '[]', '', '', sending, depth + 1)
+            self.value(_pick(gp, 'a')['a'], _pick(wp, 'a')['a'], owner, key, '', '', depth + 1)
         elif k == 'o':
-            g, w = _pick(gp, 'o'), _pick(wp, 'o')
             if len([p for p in gp if isinstance(p, dict) and 'o' in p]) > 1 or len([p for p in wp if isinstance(p, dict) and 'o' in p]) > 1:
                 return             # a union of objects: can't tell which one
-            self.fields(g, w, path, sending, depth + 1)
+            self.fields(_pick(gp, 'o'), _pick(wp, 'o'), depth + 1)
 
-    def fields(self, g, w, path, sending, depth):
+    def fields(self, g, w, depth):
         if g.get('alias') or w.get('alias'):
             return
-        pre = path + '.' if path else ''
-        ts, py = (g, w) if sending else (w, g)
+        sending = self.sending
+        py = w if sending else g
         only_ts, only_py = [], []       # (key, tone): a key one side has and the other doesn't
         if sending:
             # keys the frontend sends that the model doesn't have: dropped, or a 422 if extra is forbidden
@@ -301,28 +303,25 @@ class Check:
                 if k not in g['o']:
                     only_py.append((k, 'bad'))
                 elif g['o'][k][1]:
-                    self.add('dim', pre + k + '?', pre + k)     # optional in TypeScript, required in Python
+                    self.add('dim', k, k, py, 'may not be sent')    # optional in TypeScript, required here
         elif not g.get('open'):
             # fields the frontend counts on that the response never has
             only_ts = [(k, 'bad') for k, (sh, opt, txt) in w['o'].items() if not opt and k not in g['o']]
-            spare = [k for k in g['o'] if k not in w['o']]
-            only_py = [(k, 'pair') for k in spare]      # only shown when it looks like a renamed key
-        # a key on one side and a similar one on the other is most likely a rename: one column
+            only_py = [(k, 'pair') for k in g['o'] if k not in w['o']]   # only used to spot a rename
+        # a key on one side and a similar one on the other is most likely a rename
         for k, tone in only_ts:
             m = next((x for x in only_py if _similar(k, x[0])), None)
             if m:
                 only_py.remove(m)
-                self.add(tone, pre + k, pre + m[0])
-            else:
-                self.add(tone, pre + k, '')
+            self.add(tone, k, m[0] if m else '', py, 'frontend %s %s' % (self.verb, k))
         for k, tone in only_py:
             if tone != 'pair':
-                self.add(tone, '', pre + k)
+                self.add(tone, '', k, py, 'not sent')
         for k in g['o']:
             if k in w['o']:
                 gs, _, gt = g['o'][k]
                 ws, _, wt = w['o'][k]
-                self.value(gs, ws, pre + k, gt, wt, sending, depth)
+                self.value(gs, ws, py, k, gt, wt, depth)
 
 
 def _similar(a, b):
@@ -340,43 +339,80 @@ def ts_text(sh):
     return sh.get('n') or 'object'
 
 
+def _lines(model, issues, src):
+    """The Python model's own lines, each problem field's line with its note as a comment."""
+    code = (src or {}).get(model['n']) if model else None
+    if not code:
+        head = ('class %s' % model['n']) if model else ''
+        return [[head, '']] + [['    # ' + it[4], it[0]] for it in issues]
+    lines = [[ln.rstrip(), ''] for ln in code.rstrip().split('\n') if not ln.lstrip().startswith('@')]
+    extra, keep = [], {0}
+    for tone, word, key, _, note, _m in issues:
+        at = next((i for i, (t, _) in enumerate(lines) if key and re.match(r'\s+%s\s*[:=]' % re.escape(key), t)), None)
+        if not key and not word:
+            at = 0               # about the model as a whole: on its `class` line
+        if at is None:
+            extra.append(['    # ' + note, tone])
+            continue
+        t, old = lines[at]
+        lines[at] = [t + ('  # ' if '#' not in t else ', ') + note, 'bad' if 'bad' in (tone, old) else tone]
+        keep.add(at)
+    if len(lines) > 14:          # a long model: its first line and the lines that matter
+        out, gap = [], False
+        for i, l in enumerate(lines):
+            if i in keep or i < 3:
+                out.append(l)
+                gap = False
+            elif not gap:
+                out.append(['    ...', ''])
+                gap = True
+        lines = out
+    return lines + extra
+
+
 def check_request(h, route, lax=False):
-    """Side-by-side comparisons for request `h` (from flowsegul_react.mjs) against `route`
-    (route_facts): [{'k': 'sends' | 'reads', 'ts': frontend type, 'py': Python type, 'at':
-    file:line, 'cols': [[frontend, Python, tone], …]}], only where something doesn't match."""
+    """Where request `h` (from flowsegul_react.mjs) doesn't fit `route` (route_facts):
+    [{'k': 'sends' | 'reads', 'tone', 'keys': frontend keys and 'name' its type, to underline, 'models':
+    [{'n', 'at', 'lines': [[text, tone]]}]}], only where something doesn't fit."""
     lax = lax or bool(h.get('lax'))
+    src = route.get('src')
     out = []
 
-    def side(k, got, want, ts_name, py_name, at, sending, ts_obj, py_obj):
-        c = Check(lax)
-        c.value(got, want, '', ts_name if sending else py_name, py_name if sending else ts_name, sending)
-        if not c.cols:
+    def report(k, c, ts_name):
+        if not c.issues:
             return
-        # a couple of keys both sides share, so the rows read as the same object
-        if ts_obj and py_obj:
-            shared = [x for x in ts_obj['o'] if x in py_obj['o'] and not any(col[0].split(':')[0].rstrip('?') == x for col in c.cols)]
-            for x in shared[:2]:
-                c.cols.insert(0, [x, x, 'ok'])
-        bad = [x for x in c.cols if x[2] == 'bad']
-        cols = [x for x in c.cols if x[2] == 'ok'] + bad + [x for x in c.cols if x[2] == 'dim']
-        out.append({'k': k, 'ts': ts_name, 'py': py_name, 'at': at, 'cols': cols})
+        models, order = {}, []
+        for it in c.issues:
+            key = it[3] or ''
+            if key not in models:
+                models[key] = (it[5], [])
+                order.append(key)
+            models[key][1].append(it)
+        keys = list(dict.fromkeys(it[1] for it in c.issues if it[1]))
+        name = ts_name if re.match(r'^\w+$', ts_name or '') and ts_name not in TS_WORD.values() else ''
+        out.append({'k': k, 'tone': 'bad' if any(it[0] == 'bad' for it in c.issues) else 'dim', 'keys': keys, 'name': name,
+                    'models': [{'n': models[n][0]['n'] if models[n][0] else n, 'at': (models[n][0] or {}).get('at', ''),
+                                'lines': _lines(models[n][0], models[n][1], src)} for n in order]})
 
     obj = lambda sh: sh if isinstance(sh, dict) and 'o' in sh else None
     body = route.get('body')
     if body and not body.get('form') and not h.get('bx'):
-        name = body.get('t') or 'body'
-        at = body['s'].get('at', '') if isinstance(body['s'], dict) else ''
+        c = Check(lax, True)
         if h.get('nb'):
             if body.get('req'):
-                keys = list(body['s']['o'])[:3] if obj(body['s']) else [name]
-                out.append({'k': 'sends', 'ts': '', 'py': name, 'at': at,
-                            'cols': [['', k, 'bad'] for k in keys]})
+                m = obj(body['s']) or {'n': body.get('t') or 'body'}
+                c.add('bad', '', '', m, 'the request sends no body')
         elif h.get('b'):
             b = h['b']
-            side('sends', b['s'], body['s'], b.get('t') or ts_text(b['s']), name, at, True, obj(b['s']), obj(body['s']))
+            top = obj(body['s']) or {'n': body.get('t') or ''}
+            c.value(b['s'], body['s'], top, '', b.get('t') or ts_text(b['s']), body.get('t') or '')
+        report('sends', c, (h.get('b') or {}).get('t') or '')
     resp = route.get('resp')
     r = h.get('r')
     if resp and r:
-        at = resp['s'].get('at', '') if isinstance(resp['s'], dict) else ''
-        side('reads', resp['s'], r['s'], r.get('t') or ts_text(r['s']), resp.get('t') or '', at, False, obj(r['s']), obj(resp['s']))
+        c = Check(lax, False)
+        top = obj(resp['s']) or {'n': resp.get('t') or ''}
+        ts_name = r.get('t') or ts_text(r['s'])
+        c.value(resp['s'], r['s'], top, '', resp.get('t') or '', ts_name)
+        report('reads', c, ts_name)
     return out

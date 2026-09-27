@@ -98,14 +98,11 @@ the call, or says `no caller`.
 Red marks say where a request won't work as written: `no route`, `GET ≠ POST`, `goes to
 /orders/{order_id}` (a route declared earlier in the same file catches it), `no param n` (a query
 key the route doesn't read, which FastAPI silently ignores) and `needs item_count` (a required
-query key it doesn't send). Under the request line, the body it sends and the fields it reads back sit
-above what the route's Pydantic model has, key under key:
-
-    sends     sku   qty          reads     id: string   items[].quantity
-    OrderIn   sku   quantity     OrderOut  id: int      items[].qty
-
-Red is a key or type that differs (an empty dashed box: that side has none); grey is one that may,
-like a `None` the TypeScript type doesn't allow. The type read back comes from `api<Order>(…)`,
+query key it doesn't send). A request whose body or answer doesn't fit the route's Pydantic models gets a red squiggle under the
+key or type in its code (`qty` in `JSON.stringify({ sku, qty })`, `Order` in `api<Order>(…)`), or under
+the route chip when neither is on that line. Hover it to see the model's own lines, each problem field
+with a comment: `quantity: int  # frontend sends qty`, `id: int  # frontend reads string`. Grey is a
+maybe, like a `None` the TypeScript type doesn't allow. The type read back comes from `api<Order>(…)`,
 axios generics, a generated client, or what `res.json()` is used as. A grey `307` is a missing or extra trailing slash; `route ?` is a URL
 built at run time. Requests are read through `fetch`, axios (instances with a `baseURL` too),
 `useSWR`, generated clients (hey-api, openapi-fetch, openapi-typescript-codegen) and your own

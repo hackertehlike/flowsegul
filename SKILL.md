@@ -64,8 +64,8 @@ python3 scripts/flowsegul_gen.py --changed --out /tmp/flowsegul.html   # then op
   state and the requests they make. On by default for a repo with `.tsx` files. With a FastAPI
   backend too, each request links to the route it reaches, the route lists its callers, and red
   marks flag `no route`, `GET ≠ POST`, a route declared earlier that catches it, query keys
-  the route ignores or requires, and, under the request line, the body it sends and the
-  fields it reads back shown above the route's Pydantic model, key under key, differences in red.
+  the route ignores or requires, and a red squiggle where the body it sends or the type it
+  reads back doesn't fit the route's Pydantic models (hover shows the model's lines, commented).
   Needs `node` and the `typescript` package (the app's own, a global one, or `FLOWSEGUL_TS=DIR`).
   Reads the working tree; `--changed` etc. apply to routes only. Anything it can't pin down is
   marked uncertain (faded), never claimed.

@@ -1495,6 +1495,11 @@ def route_facts(qual, idx, path, method):
     resp = route_resp(info, idx, method.upper(), path)
     if resp:
         out['resp'] = resp
+    # the models' own source, to show their lines next to a request that doesn't fit them
+    names = set(re.findall(r"'n': '(\w+)'", repr([out.get('body'), out.get('resp')])))
+    src = {n: idx.models[n]['code'] for n in names if n in idx.models and idx.models[n].get('code')}
+    if src:
+        out['src'] = src
     return out
 
 
@@ -2262,9 +2267,9 @@ def link_http(eps, react):
             if miss:
                 ln['miss'] = miss
         # the body it sends and the type it expects back, against the route's models
-        cmp = shapes.check_request(h, target['route'])
-        if cmp:
-            ln['cmp'] = cmp
+        fit = shapes.check_request(h, target['route'])
+        if fit:
+            ln['fit'] = fit
         h['ln'] = ln
         # a route lists the calls that reach it (a shadowed call reaches the route declared first)
         if not h.get('inner') and h.get('row'):
@@ -2324,7 +2329,7 @@ def generate(args, repos, log=True):
     react = merge_react(react_parts) if react_parts else None
     link_http(all_eps, react)
     for e in all_eps:            # the models' shapes are only for linking: keep them out of the page
-        for k in ('body', 'resp'):
+        for k in ('body', 'resp', 'src'):
             (e.get('route') or {}).pop(k, None)
     for h in ((react or {}).get('http') or {}).values():
         for k in ('b', 'r', 'nb', 'bx', 'lax'):
