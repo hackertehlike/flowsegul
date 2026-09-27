@@ -2,7 +2,8 @@
 
 Turn a Python / FastAPI repo into an **interactive call-flow explorer** — a draggable node graph
 where every endpoint fans out into the functions it calls, with inline source, color-coded data
-flow, and git-diff change detection. One self-contained HTML file, opened in your browser.
+flow, and git-diff change detection. React + TypeScript apps get their own map, and a repo with
+both links each frontend request to its route. One self-contained HTML file, opened in your browser.
 
 Great for reviewing a PR without reading files in linear order: you see *how a request actually
 flows* through controller → service → repository, which variable becomes which, and exactly what
@@ -17,7 +18,7 @@ cd flowsegul
 ./install.sh --skill  # ...and links it as a Claude Code skill (optional)
 ```
 
-Requirements: **Python 3.6+** and **git**. No pip install — pure standard library.
+Requirements: **Python 3.9+** and **git** (Node.js for React mode). No pip install — pure standard library.
 
 ## Use
 
@@ -74,7 +75,8 @@ flowsegul --react            # or just `flowsegul` in a repo with .tsx files
 flowsegul --react frontend   # only this folder of the repo
 ```
 
-The sidebar lists what a user can do, grouped by folder: `click Apply`, `type in coupon`,
+The sidebar lists what a user can do, nested under the component that holds it (and the
+components that render that one), each level folding open and shut: `click Apply`, `type in coupon`,
 `submit Log in`, `page load`. Pick one and the map numbers the real code lines it runs through, in
 order: the handler, the callback props it goes up through, the `useState` setter, the components
 that rerun (a `reruns` chip; hover it for the line responsible), effects that depend on the state,
@@ -89,7 +91,8 @@ uncertain.
 
 ### Frontend requests linked to their routes
 
-A repo (or workspace) with both a FastAPI backend and a React app gets both maps, and each request
+A repo (or workspace) with both a FastAPI backend and a React app gets both maps, one per sidebar
+tab (**Backend** / **Frontend**), and each request
 the frontend makes is matched to the route FastAPI would send it to. The request line carries the
 route as the backend writes it (`GET /orders/{order_id}`); click it to open that route, `Alt+←` to
 come back. A route's header lists who calls it (`called from PriceLine OrderPanel`), each a link to
@@ -124,6 +127,11 @@ wrappers like `api('/items')`. Vite's `server.proxy` rewrites, Next.js `rewrites
   from (the route parameter, each call it's passed through, each return it lands in, local lines
   like `items = payload.items`), then where it goes next, up to the response. The rest of the map
   fades and a short list repeats the steps as code; click a step to go there, `Esc` to clear.
+- **Responses in the header** — the route header lists what it can answer with: its success status
+  (`200`, or the route's `status_code`), each `HTTPException` status reachable below it, statuses
+  from app-level exception handlers, and `500` for errors nothing catches. Hover one to see the
+  exceptions behind it and their path; click it to pin that path (click again to unpin). A `raise`
+  that escapes gets a red squiggle, and the exception's name shows on the arrows it goes up.
 - **Ask a box** — the `?` on each box (or `?` on a focused box) asks where one of its parameters
   comes from, or why it can fail (each `raise` below it, up through the callers to the `except` that
   handles it or the status the client gets). The answer is drawn the same way. Clicking a box's
@@ -136,7 +144,9 @@ wrappers like `api('/items')`. Vite's `server.proxy` rewrites, Next.js `rewrites
   (`session.add`, `delete`, `execute(update(…))`), the commit (`session.commit()`, the end of
   `with session.begin():`, or a commit after `yield` in a Depends generator, drawn dashed and
   labelled `get_db`), and steps that can't be undone: email, HTTP POST/PUT/PATCH/DELETE, stripe,
-  boto3 writes, files, queued tasks. A step that can't be undone gets a red squiggle when an error
+  boto3 writes, files, queued tasks. HTTP writes are found on `requests` / `httpx`, including an
+  `httpx` client made elsewhere: imported from another file, set on `self.client`, or handed in by
+  `Depends`. A step that can't be undone gets a red squiggle when an error
   or the commit can still come after it; hover it to see which, and click any chip to go to its box.
   Steps on only some paths are faded, with their `if`. With writes but no commit in sight the strip
   ends in `commit ?` and marks nothing red. Name your own wrappers in `.flowsegul.json`:
@@ -146,10 +156,14 @@ wrappers like `api('/items')`. Vite's `server.proxy` rewrites, Next.js `rewrites
   edits to a module-level name a function reads (`LIMIT = 500`): that function's diff opens with
   the line. New files you haven't `git add`ed, deleted files, and module-level code no function
   reads (`app.include_router(…)`) are shown too.
+- **Viewed marks per function** — in the changes view each changed box has a Viewed tick (`V` on
+  the box under the pointer). A viewed box folds shut in every route that calls it, the Changes
+  button counts `3/7 viewed`, and `N` skips it. A new edit to that function clears the mark.
 - **Review mode** — tick endpoints off as reviewed with a progress bar (persisted in localStorage).
   A tick belongs to the code you reviewed: when that route's code changes, it clears.
 - **Keyboard first** — `/` filters endpoints, `J`/`K` moves between them, `F` fits, `?` lists the rest.
-  Light and dark themes follow your system, with a toggle.
+- **Colours** — the ◐ button picks a colour theme (Mist, Sand, Sage, Lilac), each in light and dark.
+  Light / dark follows your system until you pick; `T` switches it.
 
 ## How it works
 
@@ -173,8 +187,3 @@ If you use [Claude Code](https://claude.com/claude-code), `./install.sh --skill`
 a skill. You can then ask Claude to "visualize the call flow for this PR" — and, more usefully, have
 it **generate the graph and read it back to you for bugs** (variables produced but never consumed,
 skipped layers, contract mismatches).
-
-## Roadmap
-
-- **FE consumers + contract linter** — cross the Python→TS boundary: for each endpoint, show the
-  frontend call sites that consume it and flag BE-only / FE-only / type-mismatch fields.
