@@ -640,6 +640,13 @@ pre.code{border-color:transparent;border-radius:16px;background:var(--panel2)}
 #tip .tiprt[data-ep]{cursor:pointer}
 #tip .tiprt[data-ep]:hover{background:#ffffff1f;text-decoration:underline;text-underline-offset:2px}
 #tip .tiprt.off{opacity:.55}
+/* "Ask a box" in the flat look: lime step numbers, round borderless menus */
+.askbtn{border-radius:999px}
+.askpop,.asklist{border-color:transparent;border-radius:18px;box-shadow:var(--shadow-lg)}
+.aq,.ast{border-radius:12px}
+.askn{background:var(--lit-fill);color:var(--lit-on)}
+.askn.cur{box-shadow:0 0 0 2px var(--panel),0 0 0 4px var(--lit)}
+.ast .askn{box-shadow:none}
 /* colour themes: surfaces and the accent change; changed / error / ok colours never do */
 :root[data-palette=sand]{--bg:#ebe6dd;--grid:#d6cfc2;--panel:#fbf8f3;--panel2:#f2ede5;--raise:#fffdf9;--chip:#ece6dc;--line:#e6e0d5;--line2:#d6cdbf;--lit:#0f766e;--lit-fill:#99e2d6;--lit-on:#0b3b37;--accent-tk:#99e2d640}
 @media (prefers-color-scheme:dark){:root[data-palette=sand]:not([data-theme=light]){--bg:#12100d;--grid:#2b271f;--panel:#1b1814;--panel2:#23201a;--raise:#27231d;--chip:#28241e;--line:#2e2923;--line2:#3b352d;--lit:#5eead4;--lit-fill:#5eead4;--lit-on:#0b3b37;--accent-tk:#5eead440}}
@@ -1243,7 +1250,13 @@ function restorePin(){const b=pinSt&&document.querySelector('#epinfo .stc[data-s
  document.querySelectorAll('#epinfo .stc').forEach(x=>{const on=x.dataset.st===pinSt;x.classList.toggle('pin',on);x.setAttribute('aria-pressed',on);});
  $('#epinfo').classList.toggle('stpinned',!!pinSt);}
 function unpinSt(){if(pinSt){pinSt=null;restorePin();}}
-document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('#epinfo .stc');if(!b)return;pinSt=pinSt===b.dataset.st?null:b.dataset.st;restorePin();});
+// with "Ask a box": one lit answer at a time. Pinning a response clears a question's answer, and
+// asking a question lets go of the pinned response. The "N routes" tag asks "Which other routes reach this?"
+const HAS_ASK=typeof startAsk==='function';
+if(HAS_ASK){const _start=startAsk;startAsk=function(nid,q){if(pinSt){pinSt=null;restorePin();}return _start(nid,q);};}
+document.addEventListener('click',e=>{const t=HAS_ASK&&e.target.closest&&e.target.closest('.node .ub');if(!t)return;e.stopPropagation();
+ const nid=t.closest('.node').dataset.id;if(questionsFor(nid).some(q=>q.k==='routes'))startAsk(nid,{k:'routes'});},true);
+document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('#epinfo .stc');if(!b)return;pinSt=pinSt===b.dataset.st?null:b.dataset.st;if(pinSt&&typeof clearAsk==='function')clearAsk(true);restorePin();});
 document.addEventListener('mouseover',e=>{const t=e.target.closest&&e.target.closest('.sq,.sqok,.errlab,.stc[data-err],.step.raise,.fx[data-err]');if(t){okFocus(false);setErr(t);}});
 document.addEventListener('mouseout',e=>{const t=e.target.closest&&e.target.closest('.sq,.sqok,.errlab,.stc[data-err],.step.raise,.fx[data-err]');if(t&&!(e.relatedTarget&&t.contains(e.relatedTarget))){if(pinSt)restorePin();else setErr(null);}});
 
@@ -2015,7 +2028,7 @@ window.addEventListener('pageshow',()=>{$('#loading').hidden=true;});
  const tip=$('#tip');let owner=null,hideT=0;
  const show=t=>{clearTimeout(hideT);owner=t;tip.textContent=t.dataset.tip;t.setAttribute('aria-label',t.dataset.tip);
    // "N routes": each route in this map is a link that opens it
-   if(t.classList.contains('ub')){tip.innerHTML=t.dataset.tip.split('\n').map(l=>{const E=graph.endpoints.find(ep=>(ep.method.toUpperCase()+' '+ep.path)===l);
+   if(t.classList.contains('ub')&&typeof startAsk!=='function'){tip.innerHTML=t.dataset.tip.split('\n').map(l=>{const E=graph.endpoints.find(ep=>(ep.method.toUpperCase()+' '+ep.path)===l);
      return E?'<a class="tiprt" data-ep="'+esc(E.id)+'">'+esc(l)+'</a>':'<span class="tiprt off">'+esc(l)+'</span>';}).join('');}
    const r=t.getBoundingClientRect(),tw=tip.offsetWidth,th=tip.offsetHeight,up=r.bottom+th+12>innerHeight;
    tip.style.left=Math.max(6,Math.min(innerWidth-tw-6,r.left+r.width/2-tw/2))+'px';
