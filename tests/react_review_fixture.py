@@ -5,7 +5,7 @@ Used by tests/test_react_review.py and handy for trying the page by hand:
     flowsegul --repo /tmp/ordersweb --react --changed --base HEAD~1
 
 First commit ("base"): an orders page. Second commit ("head", the PR): the coupon field moves
-into a promo panel that only shows while `showPromo` is on, so its typed draft now clears.
+into a promo panel that only shows while `showPromo` is on, so its typed draft is now lost when the panel closes.
 Along the way: an effect that reads `items` but lists only `[couponCode]`, a query whose data is
 used with no loading or error check (and one that checks both), a hook that wraps useQuery, a
 context read by two components, a component declared inside another, and a random key. Some

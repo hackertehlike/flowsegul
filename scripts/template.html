@@ -1348,7 +1348,7 @@ function rCode(text,marks,o){
  return out+synHtml(text,cls,i,text.length);
 }
 
-// review checks on a line: missing dep (eslint's own words), read by N, no loading / error state, x clears
+// review checks on a line: missing dep (eslint's own words), read by N, no loading / error state, x lost
 function chkChip([k,t,tip,unc]){
  const d=tip?' data-tip="'+esc(tip)+'" tabindex="0"':'';
  if(k==='dep')return '<span class="rlint"'+d+'>'+esc(t)+'</span>';
@@ -1665,7 +1665,7 @@ function rLegend(){
     +'<span><span class="rc bad" style="margin:0">no route</span></span><span>won\'t reach a route as written</span>':'')
   +(RPROB.length?'<span><span class="rsq">items</span><span class="rlint" style="cursor:default">missing dep</span></span><span>the effect reads it, the deps list leaves it out</span>'
     +'<span><span class="rc chk bad" style="margin:0;cursor:default">no loading state</span></span><span>data used before it has arrived</span>'
-    +'<span><span class="rc chk bad" style="margin:0;cursor:default">draft clears</span></span><span>this state starts over, hover for why</span>':'')
+    +'<span><span class="rc chk bad" style="margin:0;cursor:default">draft lost if !open</span></span><span>this state goes back to its start value, hover for the line</span>':'')
   +'<span><kbd>Esc</kbd></span><span>clear</span>'
   +'</div></div>';
 }

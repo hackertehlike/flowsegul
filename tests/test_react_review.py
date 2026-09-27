@@ -98,10 +98,10 @@ class ReactReviewTest(unittest.TestCase):
 
     def test_state_that_clears(self):
         clr = {f[1]: (n, t, f) for n, t, f, _ in self.flagged('clr')}
-        self.assertEqual(set(clr), {'n clears', 'open clears'})   # no diff given: only the always-bad ones
-        self.assertEqual(clr['n clears'][1], 'const [n, setN] = useState(0);')    # Counter is declared inside Badge
-        self.assertIn('<Counter />', clr['n clears'][2][2])
-        self.assertEqual(clr['open clears'][1], '<Tip key={Math.random()} />')
+        self.assertEqual(set(clr), {'n lost every render', 'open lost every render'})   # no diff given: only the always-bad ones
+        self.assertEqual(clr['n lost every render'][1], 'const [n, setN] = useState(0);')    # Counter is declared inside Badge
+        self.assertIn('<Counter />', clr['n lost every render'][2][2])
+        self.assertEqual(clr['open lost every render'][1], '<Tip key={Math.random()} />')
         # every component with state says what unmounts it
         coupon = next(u for u in self.d['units'] if u['name'] == 'CouponField')
         self.assertIn('showPromo', [k for k, _ in coupon['mount']])
@@ -113,13 +113,21 @@ class ReactReviewTest(unittest.TestCase):
         self.assertEqual(p.returncode, 0, p.stderr)
         d = page_data(read(out))
         clr = {f[1]: (n, t, f, rid) for n, t, f, rid in self.flagged('clr', d)}
-        self.assertIn('draft clears', clr)
-        n, t, f, rid = clr['draft clears']
+        self.assertIn('draft lost if !showPromo', clr)
+        n, t, f, rid = clr['draft lost if !showPromo']
         self.assertEqual((n, t), ('CouponField', 'const [draft, setDraft] = useState("");'))
         self.assertIn('{showPromo && <CouponField onApply={onApply} />}', f[2])
         self.assertIn(['clr', rid], d['problems'])
         # PriceLine and Badge sit where they were: nothing new unmounts them
-        self.assertEqual(set(clr), {'draft clears', 'n clears', 'open clears'})
+        self.assertEqual(set(clr), {'draft lost if !showPromo', 'n lost every render', 'open lost every render'})
+
+    def test_lost_when(self):
+        from flowsegul_gen import lost_when
+        self.assertEqual(lost_when('showPromo'), 'if !showPromo')
+        self.assertEqual(lost_when('!open'), 'if open')
+        self.assertEqual(lost_when('if stats.isLoading return'), 'if stats.isLoading')
+        self.assertEqual(lost_when('a > 1'), 'if !(a > 1)')
+        self.assertEqual(lost_when('key={id}'), 'when key changes')
 
     def test_same_base_adds_nothing(self):
         import flowsegul_gen

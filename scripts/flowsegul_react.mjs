@@ -1968,7 +1968,7 @@ export function analyze(ts, root, { tag = '' } = {}) {
   //  - `read by N` on a context provider: the components that rerun when its value changes
   //  - `no loading state` / `no error state`: a query or an effect's request whose data is used
   //    without looking at whether it has arrived or failed
-  //  - `draft clears`: a state that React throws away, because its component is declared inside
+  //  - `draft lost every render` / `draft lost if !open`: a state that React throws away, because its component is declared inside
   //    another one or gets a new random key each render (and, with a diff, a new mount condition)
   // ════════════════════════════════════════════════════════════════════════════════════════
   const problems = [];
@@ -2280,7 +2280,7 @@ export function analyze(ts, root, { tag = '' } = {}) {
       const own = r.child.states;
       if (!own.length) continue;
       squiggle(e, 'new key each render');
-      for (const S of own) flag(rowFor(r.op), 'clr', (S.name || S.setter) + ' clears', clearsTip(S), true);
+      for (const S of own) flag(rowFor(r.op), 'clr', (S.name || S.setter) + ' lost every render', clearsTip(S), true);
     }
   }
   // a component declared inside another: a new type each render, so its state starts over
@@ -2309,7 +2309,7 @@ export function analyze(ts, root, { tag = '' } = {}) {
             const nm = el && ts.isBindingElement(el) ? el.name.getText() : 'state';
             const stmt = d.parent && d.parent.parent && ts.isVariableStatement(d.parent.parent) ? d.parent.parent : d;
             squiggle(name, 'declared inside ' + u.name);
-            flag(rowFor(stmt), 'clr', nm + ' clears', where(used.parent), true);
+            flag(rowFor(stmt), 'clr', nm + ' lost every render', where(used.parent), true);
           }
         }
         return;

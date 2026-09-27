@@ -2227,6 +2227,19 @@ def react_base(repo, root, args, tag):
         return run_react(sub, tag + '~base')
 
 
+def lost_when(cond):
+    """When a component unmounts, from the condition that keeps it: `showPromo` → `if !showPromo`."""
+    if cond.startswith('key='):
+        return 'when key changes'
+    if cond.startswith('if ') and cond.endswith(' return'):   # an early return before it
+        c = cond[3:-7]
+    elif cond.startswith('!'):
+        c = cond[1:]
+    else:
+        c = '!' + cond if re.fullmatch(r'[\w.?]+', cond) else '!(' + cond + ')'
+    return 'if ' + (c if len(c) <= 32 else c[:31] + '…')
+
+
 def mark_new_clears(head, base):
     """A state that the base kept and the head throws away: its component (or one above it) now
     sits under a condition, after an early return, or behind a key it didn't have before."""
@@ -2257,7 +2270,7 @@ def mark_new_clears(head, base):
             row = head['rows'][s['row']]
             fl = row.setdefault('f', [])
             if not any(f[0] == 'clr' for f in fl):
-                fl.append(['clr', f'{name} clears', new[0][1]])
+                fl.append(['clr', f'{name} lost {lost_when(new[0][0])}', new[0][1]])
                 problems.append(['clr', s['row']])
 
 
