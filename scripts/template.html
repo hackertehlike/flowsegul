@@ -930,6 +930,10 @@ function originsOf(nid,name,path){const f=FLOW[nid]&&FLOW[nid][name],os=f&&f.len
 // 2 = same value, 1 = one is part of the other (payload vs payload.items), 0 = unrelated
 function overlap(p,q){if(p===q)return 2;const[a,b]=p.length<q.length?[p,q]:[q,p];return b.startsWith(a)&&'.['.includes(b[a.length])?1:0;}
 function relation(os,H){let best=0;for(const[a,p]of os)for(const[b,q]of H)if(a===b)best=Math.max(best,overlap(p,q));return best;}
+// what a hover lights: 2 = the same value, 1 = a field of it (payload → payload.items), 0 otherwise.
+// The object a field sits in doesn't count: hovering payload.customer_id leaves payload's own arrows dark.
+function inside(os,H){let best=0;for(const[a,p]of os)for(const[b,q]of H){if(a!==b)continue;
+ if(p===q)return 2;if(p.startsWith(q)&&'.['.includes(p[q.length]))best=1;}return best;}
 // the origins an arrow carries: the variable its result lands in, and whatever its arguments come from
 // as "origin@path" tokens, so an arrow carrying payload.coupon doesn't light up for payload.items
 function edgeKeys(src,s){
@@ -1156,10 +1160,14 @@ function setSpotH(H){
  world.querySelectorAll('.vhot').forEach(e=>e.classList.remove('vhot','vpart'));
  svg.querySelectorAll('.vhot').forEach(e=>e.classList.remove('vhot'));
  if(!on)return;
+  // the value itself lights everywhere it goes; its fields only (dashed) in a box that holds the value
+ // itself, and an arrow only when it carries exactly this value
+ const parts=[],holds=new Set();
  world.querySelectorAll('[data-var]').forEach(e=>{const card=e.closest('.node');if(!card)return;
-   const r=relation(originsOf(card.dataset.id,e.dataset.var,e.dataset.path),H);
-   if(r){e.classList.add('vhot');if(r===1)e.classList.add('vpart');}});
- svg.querySelectorAll('[data-keys]').forEach(e=>{if(relation(e.dataset.keys.split(' ').map(splitKey),H))e.classList.add('vhot');});
+   const r=inside(originsOf(card.dataset.id,e.dataset.var,e.dataset.path),H);
+   if(r===2){e.classList.add('vhot');holds.add(card);}else if(r===1)parts.push([e,card]);});
+ parts.forEach(([e,card])=>{if(holds.has(card))e.classList.add('vhot','vpart');});
+ svg.querySelectorAll('[data-keys]').forEach(e=>{if(inside(e.dataset.keys.split(' ').map(splitKey),H)===2)e.classList.add('vhot');});
 }
 // a Key row names a variable without saying which box it's in: take every box that produces it
 function legendOrigins(v){
@@ -1966,16 +1974,17 @@ function usesOfVar(nid,v,path,S){
  const n=NB(nid);if(!n||S.seen.has('v'+nid+'|'+v+(path||'')))return;S.seen.add('v'+nid+'|'+v+(path||''));
  (n.steps||[]).forEach(t=>{if(!t.target||!NB(t.target))return;
    (t.bind||[]).forEach(b=>{
-     const hit=b.from===v?(!path||!b.path||overlap(b.path,path)>0):(b.uses||[]).includes(v);if(!hit)return;
+     // the same value passed on (payload.items → items), or the whole object passed with this field inside it
+     let rest='';const hit=b.from===v?((b.path||'')===(path||'')||(path&&!b.path&&(rest=path,true))):(!path&&(b.uses||[]).includes(v));if(!hit)return;
      const gi=gIndex(nid,t.target,t.var),moved=b.text!==b.p;
      if(moved)S.push({nid,t:'row',rv:t.var,v,g:[gi,'f'],code:b.text});
-     S.push({nid:t.target,t:'ins',v:b.p,g:[gi,'f'],code:b.p,also:moved?[]:[[nid,t.var]]});
-     usesOfVar(t.target,b.p,'',S);
-     if(retIdents(t.target).has(b.p))retUp(t.target,S);});});
+     S.push({nid:t.target,t:'ins',v:b.p,g:[gi,'f'],code:b.p+rest,also:moved?[]:[[nid,t.var]]});
+     usesOfVar(t.target,b.p,rest,S);
+     if(!rest&&retIdents(t.target).has(b.p))retUp(t.target,S);});});
  // a local that is just another name for it: `items = payload.items`, `for i in items`
- Object.entries(n.alias||{}).forEach(([loc,[root,p]])=>{if(root!==v||(path&&p&&!overlap(p,path)))return;const a=assignLine(nid,loc);
+ Object.entries(n.alias||{}).forEach(([loc,[root,p]])=>{if(root!==v||(p||'')!==(path||''))return;const a=assignLine(nid,loc);
    if(a)S.push(codeStep(nid,a.line,{v:loc}));usesOfVar(nid,loc,'',S);});
- if(retIdents(nid).has(v))retUp(nid,S);
+ if(!path&&retIdents(nid).has(v))retUp(nid,S);
 }
 // a box returns the value: it lands in each caller's variable, and keeps going from there
 function retUp(nid,S){
