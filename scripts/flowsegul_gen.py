@@ -33,6 +33,26 @@ SKIP_PARAMS = {'self', 'cls', 'db', 'body', 'request', 'session'}
 _EXCLUDE_DIRS = {'node_modules', '__pycache__', 'tests', 'test', 'testing', 'alembic', 'migrations'}
 
 
+
+# Python 3.14 lets `except A, B:` drop its brackets (PEP 758). Older Pythons can't parse that, so on a
+# syntax error add the brackets back and try once more; line numbers stay the same.
+_EXCEPT_BARE = re.compile(r'^(\s*except\*?\s+)(?!\()([^:#\n]*?,[^:#\n]*?)(\s*:)', re.M)
+
+
+def parse_py(src):
+    try:
+        return ast.parse(src)
+    except SyntaxError:
+        fixed = _EXCEPT_BARE.sub(lambda m: m.group(1) + '(' + m.group(2).strip() + ')' + m.group(3)
+                                 if ' as ' not in m.group(2) else m.group(0), src)
+        if fixed == src:
+            raise
+        try:
+            return ast.parse(fixed)
+        except SyntaxError:
+            pass
+        raise
+
 def _excluded(rel_dir):
     """Skip hidden folders, virtualenvs, tests and migrations. Only folders *inside* the scanned
     tree count, so a repo that itself lives under e.g. ~/tests or ~/.projects is still read."""
@@ -308,7 +328,7 @@ class Index:
             return
         rel = self._rel(f)
         try:
-            tree = ast.parse(src)
+            tree = parse_py(src)
         except SyntaxError as e:
             self.skipped.append((rel, f'line {e.lineno}: {e.msg}'))
             return
@@ -850,7 +870,7 @@ def funcs_in_source(src):
     like `app.include_router(…)`). Imports and the module docstring are left out."""
     out = {}
     try:
-        tree = ast.parse(src)
+        tree = parse_py(src)
     except SyntaxError:
         return out
 
@@ -888,7 +908,7 @@ def def_linenos(src):
     """{key: lineno} for every def/class in `src` (parallel keys to funcs_in_source)."""
     out = {}
     try:
-        tree = ast.parse(src)
+        tree = parse_py(src)
     except SyntaxError:
         return out
     for n in tree.body:
@@ -946,7 +966,7 @@ def changed_defs(idx, repo, base, ref, changed_files, merge_base=True, dirs=()):
         head_map = funcs_in_source(head_src)
         if base_src and not base_map and head_map:
             try:
-                ast.parse(base_src)
+                parse_py(base_src)
             except SyntaxError as e:   # base uses syntax this Python can't read: match defs by text
                 print(f'  {rel} at {base}: can\'t parse it (line {e.lineno}); only exact matches count '
                       f'as unchanged', file=sys.stderr)
@@ -1751,7 +1771,7 @@ def _is_migration(rel):
 def migration_ops(src):
     """One line per schema operation in upgrade(), e.g. `op.add_column("users", sa.Column("email", …))`."""
     try:
-        tree = ast.parse(src)
+        tree = parse_py(src)
     except SyntaxError:
         return []
     fn = next((n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
@@ -1783,7 +1803,7 @@ def migration_entries(repo, tag, base, ref, changed_files, merge_base, code_out)
         deleted = not head_src
         src = head_src or base_src
         try:
-            doc = ast.get_docstring(ast.parse(src)) or ''
+            doc = ast.get_docstring(parse_py(src)) or ''
         except SyntaxError:
             doc = ''
         name = os.path.basename(rel)[:-3]

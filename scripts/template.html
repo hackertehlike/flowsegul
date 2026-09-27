@@ -482,8 +482,8 @@ button.num{cursor:pointer}
 .go{color:inherit;text-decoration:none;cursor:pointer;border-radius:3px}
 .go.tag{color:var(--def)}
 .go:hover{text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:2px}
-.rflash{outline:2px solid var(--accent);outline-offset:3px;animation:rflash 1.2s ease-out forwards}
-@keyframes rflash{0%,45%{outline-color:var(--accent)}100%{outline-color:transparent}}
+.rflash{outline:2px solid var(--lit);outline-offset:3px;animation:rflash 1.2s ease-out forwards}
+@keyframes rflash{0%,45%{outline-color:var(--lit)}100%{outline-color:transparent}}
 .stepbar{top:14px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:4px;padding:4px;border-color:color-mix(in srgb,var(--accent) 45%,var(--line));border-radius:20px;max-width:calc(100% - 260px)}
 .stepbar[hidden]{display:none}
 .stepbar.idle{opacity:.5}
@@ -504,6 +504,203 @@ button.num{cursor:pointer}
 .rkey .rc.rerun{position:static;box-shadow:none;background:var(--chg-soft);padding:2px 6px;cursor:default}
 .rkey .dash{width:22px;height:14px;border-left:3px dashed var(--line2);background:var(--panel2);border-radius:3px}
 
+/* ── soft look (borrowed from soft dashboard UIs) ────────────────────────────────────────────────
+   neutral grey canvas, near-white round cards with no borders, pill chips and buttons, one bright
+   accent (lime in the default theme), a dot-matrix review count, and a warm glow on changed boxes.
+   Changed / error / ok colours never change, in any theme. */
+:root{--bg:#e4e4e2; --grid:#cfcfcc; --panel:#f8f8f7; --panel2:#efefed; --raise:#ffffff; --chip:#ececea;
+ --line:#e6e6e3; --line2:#d6d6d2; --ink:#18181b; --ink2:#3f3f46; --muted:#71717a; --faint:#a1a1aa; --r:26px;
+ --shadow-sm:0 1px 2px rgba(0,0,0,.04);
+ --shadow:0 1px 2px rgba(0,0,0,.03),0 18px 40px -18px rgba(0,0,0,.18);
+ --shadow-lg:0 2px 4px rgba(0,0,0,.04),0 28px 60px -20px rgba(0,0,0,.28);
+ --accent:#3f3f46; --accent-ink:#18181b; --accent-soft:#18181b0f;
+ --lit:#6f8c00; --lit-fill:#d7f542; --lit-on:#18181b; --accent-tk:#c5e62a55;
+ --glow1:#ff8a3d; --glow2:#ff6aa0}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0e0e10; --grid:#26262a; --panel:#18181b; --panel2:#202024; --raise:#232327; --chip:#232327;
+ --line:#26262a; --line2:#34343a; --ink:#f4f4f5; --ink2:#d4d4d8; --muted:#a1a1aa; --faint:#63636b;
+ --accent:#d4d4d8; --accent-ink:#f4f4f5; --accent-soft:#ffffff12; --lit:#d7f542; --lit-fill:#d7f542; --lit-on:#18181b; --accent-tk:#d7f54240}}
+:root[data-theme=dark]{--bg:#0e0e10; --grid:#26262a; --panel:#18181b; --panel2:#202024; --raise:#232327; --chip:#232327;
+ --line:#26262a; --line2:#34343a; --ink:#f4f4f5; --ink2:#d4d4d8; --muted:#a1a1aa; --faint:#63636b;
+ --accent:#d4d4d8; --accent-ink:#f4f4f5; --accent-soft:#ffffff12; --lit:#d7f542; --lit-fill:#d7f542; --lit-on:#18181b; --accent-tk:#d7f54240}
+/* canvas and cards */
+.top{background:var(--bg);border-bottom:0;height:66px;padding:0 16px 0 18px}
+.crumb{border-left:0}
+.brand h1{font-weight:500;letter-spacing:-.02em}
+.logo{background:#18181b;box-shadow:inset 0 0 0 1px #ffffff1f;border-radius:50%}
+.side{background:var(--panel);border-right:0;margin:0 0 14px 14px;border-radius:var(--r);box-shadow:var(--shadow)}
+body.noside .side{margin-left:-266px}
+.stage{background-image:radial-gradient(circle at 1px 1px,var(--grid) .9px,transparent 0);background-size:14px 14px}
+.node{border-color:transparent;background:var(--panel)}
+.nhead{padding:16px 16px 12px 18px}
+.nbody{padding:0 14px 16px;gap:6px}
+.step{border-radius:12px;background:var(--panel2);border-left-width:3px}
+pre.code{border-color:transparent;border-radius:16px;background:var(--panel2)}
+.ins{border-radius:14px;border-color:var(--line2)}
+.float{border-color:transparent;border-radius:999px;background:color-mix(in srgb,var(--panel) 92%,transparent)}
+.legend,.minimap{border-radius:22px}
+.rangebtn,.rangepop,.search label,.combo input,.thpop{border-color:transparent}
+.rangepop{border-radius:22px}
+/* pills and round buttons */
+.tb,.mchip,.m,.lay,.stc,.fx,.ub,.vwbtn,.codebtn,.chgbadge,.rc,.seg,.segb,.dock button,.dock .pct,.ep,.rp-go,.rp-cmdline button{border-radius:999px}
+.tb{background:var(--raise);box-shadow:var(--shadow-sm),0 4px 12px -6px rgba(0,0,0,.12);height:36px;padding:0 14px;font-weight:500}
+.tb.icon{width:36px}
+.tb:hover{background:var(--raise);border-color:var(--line2)}
+.tb.on{background:var(--ink);color:var(--bg)}
+.tb.chgon.on{background:var(--chg);color:#fff}
+.tb .cnt{border-radius:999px;background:var(--lit-fill);color:var(--lit-on)}
+.tb.chgon.on .cnt{background:#fff;color:var(--chg)}
+.tools{gap:6px}.tsep{background:transparent}
+.rangebtn{background:var(--raise);box-shadow:var(--shadow-sm),0 4px 12px -6px rgba(0,0,0,.12);border-radius:999px;height:36px;padding:0 14px}
+.rangebtn svg{color:var(--muted)}
+.search label{border-radius:999px;background:var(--panel2);height:36px}
+.ep{padding:8px 12px 8px 8px;margin-bottom:2px}
+.ep.on{background:var(--raise);box-shadow:var(--shadow-sm),0 6px 16px -8px rgba(0,0,0,.18)}
+.ep.on::before{display:none}
+.ep.on .t{color:var(--ink)}
+.m{width:48px;padding:5px 0}
+.lay{padding:4px 9px;font-weight:600}
+.chgbadge{padding:3px 8px}
+.stc{border-color:transparent;background:var(--chip);padding:5px 9px}
+.stc.ok{background:color-mix(in srgb,var(--ok) 14%,var(--panel));border-color:transparent}
+.stc.bad{background:var(--del)}
+.mchip{border-color:transparent;background:var(--chip);padding:5px 10px}
+.fx{border-color:transparent;background:var(--chip);padding:6px 11px}
+.fx.commit{border-color:transparent}
+.fx.via,.fx.unk{border-color:var(--muted)}
+.fx.risk{border-color:transparent}
+.fxstrip{padding:8px 10px;border-radius:22px}
+.vwbtn,.codebtn{border-color:transparent;background:var(--chip)}
+.seg{border-color:transparent;background:var(--chip)}
+.segb.on{background:var(--raise)}
+.rp-go{background:var(--lit-fill);color:var(--lit-on)}
+.dock{padding:5px}
+.dock button,.dock .pct{border-radius:999px}
+/* one bright accent for "you are here" */
+:focus-visible{outline-color:var(--lit)}
+.step.hl{outline-color:var(--lit);outline-width:2px}
+.node.flash{animation-name:cfflash2}
+@keyframes cfflash2{0%,15%{box-shadow:0 0 0 4px var(--lit-fill),var(--shadow-lg)}100%{box-shadow:0 0 0 4px transparent,var(--shadow)}}
+.node.svc{border-color:transparent;box-shadow:0 0 0 2px var(--lit-fill),var(--shadow)}
+.num{background:var(--lit-fill);color:var(--lit-on)} .num.o{background:var(--panel);color:var(--lit);box-shadow:inset 0 0 0 1.5px var(--lit)}
+.rrow.lit{border-left-color:var(--lit);background:color-mix(in srgb,var(--lit-fill) 22%,var(--panel2))}
+.rrow.lit.unc{background:color-mix(in srgb,var(--lit-fill) 8%,var(--panel2));color:var(--ink)}
+/* the step the arrows are on: solid fill + ring, so it stands apart from the rest of the path */
+.rrow.cur,.rrow.lit.cur{background:color-mix(in srgb,var(--lit-fill) 70%,var(--panel2));border-left-color:var(--lit);box-shadow:inset 0 0 0 2px var(--lit);color:var(--ink)}
+.rrow.cur .num.o{background:var(--lit-fill);color:var(--lit-on);box-shadow:none}
+/* a maybe-rerun box is faded, but never the box you are stepping through */
+#world.rdim .node.rbox.hot.unc:has(.rrow.cur){opacity:1}
+.tk.on{box-shadow:0 0 0 1px color-mix(in srgb,var(--lit) 55%,transparent)}
+.stepbar{border-color:transparent}.stepbar button{background:var(--lit-fill);color:var(--lit-on)} #sbcount{color:var(--ink)}
+.chgnav{border-color:transparent}
+/* dot-matrix review count */
+.revbar{border-top:0;padding:14px 16px 16px}
+.revbar .lbl{justify-content:flex-start;align-items:flex-end;gap:8px;margin-bottom:10px}
+.revbar .lbl b{display:flex;gap:4px;color:var(--ink)}
+.revbar .lbl b svg{height:40px;width:auto;display:block}
+.revbar .lbl span{font-size:11.5px;padding-bottom:2px}
+.revbar .track{height:6px;border-radius:999px;background:var(--chip)}
+.revbar .fill{background:var(--lit-fill);border-radius:999px}
+/* warm glow on changed boxes */
+.node.changed{border-color:transparent;box-shadow:0 0 0 1.5px color-mix(in srgb,var(--glow1) 60%,transparent),0 24px 70px -18px color-mix(in srgb,var(--glow1) 75%,transparent),0 0 90px -10px color-mix(in srgb,var(--glow2) 22%,transparent)}
+.node.changed .nhead{background:radial-gradient(120% 180% at 12% 0%,color-mix(in srgb,var(--glow1) 30%,transparent),color-mix(in srgb,var(--glow2) 12%,transparent) 55%,transparent 80%)}
+.node.changed.viewed{box-shadow:var(--shadow)}
+.node.changed.viewed .nhead{background:none}
+.node.deleted{border-color:transparent;box-shadow:0 0 0 1.5px color-mix(in srgb,var(--del) 60%,transparent),0 24px 60px -18px color-mix(in srgb,var(--del) 55%,transparent)}
+.chgdot{box-shadow:0 0 10px 2px color-mix(in srgb,var(--glow1) 65%,transparent)}
+.chgbadge{background:linear-gradient(90deg,var(--glow1),var(--glow2))}
+.node.viewed .chgbadge{background:var(--faint)}
+/* flat, like the reference: no shadows, no glow, no dot grid; white cards on grey do the separating */
+:root,:root[data-theme]{--shadow-sm:none;--shadow:none;--shadow-lg:0 12px 32px -12px rgba(0,0,0,.18)}
+.stage{background-image:none}
+.tb,.rangebtn{box-shadow:none}
+.ep.on{box-shadow:none}
+.node:hover{box-shadow:none}
+.node.dragging{box-shadow:var(--shadow-lg)}
+.node.changed{box-shadow:none;border:2px solid var(--chg)}
+.node.changed .nhead{background:none}
+.node.changed.viewed{border:1px solid transparent}
+.node.deleted{box-shadow:none;border:2px solid var(--del)}
+.chgdot{box-shadow:none}
+.chgbadge{background:var(--chg)}
+.node.svc{box-shadow:0 0 0 2px var(--lit-fill)}
+.node.svc.changed{box-shadow:none}
+.float,.legend,.minimap,.fxstrip{box-shadow:none}
+/* hover still lifts a box a little */
+.node:hover{box-shadow:0 14px 34px -14px rgba(0,0,0,.22)}
+:root[data-theme=dark] .node:hover{box-shadow:0 14px 34px -14px rgba(0,0,0,.7)}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]) .node:hover{box-shadow:0 14px 34px -14px rgba(0,0,0,.7)}}
+/* responses toggle: one tray, the picked response sits raised in it */
+.stchips{gap:2px;padding:2px;border-radius:999px;background:var(--chip)}
+.stc{cursor:pointer;background:transparent;border:0;padding:5px 10px}
+.stc.ok{background:transparent}
+.stc:hover{background:var(--raise)}
+.stc.pin{background:var(--raise);box-shadow:0 0 0 1.5px var(--ink2)}
+.stc.bad,.stc.bad:hover,.stc.bad.pin{background:var(--del);color:#fff}
+.stc.new::after{border-color:var(--chip)}
+#world.okfocus .step.raise{opacity:.3}
+#edges.okfocus .errlab,#edges.okfocus .errpath{opacity:.1}
+#world.okfocus .sq{text-decoration-color:color-mix(in srgb,var(--del) 25%,transparent)}
+/* "N routes": the list opens each route on click */
+.ub{cursor:pointer}
+#tip .tiprt{display:block;padding:3px 6px;margin:0 -6px;border-radius:6px;white-space:pre;color:inherit;text-decoration:none}
+#tip .tiprt[data-ep]{cursor:pointer}
+#tip .tiprt[data-ep]:hover{background:#ffffff1f;text-decoration:underline;text-underline-offset:2px}
+#tip .tiprt.off{opacity:.55}
+/* "Ask a box" in the flat look: lime step numbers, round borderless menus */
+:root .askbtn{border-radius:999px}
+:root .askpop,:root .asklist{border-color:transparent;border-radius:18px;box-shadow:var(--shadow-lg)}
+:root .aq,:root .ast{border-radius:12px}
+:root .askn:not(.err):not(.ok){background:var(--lit-fill);color:var(--lit-on)}
+:root .askn.cur:not(.err){box-shadow:0 0 0 2px var(--panel),0 0 0 4px var(--lit)}
+:root .ast .askn{box-shadow:none}
+/* sidebar: Backend / Frontend tabs, folding groups, one component name over its actions */
+#side [hidden]{display:none!important}
+#side.searching .grp .gc{transform:none}
+.sidetabs{display:flex;width:100%;margin:8px 0 0}
+.sidetabs[hidden]{display:none}
+.sidetabs .segb{flex:1;padding:7px 8px;font-size:12px}
+.sidetabs .segb i{font:600 10.5px var(--mono);font-style:normal;color:var(--faint);margin-left:3px}
+.sidetabs .segb.on i{color:var(--muted)}
+.grp{cursor:pointer;user-select:none;border-radius:10px;padding:10px 6px 6px}
+.grp:hover{color:var(--ink2)}
+.grp .gc{width:11px;height:11px;flex:none;transition:transform .15s var(--ease);color:var(--faint)}
+.grp.shut .gc{transform:rotate(-90deg)}
+.grp .gl{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.grp.agrp{overflow-wrap:normal}
+.ctree{display:flex;align-items:center;gap:5px;padding:5px 8px 5px calc(6px + min(var(--d,0),6) * 12px);border-radius:10px;cursor:pointer;user-select:none;font:600 12px/1.3 var(--mono);color:var(--ink)}
+.ctree:hover{background:var(--panel2)}
+.ctree .gc{width:11px;height:11px;flex:none;color:var(--faint);transition:transform .15s var(--ease)}
+.ctree.shut .gc{transform:rotate(-90deg)}
+.ctree .cn{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ctree .gn{margin-left:auto;font:600 10px var(--mono);color:var(--faint)}
+#side.searching .ctree .gc{transform:none}
+.ep.act{padding:4px 10px 4px calc(22px + min(var(--d,0),6) * 12px);position:relative}
+.ep.act::after{content:"";position:absolute;left:calc(12px + min(var(--d,1) - 1,6) * 12px);top:0;bottom:0;border-left:1px solid var(--line2)}
+.ep.act .p{display:none}
+.ep.act .t{font:500 12px/1.35 var(--mono)}
+.ep{padding:6px 10px 6px 7px}
+/* colour themes: surfaces and the accent change; changed / error / ok colours never do */
+:root[data-palette=sand]{--bg:#ebe6dd;--grid:#d6cfc2;--panel:#fbf8f3;--panel2:#f2ede5;--raise:#fffdf9;--chip:#ece6dc;--line:#e6e0d5;--line2:#d6cdbf;--lit:#0f766e;--lit-fill:#99e2d6;--lit-on:#0b3b37;--accent-tk:#99e2d640}
+@media (prefers-color-scheme:dark){:root[data-palette=sand]:not([data-theme=light]){--bg:#12100d;--grid:#2b271f;--panel:#1b1814;--panel2:#23201a;--raise:#27231d;--chip:#28241e;--line:#2e2923;--line2:#3b352d;--lit:#5eead4;--lit-fill:#5eead4;--lit-on:#0b3b37;--accent-tk:#5eead440}}
+:root[data-palette=sand][data-theme=dark]{--bg:#12100d;--grid:#2b271f;--panel:#1b1814;--panel2:#23201a;--raise:#27231d;--chip:#28241e;--line:#2e2923;--line2:#3b352d;--lit:#5eead4;--lit-fill:#5eead4;--lit-on:#0b3b37;--accent-tk:#5eead440}
+:root[data-palette=sage]{--bg:#e3e9e3;--grid:#cbd5cb;--panel:#f8fbf8;--panel2:#edf2ed;--raise:#ffffff;--chip:#e6ece6;--line:#dde5dd;--line2:#cad5ca;--lit:#2563eb;--lit-fill:#bcd4ff;--lit-on:#10254d;--accent-tk:#bcd4ff40}
+@media (prefers-color-scheme:dark){:root[data-palette=sage]:not([data-theme=light]){--bg:#0d110e;--grid:#222d25;--panel:#151b17;--panel2:#1c231e;--raise:#1f2721;--chip:#1f2821;--line:#243029;--line2:#2f3d34;--lit:#93c5fd;--lit-fill:#93c5fd;--lit-on:#10254d;--accent-tk:#93c5fd40}}
+:root[data-palette=sage][data-theme=dark]{--bg:#0d110e;--grid:#222d25;--panel:#151b17;--panel2:#1c231e;--raise:#1f2721;--chip:#1f2821;--line:#243029;--line2:#2f3d34;--lit:#93c5fd;--lit-fill:#93c5fd;--lit-on:#10254d;--accent-tk:#93c5fd40}
+:root[data-palette=lilac]{--bg:#e9e6f1;--grid:#d4cfe4;--panel:#fbfaff;--panel2:#f1eff8;--raise:#ffffff;--chip:#ebe8f4;--line:#e3dff0;--line2:#d1cae4;--lit:#6d4fe0;--lit-fill:#d9ccff;--lit-on:#2b1a6b;--accent-tk:#d9ccff40}
+@media (prefers-color-scheme:dark){:root[data-palette=lilac]:not([data-theme=light]){--bg:#100e16;--grid:#28233a;--panel:#18161f;--panel2:#1f1c28;--raise:#23202d;--chip:#23202e;--line:#2a2638;--line2:#373248;--lit:#c4b5fd;--lit-fill:#c4b5fd;--lit-on:#2b1a6b;--accent-tk:#c4b5fd40}}
+:root[data-palette=lilac][data-theme=dark]{--bg:#100e16;--grid:#28233a;--panel:#18161f;--panel2:#1f1c28;--raise:#23202d;--chip:#23202e;--line:#2a2638;--line2:#373248;--lit:#c4b5fd;--lit-fill:#c4b5fd;--lit-on:#2b1a6b;--accent-tk:#c4b5fd40}
+.thwrap{position:relative}
+.thpop{position:absolute;top:calc(100% + 8px);right:0;width:236px;background:var(--panel);border-radius:16px;box-shadow:var(--shadow-lg);padding:10px;z-index:30;animation:pop .18s var(--ease)}
+.thpop[hidden]{display:none}
+.thpop .seg{display:flex;width:100%;margin:0 0 8px;border:0}
+.thpop .seg .segb{flex:1}
+.thsw{display:grid;grid-template-columns:repeat(4,1fr);gap:4px}
+.thsw button{display:flex;flex-direction:column;align-items:center;gap:5px;border:0;background:none;border-radius:12px;padding:7px 0 6px;cursor:pointer;font:600 10.5px/1 var(--sans);color:var(--muted)}
+.thsw button:hover{background:var(--panel2);color:var(--ink)}
+.thsw button.on{color:var(--ink);background:var(--panel2)}
+.thsw i{width:26px;height:26px;border-radius:50%;box-shadow:inset 0 0 0 1px #0000001a;display:grid;place-items:center}
+.thsw i b{width:9px;height:9px;border-radius:50%}
+.thsw button.on i{box-shadow:inset 0 0 0 1px #0000001a,0 0 0 2px var(--panel),0 0 0 3.5px var(--ink2)}
 @media (max-width:900px){.brand{width:auto}.brand h1 small,.crumb .sum,.tb .lbl{display:none}.minimap{display:none}}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 </style>
@@ -530,15 +727,15 @@ button.num{cursor:pointer}
   <button class="tb chgon" id="chgtoggle" data-tip="Step through changed functions  (N)" hidden><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2.5"/><path d="M8 1.5v4M8 10.5v4"/></svg><span class="lbl">Changes</span><span class="cnt" id="chgcount"></span></button>
   <button class="tb" id="revtoggle" data-tip="Check off flows as you review them  (R)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="m5.5 8.2 1.7 1.7 3.3-3.6"/></svg><span class="lbl" id="revlabel">Review</span></button>
   <span class="tsep"></span>
-  <button class="tb icon" id="theme" data-tip="Light / dark  (T)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor" stroke="none"/></svg></button>
+  <span class="thwrap"><button class="tb icon" id="theme" data-tip="Colours  (T switches light / dark)" aria-haspopup="dialog"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor" stroke="none"/></svg></button><div class="thpop" id="thpop" hidden role="dialog" aria-label="Colours"><div class="seg" id="thmode"><button class="segb" data-t="light">Light</button><button class="segb" data-t="dark">Dark</button></div><div class="thsw" id="thsw"><button data-p="mist"><i style="background:#e4e4e2"><b style="background:#d7f542"></b></i>Mist</button><button data-p="sand"><i style="background:#ebe6dd"><b style="background:#5ed4c4"></b></i>Sand</button><button data-p="sage"><i style="background:#e3e9e3"><b style="background:#7aa7ff"></b></i>Sage</button><button data-p="lilac"><i style="background:#e9e6f1"><b style="background:#a78bfa"></b></i>Lilac</button></div></div></span>
   <button class="tb icon" id="help" data-tip="Shortcuts & tips  (?)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M6.3 6.3a1.8 1.8 0 1 1 2.4 1.7c-.5.2-.7.6-.7 1.1"/><circle cx="8" cy="11.3" r=".4" fill="currentColor"/></svg></button>
  </div>
 </header>
 <div class="main">
  <nav class="side" id="sidebar">
-  <div class="search"><label><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg><input id="q" type="search" placeholder="Filter endpoints" autocomplete="off" spellcheck="false"><kbd>/</kbd></label></div>
+  <div class="search"><label><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg><input id="q" type="search" placeholder="Filter endpoints" autocomplete="off" spellcheck="false"><kbd>/</kbd></label><div class="seg sidetabs" id="sidetabs" hidden><button class="segb" data-k="be">Backend <i id="nbe"></i></button><button class="segb" data-k="fe">Frontend <i id="nfe"></i></button></div></div>
   <div class="eplist" id="side"></div>
-  <div class="revbar"><div class="lbl"><span>Reviewed</span><b id="revcount">0 / 0</b></div><div class="track"><div class="fill" id="revfill"></div></div></div>
+  <div class="revbar"><div class="lbl"><b id="revcount">0</b><span id="revof">of 0 reviewed</span></div><div class="track"><div class="fill" id="revfill"></div></div></div>
  </nav>
  <div class="stage" id="stage">
    <div id="world"><svg id="edges"></svg></div>
@@ -584,7 +781,7 @@ button.num{cursor:pointer}
   <div class="kr"><span>Review mode</span><span><kbd>R</kbd></span></div>
   <div class="kr"><span>Mark current reviewed</span><span><kbd>X</kbd></span></div>
   <div class="kr"><span>Sidebar / minimap</span><span><kbd>[</kbd><kbd>M</kbd></span></div>
-  <div class="kr"><span>Theme</span><span><kbd>T</kbd></span></div>
+  <div class="kr"><span>Light / dark (colours: the ◐ button)</span><span><kbd>T</kbd></span></div>
   <div class="kr"><span>Scroll wheel: pan ⇄ zoom</span><span><kbd>W</kbd></span></div>
   <h5>Canvas</h5>
   <div class="how">Scroll or drag empty space to pan. Pinch or hold <kbd>Ctrl</kbd>/<kbd>⌘</kbd> while scrolling to zoom. With a mouse, flip the Pan / Zoom switch in the bottom-left bar (or press <kbd>W</kbd>) to zoom with the wheel. Drag a box by its header to move it. Click or drag the minimap to jump.</div>
@@ -809,7 +1006,7 @@ function build(ep){
 
  layout();
  closeDrawer();
- $('#epinfo').innerHTML='<span class="m '+esc(ep.method.toUpperCase())+'">'+esc(ep.method)+'</span><span class="path" title="'+esc(ep.path)+'">'+esc(ep.path)+'</span><span class="sum" title="'+esc(ep.summary||'')+'">'+esc(ep.summary||'')+'</span>'+modelChips(ep)+statusChips(ep)+callerChips(ep);
+ $('#epinfo').innerHTML='<span class="m '+esc(ep.method.toUpperCase())+'">'+esc(ep.method)+'</span><span class="path" title="'+esc(ep.path)+'">'+esc(ep.path)+'</span><span class="sum" title="'+esc(ep.summary||'')+'">'+esc(ep.summary||'')+'</span>'+modelChips(ep)+statusChips(ep)+callerChips(ep);pinSt=null;okFocus(false);setErr(null);
  fxStrip(ep);
  renderLegend(varColor);
  fit(false);
@@ -821,8 +1018,8 @@ function build(ep){
 // error nothing handles. A dot marks a response this change introduced.
 function statusChips(ep){
  if(!(ep.statuses||[]).length)return '';
- return '<span class="stchips">'+ep.statuses.map(s=>'<span class="stc '+esc(s.kind)+(s.new?' new':'')+'" data-st="'+esc(s.code)+'"'
-   +(s.types.length?' data-err="'+esc(s.types.join(' '))+'" data-tip="'+esc(s.types.join('\n'))+'"':'')+'>'+esc(s.code)+'</span>').join('')+'</span>';
+ return '<span class="stchips" role="group" aria-label="Responses">'+ep.statuses.map(s=>'<button type="button" aria-pressed="false" class="stc '+esc(s.kind)+(s.new?' new':'')+'" data-st="'+esc(s.code)+'"'
+   +(s.types.length?' data-err="'+esc(s.types.join(' '))+'" data-tip="'+esc(s.types.join('\n'))+'"':'')+'>'+esc(s.code)+'</button>').join('')+'</span>';
 }
 
 // what the route does to the world, in the order it happens: database writes, the commit, and
@@ -1075,8 +1272,25 @@ function setErr(src){
  document.querySelectorAll('#world [data-err],#edges [data-err],#epinfo [data-err],#epinfo [data-st]').forEach(e=>{if(errMatch(e,H)){e.classList.add('errhot');
    const st=e.closest('.step');if(st)st.classList.add('errhot');const card=e.closest('.node');if(card)card.classList.add('errhot');}});
 }
-document.addEventListener('mouseover',e=>{const t=e.target.closest&&e.target.closest('.sq,.sqok,.errlab,.stc[data-err],.step.raise,.fx[data-err]');if(t)setErr(t);});
-document.addEventListener('mouseout',e=>{const t=e.target.closest&&e.target.closest('.sq,.sqok,.errlab,.stc[data-err],.step.raise,.fx[data-err]');if(t&&!(e.relatedTarget&&t.contains(e.relatedTarget)))setErr(null);});
+// the route's responses work as a toggle: click 400 to keep that error's path lit, click 200 to
+// see the path that succeeds (rows that raise and error labels fade); click again or Esc to let go
+let pinSt=null;
+function okFocus(on){[world,svg].forEach(r=>r.classList.toggle('okfocus',on));}
+function restorePin(){const b=pinSt&&document.querySelector('#epinfo .stc[data-st="'+pinSt+'"]');
+ if(!b){pinSt=null;setErr(null);okFocus(false);}
+ else if(b.dataset.err){okFocus(false);setErr(b);}else{setErr(null);okFocus(true);}
+ document.querySelectorAll('#epinfo .stc').forEach(x=>{const on=x.dataset.st===pinSt;x.classList.toggle('pin',on);x.setAttribute('aria-pressed',on);});
+ $('#epinfo').classList.toggle('stpinned',!!pinSt);}
+function unpinSt(){if(pinSt){pinSt=null;restorePin();}}
+// with "Ask a box": one lit answer at a time. Pinning a response clears a question's answer, and
+// asking a question lets go of the pinned response. The "N routes" tag asks "Which other routes reach this?"
+const HAS_ASK=typeof startAsk==='function';
+if(HAS_ASK){const _start=startAsk;startAsk=function(nid,q){if(pinSt){pinSt=null;restorePin();}return _start(nid,q);};}
+document.addEventListener('click',e=>{const t=HAS_ASK&&e.target.closest&&e.target.closest('.node .ub');if(!t)return;e.stopPropagation();
+ const nid=t.closest('.node').dataset.id;if(questionsFor(nid).some(q=>q.k==='routes'))startAsk(nid,{k:'routes'});},true);
+document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('#epinfo .stc');if(!b)return;pinSt=pinSt===b.dataset.st?null:b.dataset.st;if(pinSt&&typeof clearAsk==='function')clearAsk(true);restorePin();});
+document.addEventListener('mouseover',e=>{const t=e.target.closest&&e.target.closest('.sq,.sqok,.errlab,.stc[data-err],.step.raise,.fx[data-err]');if(t){okFocus(false);setErr(t);}});
+document.addEventListener('mouseout',e=>{const t=e.target.closest&&e.target.closest('.sq,.sqok,.errlab,.stc[data-err],.step.raise,.fx[data-err]');if(t&&!(e.relatedTarget&&t.contains(e.relatedTarget))){if(pinSt)restorePin();else setErr(null);}});
 
 // variable spotlight: hover any variable → it lights up everywhere (chips, code tokens, and every
 // arrow that carries it), while the rest fades. This is the "trace this value" view.
@@ -1149,12 +1363,15 @@ $('#chgprev').onclick=()=>gotoChg(-1);
 $('#chgtoggle').onclick=()=>{chgNavOn=!chgNavOn;$('#chgtoggle').classList.toggle('on',chgNavOn);setupChgNav();};
 
 // review mode: manually check flows off as reviewed (persisted; never auto-marked on visit)
+// review count drawn as dot-matrix digits (5×7 dots each); screen readers get the plain number
+const DOTS={0:'01110100011001110101110011000101110',1:'00100011000010000100001000010001110',2:'01110100010000100010001000100011111',3:'11111000100010000010000011000101110',4:'00010001100101010010111110001000010',5:'11111100001111000001000011000101110',6:'00110010001000011110100011000101110',7:'11111000010001000100010000100001000',8:'01110100011000101110100011000101110',9:'01110100011000101111000010001001100'};
+function dotDigits(n){return '<span class="sr" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">'+n+'</span>'+String(n).split('').map(d=>{let c='';const m=DOTS[d];for(let i=0;i<35;i++){const x=i%5,y=(i/5)|0;c+='<circle cx="'+(x*4+2)+'" cy="'+(y*4+2)+'" r="1.45" fill="currentColor" opacity="'+(m[i]==='1'?1:.16)+'"/>';}return '<svg viewBox="0 0 20 28" aria-hidden="true">'+c+'</svg>';}).join('');}
 function updateRevProgress(){
  const total=graph.endpoints.length;
  const done=graph.endpoints.filter(ep=>reviewed.has(revKey(ep))).length;
  const on=document.body.classList.contains('review');
  $('#revlabel').textContent=on?'Review '+done+'/'+total:'Review';
- $('#revcount').textContent=done+' / '+total;
+ $('#revcount').innerHTML=dotDigits(done);$('#revof').textContent='of '+total+' reviewed';
  $('#revfill').style.width=(total?done/total*100:0)+'%';
 }
 function toggleReview(){document.body.classList.toggle('review');const on=document.body.classList.contains('review');$('#revtoggle').classList.toggle('on',on);store.set('review',on);updateRevProgress();}
@@ -1319,7 +1536,19 @@ $('#legend').open=store.get('legend',false);
 const root=document.documentElement;
 function setTheme(t){root.setAttribute('data-theme',t);store.set('theme',t);if(curEp)drawEdges();}
 {const t=store.get('theme',null);if(t)root.setAttribute('data-theme',t);}
-$('#theme').onclick=()=>{const cur=root.getAttribute('data-theme')||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light');setTheme(cur==='dark'?'light':'dark');};
+const curTheme=()=>root.getAttribute('data-theme')||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light');
+function toggleTheme(){setTheme(curTheme()==='dark'?'light':'dark');syncThPop();}
+function setPalette(p){if(p==='mist')root.removeAttribute('data-palette');else root.setAttribute('data-palette',p);store.set('palette',p);syncThPop();if(curEp)drawEdges();}
+{const p=store.get('palette','mist');if(p!=='mist')root.setAttribute('data-palette',p);}
+function syncThPop(){const t=curTheme(),p=root.getAttribute('data-palette')||'mist';
+ $('#thmode').querySelectorAll('.segb').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
+ $('#thsw').querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.p===p));}
+function closeThPop(){$('#thpop').hidden=true;$('#theme').classList.remove('on');}
+$('#theme').onclick=e=>{e.stopPropagation();const p=$('#thpop');if(!p.hidden)return closeThPop();syncThPop();p.hidden=false;$('#theme').classList.add('on');};
+$('#thmode').onclick=e=>{const b=e.target.closest('.segb');if(b){setTheme(b.dataset.t);syncThPop();}};
+$('#thsw').onclick=e=>{const b=e.target.closest('button');if(b)setPalette(b.dataset.p);};
+$('#thpop').addEventListener('click',e=>e.stopPropagation());
+document.addEventListener('click',()=>{if(!$('#thpop').hidden)closeThPop();});
 
 // title: the generator writes --title into <title>; mirror it in the header
 {const t=document.title.replace(/\s*[—·|-]\s*Call-Flow Explorer\s*$/,'')||'Call-Flow Explorer';$('#apptitle').innerHTML=esc(t)+'<small>'+(t==='Call-Flow Explorer'?'flowsegul':'Call-flow explorer')+'</small>';}
@@ -1691,38 +1920,98 @@ function selectAction(A){
 const side=$('#side');
 const epEls=[];
 let curGroup=null, anyChg=0; const chgFns=new Set();
-function selectEp(ep,d){if(!xnav)xhist=[];side.querySelectorAll('.ep').forEach(x=>x.classList.remove('on'));d.classList.add('on');d.scrollIntoView({block:'nearest'});store.set('ep',ep.id);if(ep.__act){selectAction(ep.__act);curEp=ep;}else build(ep);}
+function selectEp(ep,d){if(!xnav)xhist=[];
+ if(typeof applySide==='function'&&d.dataset.k){let ch=false;if(bothKinds&&sideTab!==d.dataset.k){sideTab=d.dataset.k;ch=true;}
+   (d.dataset.anc||'').split(' ').forEach(a=>{if(a&&collapsed.has('fe|'+a)){collapsed.delete('fe|'+a);ch=true;const h=side.querySelector('.ctree[data-cid="'+a.slice(2)+'"]');if(h)h.classList.remove('shut');}});
+   if(ch)store.set('sidecollapsed',[...collapsed]);
+   const id=d.dataset.k+'|'+d.dataset.grp;if(collapsed.has(id)){collapsed.delete(id);store.set('sidecollapsed',[...collapsed]);side.querySelectorAll('.grp').forEach(g=>{if(g.dataset.k+'|'+g.dataset.grp===id)g.classList.remove('shut');});ch=true;}
+   if(ch)applySide();}side.querySelectorAll('.ep').forEach(x=>x.classList.remove('on'));d.classList.add('on');d.scrollIntoView({block:'nearest'});store.set('ep',ep.id);if(ep.__act){selectAction(ep.__act);curEp=ep;}else build(ep);}
 const bothKinds=graph.endpoints.length&&RX&&RX.actions.length;
-if(bothKinds)side.appendChild(el('div','grp sect','Routes'));
+// groups are folder names; drop the leading folders every group shares (e.g. "frontend/") so they stay short
+function shortGroups(names){const segs=names.filter(Boolean).map(n=>n.split('/'));if(segs.length<2)return n=>n;
+ let k=0;while(segs.every(x=>x.length>k+1&&x[k]===segs[0][k]))k++;return n=>n?n.split('/').slice(k).join('/'):n;}
+const collapsed=new Set(store.get('sidecollapsed',[]));
+const CARET_S='<svg class="gc" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 6 4 4 4-4"/></svg>';
+function grpHead(cls,key,label,n,k){const g=el('div',cls,CARET_S+'<span class="gl" title="'+esc(key)+'">'+esc(label)+'</span><span class="gn">'+n+'</span>');
+ g.dataset.grp=key;g.dataset.k=k;g.tabIndex=0;g.setAttribute('role','button');g.classList.toggle('shut',collapsed.has(k+'|'+key));
+ const flip=()=>{const id=k+'|'+key;collapsed.has(id)?collapsed.delete(id):collapsed.add(id);g.classList.toggle('shut',collapsed.has(id));store.set('sidecollapsed',[...collapsed]);applySide();};
+ g.onclick=flip;g.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();flip();}};side.appendChild(g);return g;}
+const shortBE=shortGroups([...new Set(graph.endpoints.map(e=>e.group))]);
 graph.endpoints.forEach((ep,i)=>{
- if(ep.group && ep.group!==curGroup){curGroup=ep.group;const g=el('div','grp',esc(curGroup)+'<span class="gn">'+graph.endpoints.filter(x=>x.group===ep.group).length+'</span>');g.dataset.grp=ep.group;side.appendChild(g);}
- else if(!ep.group && curGroup===null){curGroup='';side.appendChild(el('div','grp','Endpoints'));}
+ if(ep.group && ep.group!==curGroup){curGroup=ep.group;grpHead('grp',ep.group,shortBE(ep.group),graph.endpoints.filter(x=>x.group===ep.group).length,'be');}
+ else if(!ep.group && curGroup===null){curGroup='';grpHead('grp','','Endpoints',graph.endpoints.length,'be');}
  const nchg=(ep.nodes||[]).filter(n=>n.changed).length; anyChg+=nchg; (ep.nodes||[]).forEach(n=>{if(n.changed)chgFns.add(n.fnKey||n.title);});
  const d=el('div','ep'+(nchg?' haschg':'')+(reviewed.has(revKey(ep))?' reviewed':''));
- d.tabIndex=0;
+ d.tabIndex=0;d.dataset.k='be';d.dataset.grp=ep.group||'';
  d.innerHTML='<span class="m '+esc(ep.method.toUpperCase())+'">'+esc(ep.method)+'</span><span class="eptext"><div class="t">'+esc(ep.title)+'</div><div class="p">'+esc(ep.path)+'</div></span>'+(nchg?'<span class="chgdot"></span>':'')+'<button class="revchk" title="mark reviewed (X)">✓</button>';
  d.onclick=()=>selectEp(ep,d);
  d.onkeydown=e=>{if(e.key==='Enter'){selectEp(ep,d);}};
  d.querySelector('.revchk').onclick=(e)=>{e.stopPropagation();markReviewed(ep,d);};
  side.appendChild(d); epEls.push({ep,d});
 });
-// user actions (React mode), grouped by the folder of the component they sit in
+// user actions (React mode) as a component tree: each component sits under the one that renders it
+// (its first known parent), with its own actions right under its name. Components with no actions
+// anywhere below them are left out.
 if(RX&&RX.actions.length){
- if(bothKinds)side.appendChild(el('div','grp sect','Actions'));
- let g=null;
- RX.actions.forEach(A=>{
+ const acts={};RX.actions.forEach(A=>{(acts[A.u]=acts[A.u]||[]).push(A);});
+ const kids={},roots=[];
+ RX.units.forEach(u=>{const p=(u.parents||[]).find(x=>RU[x]);if(p)(kids[p]=kids[p]||[]).push(u.id);else roots.push(u.id);});
+ const nAct={};const count=(id,seen)=>{if(id in nAct)return nAct[id];if(seen.has(id))return 0;seen.add(id);
+   let n=(acts[id]||[]).length;(kids[id]||[]).forEach(c=>{n+=count(c,seen);});return nAct[id]=n;};
+ RX.units.forEach(u=>count(u.id,new Set()));
+ const isRoute=id=>/(^|\/)(routes|pages|app)\//.test(RU[id].file||'');
+ roots.sort((x,y)=>(isRoute(y)-isRoute(x))||0);
+ const addAct=(A,anc,depth)=>{
    const item={id:A.id,title:A.label,path:A.sub,method:'',group:A.group,nodes:[],__act:A};
-   if(A.group!==g){g=A.group;const h=el('div','grp agrp',esc(g)+'<span class="gn">'+RX.actions.filter(x=>x.group===g).length+'</span>');h.dataset.grp=g;side.appendChild(h);}
-   const d=el('div','ep act');d.tabIndex=0;
+   const d=el('div','ep act');d.tabIndex=0;d.dataset.k='fe';d.dataset.anc=anc.join(' ');d.style.setProperty('--d',depth);
    const R=RR[A.row],U=R&&RU[R.u];
    if(U)d.dataset.tip=U.file+':'+R.a+'\n'+R.t;
    d.innerHTML='<span class="eptext"><div class="t">'+esc(A.label)+'</div><div class="p">'+esc(A.sub)+'</div></span>';
    d.onclick=()=>selectEp(item,d);
    d.onkeydown=e=>{if(e.key==='Enter')selectEp(item,d);};
-   side.appendChild(d);epEls.push({ep:item,d});
- });
+   side.appendChild(d);epEls.push({ep:item,d});};
+ const addComp=(id,anc,depth,seen)=>{
+   if(!nAct[id]||seen.has(id))return;seen=new Set(seen).add(id);
+   const u=RU[id],key='u:'+id;
+   const h=el('div','ctree',CARET_S+'<span class="cn" title="'+esc(u.file+':'+u.line)+'">'+esc(u.name)+'</span><span class="gn">'+nAct[id]+'</span>');
+   h.dataset.k='fe';h.dataset.cid=id;h.dataset.anc=anc.join(' ');h.style.setProperty('--d',depth);h.tabIndex=0;h.setAttribute('role','button');
+   const hasKids=(kids[id]||[]).some(c=>nAct[c]);h.classList.toggle('leaf',!hasKids&&!(acts[id]||[]).length);
+   h.classList.toggle('shut',collapsed.has('fe|'+key));
+   const flip=()=>{const k='fe|'+key;collapsed.has(k)?collapsed.delete(k):collapsed.add(k);h.classList.toggle('shut',collapsed.has(k));store.set('sidecollapsed',[...collapsed]);applySide();};
+   h.onclick=flip;h.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();flip();}};
+   side.appendChild(h);
+   const inner=anc.concat(key);
+   (acts[id]||[]).forEach(A=>addAct(A,inner,depth+1));
+   (kids[id]||[]).forEach(c=>addComp(c,inner,depth+1,seen));};
+ roots.forEach(id=>addComp(id,[],0,new Set()));
  if(!graph.endpoints.length)$('#q').placeholder='Filter actions';
 }
+// Backend / Frontend tabs when the map has both
+let sideTab=bothKinds?store.get('sidetab','be'):null;
+function setSideTab(k){if(!bothKinds||sideTab===k)return;sideTab=k;store.set('sidetab',k);applySide();}
+if(bothKinds){$('#sidetabs').hidden=false;$('#sidetabs').onclick=e=>{const b=e.target.closest('.segb');if(b)setSideTab(b.dataset.k);};
+ $('#q').placeholder='Filter routes and actions';}
+let sideQ='';
+function sideMatch(ep){if(!sideQ)return true;const hay=(ep.title+' '+ep.path+' '+ep.method+' '+(ep.group||'')).toLowerCase();return sideQ.split(/\s+/).every(w=>hay.includes(w));}
+// one place decides what the sidebar shows: search, tab and folded groups (a search opens every group)
+function applySide(){
+ const cnt={be:0,fe:0};let shown=0;side.classList.toggle('searching',!!sideQ);
+ const ancShut=x=>(x.dataset.anc||'').split(' ').some(a=>a&&collapsed.has('fe|'+a));
+ const ancHit=new Set();
+ epEls.forEach(({ep,d})=>{const m=sideMatch(ep);if(m)cnt[d.dataset.k||'be']++;
+   if(m&&d.dataset.anc)d.dataset.anc.split(' ').forEach(a=>ancHit.add(a));
+   const folded=d.dataset.anc!==undefined?ancShut(d):collapsed.has(d.dataset.k+'|'+d.dataset.grp);
+   const vis=m&&(!sideTab||d.dataset.k===sideTab)&&(sideQ||!folded);d.hidden=!vis;if(vis)shown++;});
+ side.querySelectorAll('.ctree').forEach(h=>{h.hidden=(sideTab&&sideTab!=='fe')||(sideQ?!ancHit.has('u:'+h.dataset.cid):ancShut(h));});
+ side.querySelectorAll('.grp:not(.sect)').forEach(h=>{
+   if(sideTab&&h.dataset.k!==sideTab){h.hidden=true;return;}
+   let n=h.nextElementSibling,any=false;while(n&&!n.classList.contains('grp')&&!(h.classList.contains('csub')&&n.classList.contains('csub'))){if(n.classList.contains('ep')&&sideMatch(epEls.find(x=>x.d===n).ep))any=true;n=n.nextElementSibling;}
+   h.hidden=!any||(h.classList.contains('csub')&&!sideQ&&collapsed.has(h.dataset.k+'|'+h.dataset.grp));});
+ if(bothKinds){$('#nbe').textContent=cnt.be;$('#nfe').textContent=cnt.fe;
+   $('#sidetabs').querySelectorAll('.segb').forEach(b=>b.classList.toggle('on',b.dataset.k===sideTab));}
+ let nm=side.querySelector('.nomatch');if(!shown){if(!nm){nm=el('div','nomatch','Nothing matches here.');side.appendChild(nm);}}else if(nm)nm.remove();
+}
+applySide();
 function markReviewed(ep,d){const on=d.classList.toggle('reviewed');on?reviewed.add(revKey(ep)):reviewed.delete(revKey(ep));saveReviewed(reviewed);updateRevProgress();}
 // viewed progress: toolbar count reads "3/7 viewed" once anything is viewed; a route whose changed
 // functions are all viewed turns its dot into a hollow ring
@@ -1739,12 +2028,12 @@ if(anyChg){$('#chgtoggle').hidden=false;updateViewedCounts();}
 
 // filter: matches title, path, method or group; groups hide when empty
 $('#q').addEventListener('input',()=>{
- const q=$('#q').value.trim().toLowerCase();let shown=0;
- epEls.forEach(({ep,d})=>{const hay=(ep.title+' '+ep.path+' '+ep.method+' '+(ep.group||'')).toLowerCase();const ok=!q||q.split(/\s+/).every(w=>hay.includes(w));d.hidden=!ok;if(ok)shown++;
+ const q=$('#q').value.trim().toLowerCase();sideQ=q;
+ epEls.forEach(({ep,d})=>{
    const mk=s=>{if(!q)return esc(s);const w=q.split(/\s+/)[0];const i=s.toLowerCase().indexOf(w);return i<0?esc(s):esc(s.slice(0,i))+'<mark>'+esc(s.slice(i,i+w.length))+'</mark>'+esc(s.slice(i+w.length));};
    d.querySelector('.t').innerHTML=mk(ep.title);d.querySelector('.p').innerHTML=mk(ep.path);});
- side.querySelectorAll('.grp').forEach(g=>{let n=g.nextElementSibling,vis=false;while(n&&!n.classList.contains('grp')){if(!n.hidden&&n.classList.contains('ep'))vis=true;n=n.nextElementSibling;}g.hidden=!vis;});
- let nm=side.querySelector('.nomatch');if(!shown){if(!nm){nm=el('div','nomatch','No endpoints match.');side.appendChild(nm);}}else if(nm)nm.remove();
+ if(bothKinds&&q){const has=k=>epEls.some(({ep,d})=>d.dataset.k===k&&sideMatch(ep));if(!has(sideTab)&&has(sideTab==='be'?'fe':'be'))sideTab=sideTab==='be'?'fe':'be';}
+ applySide();
 });
 $('#q').addEventListener('keydown',e=>{
  if(e.key==='Escape'){$('#q').value='';$('#q').dispatchEvent(new Event('input'));$('#q').blur();}
@@ -1830,6 +2119,9 @@ window.addEventListener('pageshow',()=>{$('#loading').hidden=true;});
 {
  const tip=$('#tip');let owner=null,hideT=0;
  const show=t=>{clearTimeout(hideT);owner=t;tip.textContent=t.dataset.tip;t.setAttribute('aria-label',t.dataset.tip);
+   // "N routes": each route in this map is a link that opens it
+   if(t.classList.contains('ub')&&typeof startAsk!=='function'){tip.innerHTML=t.dataset.tip.split('\n').map(l=>{const E=graph.endpoints.find(ep=>(ep.method.toUpperCase()+' '+ep.path)===l);
+     return E?'<a class="tiprt" data-ep="'+esc(E.id)+'">'+esc(l)+'</a>':'<span class="tiprt off">'+esc(l)+'</span>';}).join('');}
    const r=t.getBoundingClientRect(),tw=tip.offsetWidth,th=tip.offsetHeight,up=r.bottom+th+12>innerHeight;
    tip.style.left=Math.max(6,Math.min(innerWidth-tw-6,r.left+r.width/2-tw/2))+'px';
    tip.style.top=(up?r.top-th-8:r.bottom+8)+'px';tip.classList.add('on');};
@@ -1838,7 +2130,8 @@ window.addEventListener('pageshow',()=>{$('#loading').hidden=true;});
  document.addEventListener('pointerout',e=>{const t=e.target.closest&&e.target.closest('[data-tip],#tip');if(t&&!(e.relatedTarget&&t.contains(e.relatedTarget)))hide();});
  document.addEventListener('focusin',e=>{const t=e.target.closest&&e.target.closest('[data-tip]');if(t)show(t);});
  document.addEventListener('focusout',hide);
- document.addEventListener('pointerdown',()=>{tip.classList.remove('on');});
+ document.addEventListener('pointerdown',e=>{if(e.target.closest&&e.target.closest('#tip,.ub'))return;tip.classList.remove('on');});
+ tip.addEventListener('click',e=>{const a=e.target.closest('.tiprt[data-ep]');if(!a)return;tip.classList.remove('on');goRoute(a.dataset.ep);});
  window.addEventListener('keydown',e=>{if(e.key==='Escape'&&tip.classList.contains('on')){tip.classList.remove('on');e.stopImmediatePropagation();}},true);
 }
 
@@ -1855,7 +2148,7 @@ window.addEventListener('keydown',e=>{
  if((e.metaKey||e.ctrlKey)&&(e.key==='k'||e.key==='K')){e.preventDefault();if(document.body.classList.contains('noside'))toggleSide();$('#q').focus();$('#q').select();return;}
  if(e.metaKey||e.ctrlKey||e.altKey)return;
  const typing=e.target.closest&&e.target.closest('input,textarea,[contenteditable]');
- if(e.key==='Escape'){toggleHelp(false);closeDrawer();closeRange();if(RMODE&&!typing)rEsc();return;}
+ if(e.key==='Escape'){toggleHelp(false);closeDrawer();closeRange();closeThPop();unpinSt();if(RMODE&&!typing)rEsc();return;}
  if(typing)return;
  const k=e.key;
  if(k==='/'){e.preventDefault();if(document.body.classList.contains('noside'))toggleSide();$('#q').focus();$('#q').select();}
@@ -1878,7 +2171,7 @@ window.addEventListener('keydown',e=>{
  else if(k==='g'||k==='G'){e.preventDefault();openRange();}
  else if(k==='w'||k==='W'){setScrollMode(scrollMode==='zoom'?'pan':'zoom');}
  else if(k==='['){toggleSide();}
- else if(k==='t'||k==='T'){$('#theme').click();}
+ else if(k==='t'||k==='T'){toggleTheme();}
 });
 
 if(store.get('review',false))toggleReview();
