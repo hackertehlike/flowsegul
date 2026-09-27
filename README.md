@@ -135,6 +135,16 @@ wrappers like `api('/items')`. Vite's `server.proxy` rewrites, Next.js `rewrites
 - **Full route paths** — prefixes from `APIRouter(prefix=…)` and `include_router(…, prefix=…)`
   (also a constant or `settings.API_V1_STR`) are joined into the path. FastAPI dependencies
   (`Depends(get_current_user)`, `Annotated[…, Depends(…)]`) are drawn as calls.
+- **Side effects in order** — a strip under the route header lists what the request does to the
+  world, in the order it runs: `add Order` → `email` → `commit`. It covers database writes
+  (`session.add`, `delete`, `execute(update(…))`), the commit (`session.commit()`, the end of
+  `with session.begin():`, or a commit after `yield` in a Depends generator, drawn dashed and
+  labelled `get_db`), and steps that can't be undone: email, HTTP POST/PUT/PATCH/DELETE, stripe,
+  boto3 writes, files, queued tasks. A step that can't be undone gets a red squiggle when an error
+  or the commit can still come after it; hover it to see which, and click any chip to go to its box.
+  Steps on only some paths are faded, with their `if`. With writes but no commit in sight the strip
+  ends in `commit ?` and marks nothing red. Name your own wrappers in `.flowsegul.json`:
+  `{"irreversible": ["mailer.send_*", "*.instance.send*"]}`.
 - **Change detection** (`--changed`) — per-node Diff / New / Old toggle, a **Changes** navigator
   (`N` / `Shift+N`), and deleted defs shown as removal diffs. Decorator edits count, and so do
   edits to a module-level name a function reads (`LIMIT = 500`): that function's diff opens with
