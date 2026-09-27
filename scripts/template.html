@@ -603,6 +603,43 @@ pre.code{border-color:transparent;border-radius:16px;background:var(--panel2)}
 .chgdot{box-shadow:0 0 10px 2px color-mix(in srgb,var(--glow1) 65%,transparent)}
 .chgbadge{background:linear-gradient(90deg,var(--glow1),var(--glow2))}
 .node.viewed .chgbadge{background:var(--faint)}
+/* flat, like the reference: no shadows, no glow, no dot grid; white cards on grey do the separating */
+:root,:root[data-theme]{--shadow-sm:none;--shadow:none;--shadow-lg:0 12px 32px -12px rgba(0,0,0,.18)}
+.stage{background-image:none}
+.tb,.rangebtn{box-shadow:none}
+.ep.on{box-shadow:none}
+.node:hover{box-shadow:none}
+.node.dragging{box-shadow:var(--shadow-lg)}
+.node.changed{box-shadow:none;border:2px solid var(--chg)}
+.node.changed .nhead{background:none}
+.node.changed.viewed{border:1px solid transparent}
+.node.deleted{box-shadow:none;border:2px solid var(--del)}
+.chgdot{box-shadow:none}
+.chgbadge{background:var(--chg)}
+.node.svc{box-shadow:0 0 0 2px var(--lit-fill)}
+.node.svc.changed{box-shadow:none}
+.float,.legend,.minimap,.fxstrip{box-shadow:none}
+/* hover still lifts a box a little */
+.node:hover{box-shadow:0 14px 34px -14px rgba(0,0,0,.22)}
+:root[data-theme=dark] .node:hover{box-shadow:0 14px 34px -14px rgba(0,0,0,.7)}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]) .node:hover{box-shadow:0 14px 34px -14px rgba(0,0,0,.7)}}
+/* responses toggle: one tray, the picked response sits raised in it */
+.stchips{gap:2px;padding:2px;border-radius:999px;background:var(--chip)}
+.stc{cursor:pointer;background:transparent;border:0;padding:5px 10px}
+.stc.ok{background:transparent}
+.stc:hover{background:var(--raise)}
+.stc.pin{background:var(--raise);box-shadow:0 0 0 1.5px var(--ink2)}
+.stc.bad,.stc.bad:hover,.stc.bad.pin{background:var(--del);color:#fff}
+.stc.new::after{border-color:var(--chip)}
+#world.okfocus .step.raise{opacity:.3}
+#edges.okfocus .errlab,#edges.okfocus .errpath{opacity:.1}
+#world.okfocus .sq{text-decoration-color:color-mix(in srgb,var(--del) 25%,transparent)}
+/* "N routes": the list opens each route on click */
+.ub{cursor:pointer}
+#tip .tiprt{display:block;padding:3px 6px;margin:0 -6px;border-radius:6px;white-space:pre;color:inherit;text-decoration:none}
+#tip .tiprt[data-ep]{cursor:pointer}
+#tip .tiprt[data-ep]:hover{background:#ffffff1f;text-decoration:underline;text-underline-offset:2px}
+#tip .tiprt.off{opacity:.55}
 /* colour themes: surfaces and the accent change; changed / error / ok colours never do */
 :root[data-palette=sand]{--bg:#ebe6dd;--grid:#d6cfc2;--panel:#fbf8f3;--panel2:#f2ede5;--raise:#fffdf9;--chip:#ece6dc;--line:#e6e0d5;--line2:#d6cdbf;--lit:#0f766e;--lit-fill:#99e2d6;--lit-on:#0b3b37;--accent-tk:#99e2d640}
 @media (prefers-color-scheme:dark){:root[data-palette=sand]:not([data-theme=light]){--bg:#12100d;--grid:#2b271f;--panel:#1b1814;--panel2:#23201a;--raise:#27231d;--chip:#28241e;--line:#2e2923;--line2:#3b352d;--lit:#5eead4;--lit-fill:#5eead4;--lit-on:#0b3b37;--accent-tk:#5eead440}}
@@ -930,7 +967,7 @@ function build(ep){
 
  layout();
  closeDrawer();
- $('#epinfo').innerHTML='<span class="m '+esc(ep.method.toUpperCase())+'">'+esc(ep.method)+'</span><span class="path" title="'+esc(ep.path)+'">'+esc(ep.path)+'</span><span class="sum" title="'+esc(ep.summary||'')+'">'+esc(ep.summary||'')+'</span>'+modelChips(ep)+statusChips(ep)+callerChips(ep);
+ $('#epinfo').innerHTML='<span class="m '+esc(ep.method.toUpperCase())+'">'+esc(ep.method)+'</span><span class="path" title="'+esc(ep.path)+'">'+esc(ep.path)+'</span><span class="sum" title="'+esc(ep.summary||'')+'">'+esc(ep.summary||'')+'</span>'+modelChips(ep)+statusChips(ep)+callerChips(ep);pinSt=null;okFocus(false);setErr(null);
  fxStrip(ep);
  renderLegend(varColor);
  fit(false);
@@ -942,8 +979,8 @@ function build(ep){
 // error nothing handles. A dot marks a response this change introduced.
 function statusChips(ep){
  if(!(ep.statuses||[]).length)return '';
- return '<span class="stchips">'+ep.statuses.map(s=>'<span class="stc '+esc(s.kind)+(s.new?' new':'')+'" data-st="'+esc(s.code)+'"'
-   +(s.types.length?' data-err="'+esc(s.types.join(' '))+'" data-tip="'+esc(s.types.join('\n'))+'"':'')+'>'+esc(s.code)+'</span>').join('')+'</span>';
+ return '<span class="stchips" role="group" aria-label="Responses">'+ep.statuses.map(s=>'<button type="button" aria-pressed="false" class="stc '+esc(s.kind)+(s.new?' new':'')+'" data-st="'+esc(s.code)+'"'
+   +(s.types.length?' data-err="'+esc(s.types.join(' '))+'" data-tip="'+esc(s.types.join('\n'))+'"':'')+'>'+esc(s.code)+'</button>').join('')+'</span>';
 }
 
 // what the route does to the world, in the order it happens: database writes, the commit, and
@@ -1196,8 +1233,19 @@ function setErr(src){
  document.querySelectorAll('#world [data-err],#edges [data-err],#epinfo [data-err],#epinfo [data-st]').forEach(e=>{if(errMatch(e,H)){e.classList.add('errhot');
    const st=e.closest('.step');if(st)st.classList.add('errhot');const card=e.closest('.node');if(card)card.classList.add('errhot');}});
 }
-document.addEventListener('mouseover',e=>{const t=e.target.closest&&e.target.closest('.sq,.sqok,.errlab,.stc[data-err],.step.raise,.fx[data-err]');if(t)setErr(t);});
-document.addEventListener('mouseout',e=>{const t=e.target.closest&&e.target.closest('.sq,.sqok,.errlab,.stc[data-err],.step.raise,.fx[data-err]');if(t&&!(e.relatedTarget&&t.contains(e.relatedTarget)))setErr(null);});
+// the route's responses work as a toggle: click 400 to keep that error's path lit, click 200 to
+// see the path that succeeds (rows that raise and error labels fade); click again or Esc to let go
+let pinSt=null;
+function okFocus(on){[world,svg].forEach(r=>r.classList.toggle('okfocus',on));}
+function restorePin(){const b=pinSt&&document.querySelector('#epinfo .stc[data-st="'+pinSt+'"]');
+ if(!b){pinSt=null;setErr(null);okFocus(false);}
+ else if(b.dataset.err){okFocus(false);setErr(b);}else{setErr(null);okFocus(true);}
+ document.querySelectorAll('#epinfo .stc').forEach(x=>{const on=x.dataset.st===pinSt;x.classList.toggle('pin',on);x.setAttribute('aria-pressed',on);});
+ $('#epinfo').classList.toggle('stpinned',!!pinSt);}
+function unpinSt(){if(pinSt){pinSt=null;restorePin();}}
+document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('#epinfo .stc');if(!b)return;pinSt=pinSt===b.dataset.st?null:b.dataset.st;restorePin();});
+document.addEventListener('mouseover',e=>{const t=e.target.closest&&e.target.closest('.sq,.sqok,.errlab,.stc[data-err],.step.raise,.fx[data-err]');if(t){okFocus(false);setErr(t);}});
+document.addEventListener('mouseout',e=>{const t=e.target.closest&&e.target.closest('.sq,.sqok,.errlab,.stc[data-err],.step.raise,.fx[data-err]');if(t&&!(e.relatedTarget&&t.contains(e.relatedTarget))){if(pinSt)restorePin();else setErr(null);}});
 
 // variable spotlight: hover any variable → it lights up everywhere (chips, code tokens, and every
 // arrow that carries it), while the rest fades. This is the "trace this value" view.
@@ -1966,6 +2014,9 @@ window.addEventListener('pageshow',()=>{$('#loading').hidden=true;});
 {
  const tip=$('#tip');let owner=null,hideT=0;
  const show=t=>{clearTimeout(hideT);owner=t;tip.textContent=t.dataset.tip;t.setAttribute('aria-label',t.dataset.tip);
+   // "N routes": each route in this map is a link that opens it
+   if(t.classList.contains('ub')){tip.innerHTML=t.dataset.tip.split('\n').map(l=>{const E=graph.endpoints.find(ep=>(ep.method.toUpperCase()+' '+ep.path)===l);
+     return E?'<a class="tiprt" data-ep="'+esc(E.id)+'">'+esc(l)+'</a>':'<span class="tiprt off">'+esc(l)+'</span>';}).join('');}
    const r=t.getBoundingClientRect(),tw=tip.offsetWidth,th=tip.offsetHeight,up=r.bottom+th+12>innerHeight;
    tip.style.left=Math.max(6,Math.min(innerWidth-tw-6,r.left+r.width/2-tw/2))+'px';
    tip.style.top=(up?r.top-th-8:r.bottom+8)+'px';tip.classList.add('on');};
@@ -1974,7 +2025,8 @@ window.addEventListener('pageshow',()=>{$('#loading').hidden=true;});
  document.addEventListener('pointerout',e=>{const t=e.target.closest&&e.target.closest('[data-tip],#tip');if(t&&!(e.relatedTarget&&t.contains(e.relatedTarget)))hide();});
  document.addEventListener('focusin',e=>{const t=e.target.closest&&e.target.closest('[data-tip]');if(t)show(t);});
  document.addEventListener('focusout',hide);
- document.addEventListener('pointerdown',()=>{tip.classList.remove('on');});
+ document.addEventListener('pointerdown',e=>{if(e.target.closest&&e.target.closest('#tip,.ub'))return;tip.classList.remove('on');});
+ tip.addEventListener('click',e=>{const a=e.target.closest('.tiprt[data-ep]');if(!a)return;tip.classList.remove('on');goRoute(a.dataset.ep);});
  window.addEventListener('keydown',e=>{if(e.key==='Escape'&&tip.classList.contains('on')){tip.classList.remove('on');e.stopImmediatePropagation();}},true);
 }
 
@@ -1991,7 +2043,7 @@ window.addEventListener('keydown',e=>{
  if((e.metaKey||e.ctrlKey)&&(e.key==='k'||e.key==='K')){e.preventDefault();if(document.body.classList.contains('noside'))toggleSide();$('#q').focus();$('#q').select();return;}
  if(e.metaKey||e.ctrlKey||e.altKey)return;
  const typing=e.target.closest&&e.target.closest('input,textarea,[contenteditable]');
- if(e.key==='Escape'){toggleHelp(false);closeDrawer();closeRange();closeThPop();if(RMODE&&!typing)rEsc();return;}
+ if(e.key==='Escape'){toggleHelp(false);closeDrawer();closeRange();closeThPop();unpinSt();if(RMODE&&!typing)rEsc();return;}
  if(typing)return;
  const k=e.key;
  if(k==='/'){e.preventDefault();if(document.body.classList.contains('noside'))toggleSide();$('#q').focus();$('#q').select();}
