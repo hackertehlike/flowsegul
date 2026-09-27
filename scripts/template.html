@@ -491,6 +491,9 @@ button.num{cursor:pointer}
 .num.o{background:var(--panel);color:var(--accent);box-shadow:inset 0 0 0 1.5px var(--accent)}
 .rrow>.num.dyn{position:absolute;left:-10px;top:3px;z-index:4;box-shadow:0 0 0 2px var(--panel)}
 .rrow>.num.dyn.o{box-shadow:inset 0 0 0 1.5px var(--accent),0 0 0 2px var(--panel)}
+/* a state the diff starts throwing away: a red chip on its useState line */
+.rc.chk{margin-left:6px;cursor:help}
+.ep.prob .t{font:600 12px/1.3 var(--mono);color:var(--del);white-space:normal}
 .rc.rerun .num{min-width:15px;height:15px;font-size:9px}
 .go{color:inherit;text-decoration:none;cursor:pointer;border-radius:3px}
 .go.tag{color:var(--def)}
@@ -1672,6 +1675,12 @@ function rCode(text,marks,o){
  return out+synHtml(text,cls,i,text.length);
 }
 
+// `draft erased when showPromo is false`: hover shows the line that now unmounts it
+function chkChip([k,t,tip]){
+ const d=tip?' data-tip="'+esc(tip)+'" tabindex="0"':'';
+ return '<span class="rc chk bad"'+d+'>'+esc(t)+'</span>';
+}
+
 // which boxes to draw: everything the action's steps touch, the components that rerun (a few),
 // the pinned state's lines, and the tree between them so the columns read parent → child
 function rShownSet(){
@@ -1683,7 +1692,8 @@ function rShownSet(){
    A.steps.forEach(st=>(st.rr||[]).forEach(([u,row])=>{if(s.has(u)&&row)need.add(row);}));}
  if(rv.pin){const st=RS[rv.pin];[st.row].concat(st.hops,st.sites).forEach(addRow);st.sigs.forEach(u=>s.add(u));}
  rv.extra.forEach(u=>s.add(u));
- [...s].forEach(u=>{
+ // an action's boxes line up in step order (rLayout), so the tree between them isn't needed
+ if(!A)[...s].forEach(u=>{
    if(!RU[u]||RU[u].kind!=='component')return;
    const prev=new Map([[u,null]]),q=[[u,0]];let hit=null;
    for(let i=0;i<q.length&&!hit;i++){const [x,d]=q[i];if(d>=6)continue;
@@ -1692,7 +1702,7 @@ function rShownSet(){
  });
  return {s,need};
 }
-function rRowVisible(id){const r=RR[id];return !r.kids||r.kids.some(k=>rv.shown.has(k))||rv.need.has(id);}
+function rRowVisible(id){const r=RR[id];return !r.kids||r.f||r.kids.some(k=>rv.shown.has(k))||rv.need.has(id);}
 function rBox(U){
  const card=el('div','node rbox'+(U.kind!=='component'?' '+U.kind:''));card.dataset.id=U.id;
  const head=el('div','nhead');
@@ -1711,6 +1721,7 @@ function rBox(U){
      row.setAttribute('aria-label',(st.name||st.setter)+' state, show where it is set');
      h+='<span class="sets">set in '+st.sites.length+' place'+(st.sites.length===1?'':'s')+'</span>';}
    (r.api||[]).forEach(a=>{h+=apiChips(a);});
+   (r.f||[]).forEach(f=>{h+=chkChip(f);});
    row.innerHTML=h;body.appendChild(row);
  });
  if(U.code){
@@ -1737,6 +1748,7 @@ function rBuild(force){
 // columns by render-tree depth, parent left of child; within a column, under the row that renders it
 function rLayout(){
  const ids=Object.keys(nodes);if(!ids.length){drawMinimap();return;}
+ if(rv.base)return rStepLayout(ids);
  const comps=ids.filter(id=>RU[id].kind!=='fn');
  const depths=[...new Set(comps.map(id=>RU[id].depth||0))].sort((a,b)=>a-b);
  const colOf=id=>RU[id].kind==='fn'?depths.length:depths.indexOf(RU[id].depth||0);
@@ -1756,6 +1768,28 @@ function rLayout(){
    col.forEach(id=>{const nd=nodes[id];const want=ys.get(id);if(isFinite(want))y=Math.max(y,want-10);nd.x=x;nd.y=y;place(nd);y+=nd.el.offsetHeight+26;w=Math.max(w,nd.el.offsetWidth);});
    x+=w+56;
  }
+ drawMinimap();
+}
+
+// an action: left to right in the order its steps first reach each box; boxes first reached on the
+// same step (the ones that rerun) stack in one column; each box's first lit line sits on one line
+function rStepLayout(ids){
+ const first=new Map(),firstRow=new Map();
+ rv.base.steps.forEach((st,i)=>{
+   st.r.forEach(r=>{const u=RR[r]&&RR[r].u;if(u&&!first.has(u)){first.set(u,i);firstRow.set(u,r);}});
+   (st.rr||[]).forEach(([u,row])=>{if(!first.has(u)){first.set(u,i);if(row)firstRow.set(u,row);}});
+ });
+ const keys=[...new Set(ids.map(id=>first.has(id)?first.get(id):1e9))].sort((a,b)=>a-b);
+ const LINE=150;let x=24;
+ keys.forEach(k=>{
+   const col=ids.filter(id=>(first.has(id)?first.get(id):1e9)===k).sort((a,b)=>a<b?-1:1);
+   let y=24,w=340;
+   col.forEach((id,j)=>{const nd=nodes[id];const e=firstRow.has(id)&&rEl(firstRow.get(id));
+     const off=e?e.offsetTop:24;
+     if(j===0)y=Math.max(24,LINE-off);
+     nd.x=x;nd.y=y;place(nd);y+=nd.el.offsetHeight+26;w=Math.max(w,nd.el.offsetWidth);});
+   x+=w+56;
+ });
  drawMinimap();
 }
 
@@ -1979,6 +2013,7 @@ function rLegend(){
   +'<span><span class="dash"></span></span><span>not sure: spread props, context</span>'
   +(Object.keys(HTTP).length&&graph.endpoints.length?'<span><span class="rc api" style="margin:0"><span class="dot"></span>GET /items</span></span><span>request, click for its route</span>'
     +'<span><span class="rc bad" style="margin:0">no route</span></span><span>won\'t reach a route as written</span>':'')
+  +(RPROB.length?'<span><span class="rc chk bad" style="margin:0;cursor:default">draft erased when open is false</span></span><span>this branch makes it start over, hover for the line</span>':'')
   +'<span><kbd>Esc</kbd></span><span>clear</span>'
   +'</div></div>';
 }
@@ -2003,8 +2038,8 @@ function selectEp(ep,d){if(!xnav)xhist=[];
    (d.dataset.anc||'').split(' ').forEach(a=>{if(a&&collapsed.has('fe|'+a)){collapsed.delete('fe|'+a);ch=true;const h=side.querySelector('.ctree[data-cid="'+a.slice(2)+'"]');if(h)h.classList.remove('shut');}});
    if(ch)store.set('sidecollapsed',[...collapsed]);
    const id=d.dataset.k+'|'+d.dataset.grp;if(collapsed.has(id)){collapsed.delete(id);store.set('sidecollapsed',[...collapsed]);side.querySelectorAll('.grp').forEach(g=>{if(g.dataset.k+'|'+g.dataset.grp===id)g.classList.remove('shut');});ch=true;}
-   if(ch)applySide();}side.querySelectorAll('.ep').forEach(x=>x.classList.remove('on'));d.classList.add('on');d.scrollIntoView({block:'nearest'});store.set('ep',ep.id);if(ep.__act){selectAction(ep.__act);curEp=ep;}else build(ep);}
-const bothKinds=graph.endpoints.length&&RX&&RX.actions.length;
+   if(ch)applySide();}side.querySelectorAll('.ep').forEach(x=>x.classList.remove('on'));d.classList.add('on');d.scrollIntoView({block:'nearest'});store.set('ep',ep.id);if(ep.__act){selectAction(ep.__act);curEp=ep;}else if(ep.__prob){rUnitView(ep.__prob);curEp=ep;}else build(ep);}
+const bothKinds=graph.endpoints.length&&RX&&(RX.actions.length||(RX.problems||[]).length);
 // groups are folder names; drop the leading folders every group shares (e.g. "frontend/") so they stay short
 function shortGroups(names){const segs=names.filter(Boolean).map(n=>n.split('/'));if(segs.length<2)return n=>n;
  let k=0;while(segs.every(x=>x.length>k+1&&x[k]===segs[0][k]))k++;return n=>n?n.split('/').slice(k).join('/'):n;}
@@ -2027,6 +2062,21 @@ graph.endpoints.forEach((ep,i)=>{
  d.querySelector('.revchk').onclick=(e)=>{e.stopPropagation();markReviewed(ep,d);};
  side.appendChild(d); epEls.push({ep,d});
 });
+// states this diff starts throwing away (React mode): one line each, opens its component with the line lit
+const RPROB=((RX&&RX.problems)||[]).filter(([k,r])=>RR[r]&&RU[RR[r].u]);
+if(RPROB.length){
+ const byRow=new Map();RPROB.forEach(([k,r])=>{byRow.set(r,(byRow.get(r)||[]).concat(k));});
+ grpHead('grp','Problems','Problems',byRow.size,'fe');
+ [...byRow].sort((a,b)=>{const x=RR[a[0]],y=RR[b[0]],fx=RU[x.u].file,fy=RU[y.u].file;return fx<fy?-1:fx>fy?1:x.a-y.a;}).forEach(([r])=>{
+   const R=RR[r],U=RU[R.u];
+   const t=(R.f||[]).filter(f=>byRow.get(r).includes(f[0])).map(f=>f[1]).join(' · ');
+   const item={id:'prob:'+r,title:t,path:U.name+' · '+U.file.split('/').pop()+':'+R.a,method:'',group:'',nodes:[],__prob:r};
+   const d=el('div','ep prob');d.tabIndex=0;d.dataset.k='fe';d.dataset.grp='Problems';d.dataset.tip=U.file+':'+R.a+'\n'+R.t;
+   d.innerHTML='<span class="eptext"><div class="t">'+esc(item.title)+'</div><div class="p">'+esc(item.path)+'</div></span>';
+   d.onclick=()=>selectEp(item,d);d.onkeydown=e=>{if(e.key==='Enter')selectEp(item,d);};
+   side.appendChild(d);epEls.push({ep:item,d});
+ });
+}
 // user actions (React mode) as a component tree: each component sits under the one that renders it
 // (its first known parent), with its own actions right under its name. Components with no actions
 // anywhere below them are left out.
@@ -2564,7 +2614,7 @@ if(!epEls.length){
  if(META.mode!=='all'){$('#emptyh').textContent='No changes here';$('#emptyp').innerHTML='Nothing in <b>'+esc(META.head||'the working tree')+'</b> differs from <b>'+esc(META.base)+'</b>. Pick another range with the button at the top left.';}
 }
 else{
- const last=store.get('ep',null), start=epEls.find(x=>x.ep.id===last)||epEls[0];
+ const last=store.get('ep',null), start=epEls.find(x=>x.ep.id===last)||epEls.find(x=>!x.ep.__prob)||epEls[0];
  requestAnimationFrame(()=>{selectEp(start.ep,start.d);requestAnimationFrame(()=>{layout();fit(false);});});
 }
 let ridle;window.addEventListener('resize',()=>{clearTimeout(ridle);ridle=setTimeout(()=>{drawEdges();drawMinimap();},120);});
