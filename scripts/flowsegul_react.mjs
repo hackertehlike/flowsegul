@@ -13,7 +13,7 @@
 //  - every useState / useReducer, with every line that sets it, following the setter when it is
 //    passed down as a prop under another name, through wrappers (`const h = v => setX(v)`,
 //    useCallback), custom hook returns and context values
-//  - user actions (event handler props on DOM elements, `useEffect(..., [])` as page load) and,
+//  - user actions (event handler props on DOM elements, `useEffect(..., [])` as a page load, named by what it fetches) and,
 //    for each, the ordered path through the code: handler → prop hops up the tree → setter →
 //    state → components that rerun → effects that depend on it → fetch calls → further setters
 // Anything it can't resolve for sure (spread props, context) is marked `unc` and never claimed.
@@ -1929,6 +1929,12 @@ export function analyze(ts, root, { tag = '' } = {}) {
       }
     }
   }
+  // a page load is named by what it fetches (`load /stats`), so several on one page tell apart
+  const loadLabel = (steps) => {
+    const seen = [];
+    for (const st of steps) for (const r of st.r) for (const a of r.api || []) seen.push(a.u.split('?')[0]);
+    return seen.length ? 'load ' + seen[0] : 'page load';   // the first request is the load's own; later ones are what it sets off
+  };
   // queries run when the component mounts: page load too
   const QUERIES = new Set(['useQuery', 'useSuspenseQuery', 'useInfiniteQuery', 'useSuspenseInfiniteQuery']);
   for (const c of calls) {
@@ -1945,7 +1951,7 @@ export function analyze(ts, root, { tag = '' } = {}) {
     const init = ts.isPropertyAssignment(q) ? skipOuter(q.initializer) : q;
     if (ts.isMethodDeclaration(init) || ts.isArrowFunction(init) || ts.isFunctionExpression(init)) { W.addStep([qrow]); W.walkFn(init, 1, false); }
     else if (init) W.handleTargets(resolveValue(init), qrow, 1, false);
-    addAction({ label: 'page load', sub: (owner || u).name, group: groupOf(owner || u), u, owner: owner || u, row, event: calleeName(c), steps: W.steps });
+    addAction({ label: loadLabel(W.steps), sub: (owner || u).name, group: groupOf(owner || u), u, owner: owner || u, row, event: calleeName(c), steps: W.steps });
   }
   // page load: effects with an empty deps list
   for (const u of units) {
@@ -1957,7 +1963,7 @@ export function analyze(ts, root, { tag = '' } = {}) {
       const row = rowFor(ef.call);
       W.addStep([row, rowFor(ef.deps)]);
       W.walkFn(ef.cb, 1, false);
-      addAction({ label: 'page load', sub: (owner || u).name, group: groupOf(owner || u), u, owner: owner || u, row, event: 'useEffect', steps: W.steps });
+      addAction({ label: loadLabel(W.steps), sub: (owner || u).name, group: groupOf(owner || u), u, owner: owner || u, row, event: 'useEffect', steps: W.steps });
     }
   }
 

@@ -75,7 +75,7 @@ flowsegul --react frontend   # only this folder of the repo
 ```
 
 The sidebar lists what a user can do, grouped by folder: `click Apply`, `type in coupon`,
-`submit Log in`, `page load`. Pick one and the map numbers the real code lines it runs through, in
+`submit Log in`, and what a screen loads by itself as it opens (`load /orders`). Pick one and the map numbers the real code lines it runs through, in
 order: the handler, the callback props it goes up through, the `useState` setter, the components
 that rerun (a `reruns` chip; hover it for the line responsible), effects that depend on the state,
 and the requests they make (`GET /orders/preview`). Step through with `N` / `Shift+N`; `Esc`

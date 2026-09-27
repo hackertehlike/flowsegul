@@ -59,7 +59,7 @@ python3 scripts/flowsegul_gen.py --changed --out /tmp/flowsegul.html   # then op
   hashes, but they diff via the *merge-base* — branch semantics.)
 - **`--depth`** (default 6), **`--title`**, **`--out`** (default a temp file).
 - **`--react [DIR]`** — map a React + TypeScript app (or only the folder `DIR` in the repo): each
-  user action (click, typing, submit, page load) and the ordered path it sets off — handler,
+  user action (click, typing, submit, what a screen loads as it opens: `load /orders`) and the ordered path it sets off — handler,
   callback props up the tree, the `useState` setter, the components that rerun, effects on that
   state and the requests they make. On by default for a repo with `.tsx` files. With a FastAPI
   backend too, each request links to the route it reaches, the route lists its callers, and red
