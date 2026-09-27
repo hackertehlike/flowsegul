@@ -70,7 +70,7 @@ Run `flowsegul --help` for the full list.
 ### React + TypeScript apps
 
 ```sh
-flowsegul --react            # or just `flowsegul` in a repo with .tsx files and no FastAPI routes
+flowsegul --react            # or just `flowsegul` in a repo with .tsx files
 flowsegul --react frontend   # only this folder of the repo
 ```
 
@@ -85,7 +85,24 @@ Click a component tag, a prop or a setter to jump to where it comes from; `Alt+�
 It needs Node.js and the `typescript` package: the app's own, one installed globally, or a folder
 named by `FLOWSEGUL_TS`. Labels and paths come from the code by fixed rules. Anything that can't be
 followed for sure (props passed on with `{...props}`, values from a context) is drawn faded as
-uncertain. A repo with both a FastAPI backend and a React app gets both with `--react`.
+uncertain.
+
+### Frontend requests linked to their routes
+
+A repo (or workspace) with both a FastAPI backend and a React app gets both maps, and each request
+the frontend makes is matched to the route FastAPI would send it to. The request line carries the
+route as the backend writes it (`GET /orders/{order_id}`); click it to open that route, `Alt+←` to
+come back. A route's header lists who calls it (`called from PriceLine OrderPanel`), each a link to
+the call, or says `no caller`.
+
+Red marks say where a request won't work as written: `no route`, `GET ≠ POST`, `goes to
+/orders/{order_id}` (a route declared earlier in the same file catches it), `no param n` (a query
+key the route doesn't read, which FastAPI silently ignores) and `needs item_count` (a required
+query key it doesn't send). A grey `307` is a missing or extra trailing slash; `route ?` is a URL
+built at run time. Requests are read through `fetch`, axios (instances with a `baseURL` too),
+`useSWR`, generated clients (hey-api, openapi-fetch, openapi-typescript-codegen) and your own
+wrappers like `api('/items')`. Vite's `server.proxy` rewrites, Next.js `rewrites()` and `VITE_*` /
+`NEXT_PUBLIC_*` values from `.env` files are applied.
 
 ## What you get
 

@@ -459,7 +459,7 @@ export function analyze(ts, root, { tag = '' } = {}) {
   const providers = new Map();     // context symbol → [opening elements]
   const ctxCalls = new Map();      // context symbol → [useContext calls]
   const hookCallSites = new Map(); // hook unit → [calls]
-  const httpOf = new Map();        // call → {m, u}
+  const httpOf = new Map();        // call → {m, u, id, via}
 
   for (const u of units) {
     const v = (n) => {
@@ -552,8 +552,373 @@ export function analyze(ts, root, { tag = '' } = {}) {
     return out;
   }
 
-  // ── HTTP calls: fetch, axios, and `client.get('/path')` ──
-  const METHODS = new Set(['get', 'post', 'put', 'patch', 'delete', 'head']);
+  // ── requests: the method, URL and query keys each call sends ──
+  // A URL is read as parts: text, a value only known at run time ('dyn', with its source), a
+  // variable from the environment ('env'), or a parameter of the function the call sits in
+  // ('param'). A parameter makes that function a wrapper, and its callers supply the URL:
+  // `api('/items')` where `api = (path) => fetch(BASE + path)`. The same goes for a module-level
+  // function that makes one request (a generated client's `ItemsService.readItems(...)`): its
+  // callers get the request too, with what they pass (`{ query: { skip } }`) filled in.
+  const METHODS = new Set(['get', 'post', 'put', 'patch', 'delete', 'head', 'options']);
+  const BODY_ARG = new Set(['post', 'put', 'patch']);
+  const envVals = readEnv(root);
+  const valSym = (e) => (e.parent && ts.isShorthandPropertyAssignment(e.parent) && e.parent.name === e
+    ? checker.getShorthandAssignmentValueSymbol(e.parent) : symOf(e));
+  function constInit(sym) {
+    for (const d of (sym && sym.declarations) || []) {
+      if (ts.isVariableDeclaration(d) && d.initializer && ts.isIdentifier(d.name) && d.parent
+        && ts.isVariableDeclarationList(d.parent) && (d.parent.flags & ts.NodeFlags.Const)) return d.initializer;
+    }
+    return null;
+  }
+  const paramDecl = (sym) => {
+    const d = sym && sym.declarations && sym.declarations[0];
+    return d && ts.isParameter(d) && ts.isIdentifier(d.name) ? d : null;
+  };
+  // an expression read as an object literal: {o, sub}, {none} when it is known to be absent, or null
+  function objectOf(e, sub, depth = 0) {
+    e = skipOuter(e);
+    if (!e || depth > 8) return null;
+    if (ts.isObjectLiteralExpression(e)) return { o: e, sub };
+    if (ts.isIdentifier(e)) {
+      if (e.text === 'undefined') return { none: true };
+      const sym = valSym(e);
+      if (!sym) return null;
+      if (sub && sub.has(sym)) { const x = sub.get(sym); return x ? objectOf(x.e, x.sub, depth + 1) : { none: true }; }
+      const init = constInit(sym);
+      return init ? objectOf(init, null, depth + 1) : null;
+    }
+    if (ts.isPropertyAccessExpression(e)) {
+      const p = propOf(e.expression, e.name.text, sub, depth + 1);
+      return p && p.e ? objectOf(p.e, p.sub, depth + 1) : p && p.none ? { none: true } : null;
+    }
+    return null;
+  }
+  // property `key` of an object expression: {e, sub}, {none} when it has no such key, or {unknown}
+  function propOf(objE, key, sub, depth = 0) {
+    const o = objectOf(objE, sub, depth);
+    if (!o) return { unknown: true };
+    if (o.none) return { none: true };
+    let found = { none: true };
+    for (const p of o.o.properties) {
+      if (ts.isSpreadAssignment(p)) {
+        // a spread we can read wins over what came before it; one we can't only fills a gap
+        const inner = propOf(p.expression, key, o.sub, depth + 1);
+        if (inner.e || (inner.unknown && found.none)) found = inner;
+        continue;
+      }
+      const k = p.name && (p.name.text != null ? p.name.text : p.name.getText());
+      if (k !== key) continue;
+      if (ts.isPropertyAssignment(p)) found = { e: p.initializer, sub: o.sub };
+      else if (ts.isShorthandPropertyAssignment(p)) found = { e: p.name, sub: o.sub };
+      else found = { unknown: true };
+    }
+    return found;
+  }
+  // the keys an object will have: a list, or null when a spread or a variable hides them
+  function keysOf(e, sub, depth = 0) {
+    const o = objectOf(e, sub, depth);
+    if (!o) return null;
+    if (o.none) return [];
+    const out = [];
+    for (const p of o.o.properties) {
+      if (ts.isSpreadAssignment(p)) { const k = keysOf(p.expression, o.sub, depth + 1); if (!k) return null; out.push(...k); continue; }
+      if (!p.name || ts.isComputedPropertyName(p.name)) return null;
+      out.push(p.name.text != null ? p.name.text : p.name.getText());
+    }
+    return out;
+  }
+  function evalStr(e, sub, depth = 0) {
+    e = skipOuter(e);
+    if (!e || depth > 12) return [{ t: 'dyn', s: e ? e.getText() : '' }];
+    if (ts.isStringLiteral(e) || ts.isNoSubstitutionTemplateLiteral(e)) return [{ t: 'lit', v: e.text }];
+    if (ts.isTemplateExpression(e)) {
+      let out = [{ t: 'lit', v: e.head.text }];
+      for (const s of e.templateSpans) out = out.concat(evalStr(s.expression, sub, depth + 1), [{ t: 'lit', v: s.literal.text }]);
+      return out;
+    }
+    if (ts.isBinaryExpression(e)) {
+      const k = e.operatorToken.kind;
+      if (k === ts.SyntaxKind.PlusToken) return evalStr(e.left, sub, depth + 1).concat(evalStr(e.right, sub, depth + 1));
+      // `import.meta.env.VITE_API_URL ?? ''`: the left side is the one that's meant
+      if (k === ts.SyntaxKind.QuestionQuestionToken || k === ts.SyntaxKind.BarBarToken) return evalStr(e.left, sub, depth + 1);
+    }
+    if (ts.isIdentifier(e)) {
+      const sym = valSym(e);
+      if (sym && sub && sub.has(sym)) { const x = sub.get(sym); return x ? evalStr(x.e, x.sub, depth + 1) : [{ t: 'dyn', s: e.text }]; }
+      const p = paramDecl(sym);
+      if (p) return [{ t: 'param', fn: p.parent, s: e.text, e }];
+      const init = constInit(sym);
+      if (init) return evalStr(init, null, depth + 1);
+      return [{ t: 'dyn', s: e.text }];
+    }
+    if (ts.isPropertyAccessExpression(e)) {
+      const env = /^(?:import\.meta\.env|process\.env)\.(\w+)$/.exec(e.getText());
+      if (env) return envVals.has(env[1]) ? [{ t: 'lit', v: envVals.get(env[1]) }] : [{ t: 'env', s: env[1] }];
+      const p = propOf(e.expression, e.name.text, sub, depth + 1);
+      if (p.e) return evalStr(p.e, p.sub, depth + 1);
+    }
+    return [{ t: 'dyn', s: e.getText() }];
+  }
+  // the function a callee stands for: `api`, `ItemsService.readItems`, `http.get`
+  function fnOfCallee(e, sub) {
+    e = skipOuter(e);
+    let sym = null;
+    if (ts.isIdentifier(e)) {
+      sym = valSym(e);
+      if (sym && sub && sub.has(sym)) { const x = sub.get(sym); return x ? fnOfCallee(x.e, x.sub) : null; }
+    } else if (ts.isPropertyAccessExpression(e)) sym = symOf(e.name);
+    for (const d of (sym && sym.declarations) || []) {
+      if (ts.isFunctionDeclaration(d) || ts.isMethodDeclaration(d)) return d.body ? d : null;
+      const init = (ts.isVariableDeclaration(d) || ts.isPropertyAssignment(d) || ts.isPropertyDeclaration(d)) && d.initializer ? skipOuter(d.initializer) : null;
+      if (init && (ts.isArrowFunction(init) || ts.isFunctionExpression(init))) return init;
+    }
+    return null;
+  }
+  // `axios.create({ baseURL })` behind a name: the base every call through it starts with
+  function baseOf(e, sub) {
+    e = skipOuter(e);
+    if (ts.isBinaryExpression(e)) return baseOf(e.right, sub) || baseOf(e.left, sub);   // (options.client ?? client)
+    if (!ts.isIdentifier(e)) return null;
+    const init = constInit(valSym(e));
+    const c = init && skipOuter(init);
+    if (c && ts.isCallExpression(c) && calleeName(c) === 'create' && c.arguments[0]) {
+      const b = propOf(c.arguments[0], 'baseURL', null);
+      if (b.e) return evalStr(b.e, b.sub);
+    }
+    return null;
+  }
+  const CLIENTISH = /(^|[^\w$])(axios|ky|api|\$api|client|http|https|request|fetcher|instance|service)\w*$/i;
+  const urlish = (parts) => {
+    const p = parts[0];
+    if (!p) return false;
+    if (p.t === 'lit') return /^(\/|https?:\/\/)/.test(p.v) || (p.v === '' && parts.length > 1 && urlish(parts.slice(1)));
+    return p.t === 'env' || p.t === 'param' || (p.t === 'dyn' && parts.length > 1 && parts[1].t === 'lit' && parts[1].v.startsWith('/'));
+  };
+  // the request a call makes by itself (fetch, axios, a client's .get, useSWR, request({ method, url }))
+  function directReq(c, sub) {
+    const callee = skipOuter(c.expression);
+    const args = c.arguments;
+    const lower = (s) => (s || '').toLowerCase();
+    const mk = (m, urlE, cfg, extra) => Object.assign({ m, url: urlE ? { e: urlE, sub } : null, cfg: cfg ? { e: cfg, sub } : null }, extra || {});
+    const name = calleeName(c);
+    if (ts.isIdentifier(callee) && (name === 'fetch' || name === '$fetch' || name === 'ofetch') && args[0]) {
+      return mk(args[1] ? { from: args[1], key: 'method' } : 'GET', args[0], args[1], { fetch: true, sure: true });
+    }
+    if (ts.isPropertyAccessExpression(callee) && name === 'fetch' && /^(window|globalThis|self)$/.test(skipOuter(callee.expression).getText()) && args[0]) {
+      return mk(args[1] ? { from: args[1], key: 'method' } : 'GET', args[0], args[1], { fetch: true, sure: true });
+    }
+    if (ts.isIdentifier(callee) && (name === 'useSWR' || name === 'useSWRImmutable') && args[0]) return mk('GET', args[0], null);
+    // openapi-react-query: $api.useQuery('get', '/users/{id}', { params })
+    if (/^(useQuery|useSuspenseQuery|useMutation|queryOptions|useInfiniteQuery)$/.test(name) && ts.isPropertyAccessExpression(callee)
+      && args[0] && args[1] && ts.isStringLiteral(skipOuter(args[0])) && METHODS.has(lower(skipOuter(args[0]).text))) {
+      return mk(skipOuter(args[0]).text.toUpperCase(), args[1], args[2], { params: true });
+    }
+    if (ts.isIdentifier(callee) && name === 'axios' && args[0]) {
+      const o = objectOf(args[0], sub);
+      if (o && o.o) return mk({ from: args[0], key: 'method', dflt: 'GET' }, null, args[0], { urlKey: true, sure: true });
+      return mk({ from: args[1], key: 'method', dflt: 'GET' }, args[0], args[1], { sure: true });
+    }
+    if (ts.isPropertyAccessExpression(callee) && (METHODS.has(lower(name)) || name === 'request') && args[0]) {
+      const baseE = skipOuter(callee.expression);
+      const clientish = (ts.isIdentifier(baseE) && baseE.text === 'axios') || CLIENTISH.test(baseE.getText()) || baseOf(baseE, sub);
+      const base = baseOf(baseE, sub);
+      const o = objectOf(args[0], sub);
+      if (o && o.o) {   // client.get({ url: '/items', query }) (hey-api), client.request({ method, url })
+        const u = propOf(args[0], 'url', sub);
+        if (!u.e) return null;
+        const m = name === 'request' ? { from: args[0], key: 'method', dflt: 'GET' } : name.toUpperCase();
+        return mk(m, null, args[0], { urlKey: true, base });
+      }
+      if (name === 'request') return null;
+      // a server's route, not a request: app.get('/items', (req, res) => …)
+      if (args.slice(1).some((a) => isFnLike(skipOuter(a)))) return null;
+      const parts = evalStr(args[0], sub);
+      if (!clientish && !(parts[0] && parts[0].t === 'lit' && /^(\/|https?:\/\/)/.test(parts[0].v))) return null;
+      const upper = name === name.toUpperCase();   // openapi-fetch: client.GET('/items/{id}', { params })
+      return mk(name.toUpperCase(), args[0], upper ? args[1] : BODY_ARG.has(lower(name)) ? args[2] : args[1], { base, params: upper });
+    }
+    // request(OpenAPI, { method: 'POST', url: '/api/v1/items/' }) and the like
+    for (const a of args) {
+      const o = objectOf(a, sub);
+      if (!o || !o.o) continue;
+      const mp = propOf(a, 'method', sub), up = propOf(a, 'url', sub);
+      if (mp.e && up.e) return mk({ from: a, key: 'method' }, null, a, { urlKey: true });
+    }
+    return null;
+  }
+  const wrappers = new Map();    // function → the call in it whose URL (or method) comes from its parameters
+  const clientFns = new Map();   // module-level function → the one request it makes
+  const outerCalls = new Map();  // client function → how many calls to it were found
+  // a parameter that fills one value (`/orders/${id}`, `?page=${page}`) is data, not the URL's shape:
+  // the function around it is not a wrapper, the request line itself is the one to show
+  function valueParams(parts) {
+    return parts.map((p, i) => {
+      if (p.t !== 'param') return p;
+      const before = parts[i - 1], after = parts[i + 1];
+      const opens = before && before.t === 'lit' && /[/=]$/.test(before.v);
+      const closes = !after || (after.t === 'lit' && (/^[/?&#]/.test(after.v) || after.v === ''));
+      return opens && closes ? { t: 'dyn', s: p.s } : p;
+    });
+  }
+  const hasParam = (parts) => parts.some((p) => p.t === 'param');
+  // everything a call sends: {m, parts, base, q, via}, or null when it makes no request we can read
+  function reqOf(c, sub, depth = 0) {
+    if (depth > 6) return null;
+    const d = directReq(c, sub);
+    if (d) {
+      let urlE = d.url;
+      if (d.urlKey) { const u = propOf(d.cfg.e, 'url', d.cfg.sub); urlE = u.e ? u : null; }
+      if (!urlE) return null;
+      const parts = valueParams(evalStr(urlE.e, urlE.sub));
+      let m = d.m;
+      if (typeof m !== 'string') {
+        const mp = m.from ? propOf(m.from, m.key, sub) : { none: true };
+        if (mp.e) { const mv = evalStr(mp.e, mp.sub); m = mv.length === 1 && mv[0].t === 'lit' ? mv[0].v.toUpperCase() : mv.some((x) => x.t === 'param') ? mv : '?'; }
+        else m = mp.none ? (m.dflt || 'GET') : '?';
+      }
+      // query keys: `?a=1&b=` in the URL, axios `params`, a client's `query`, openapi-fetch `params.query`
+      let q = [];
+      const cfg = d.cfg;
+      if (cfg) {
+        let qe = d.params ? propOf(cfg.e, 'params', cfg.sub) : null;
+        if (qe && qe.e) qe = propOf(qe.e, 'query', qe.sub);
+        else if (!d.params) { qe = propOf(cfg.e, 'params', cfg.sub); if (qe.none) qe = propOf(cfg.e, 'query', cfg.sub); }
+        if (d.fetch) qe = null;
+        if (qe && qe.e) q = keysOf(qe.e, qe.sub);
+        else if (qe && qe.unknown) q = null;
+      }
+      return { m, parts, base: d.base || null, q, sure: !!d.sure, src: urlE.e };
+    }
+    const fn = fnOfCallee(c.expression, sub);
+    const inner = fn && (wrappers.get(fn) || clientFns.get(fn));
+    if (!inner) return null;
+    const sub2 = new Map();
+    fn.parameters.forEach((p, i) => { if (ts.isIdentifier(p.name)) { const s = symOf(p.name); if (s) sub2.set(s, c.arguments[i] ? { e: c.arguments[i], sub } : null); } });
+    const r = reqOf(inner, sub2, depth + 1);
+    return r && Object.assign({}, r, { via: fn, inner: r.inner || inner });
+  }
+  // a function with no function around it (a class or an object literal is fine): `export const api = {...}`
+  // and one with a name to call it by: a function, a class method, `const f = () =>`, `const api = { f: () => }`
+  const moduleLevel = (fn) => {
+    for (let p = fn.parent; p; p = p.parent) if (isFnLike(p)) return false;
+    if (ts.isFunctionDeclaration(fn) || ts.isMethodDeclaration(fn)) return true;
+    const up = upOuter(fn).parent;
+    if (up && ts.isVariableDeclaration(up)) return true;
+    return !!(up && ts.isPropertyAssignment(up) && upOuter(up.parent).parent && ts.isVariableDeclaration(upOuter(up.parent).parent));
+  };
+  // parts → a path to match against routes: '/api/v1/items/{}', with what was left out
+  function toPath(r) {
+    let parts = r.parts;
+    if (r.base && !(parts[0] && parts[0].t === 'lit' && /^https?:\/\//.test(parts[0].v))) {
+      const b = r.base.slice(), last = b[b.length - 1];
+      if (last && last.t === 'lit' && last.v.endsWith('/') && parts[0] && parts[0].t === 'lit' && parts[0].v.startsWith('/')) b[b.length - 1] = { t: 'lit', v: last.v.slice(0, -1) };
+      else if (parts[0] && parts[0].t === 'lit' && !parts[0].v.startsWith('/') && !(last && last.t === 'lit' && last.v.endsWith('/'))) b.push({ t: 'lit', v: '/' });
+      parts = b.concat(parts);
+    }
+    // one string, with \u0001 for each value known only at run time
+    let s = '', shown = '', q = r.q, qdyn = false;
+    for (const p of parts) {
+      if (p.t === 'lit') { s += p.v; shown += p.v; }
+      else { s += '\u0001'; shown += p.t === 'env' ? '\u0002' : '${' + (p.s || '…') + '}'; if (s.includes('?')) qdyn = true; }
+    }
+    const qi = s.indexOf('?');
+    if (qi >= 0) {
+      const qs = s.slice(qi + 1);
+      s = s.slice(0, qi);
+      const keys = [...qs.matchAll(/(?:^|&)([^=&\u0001]+)=/g)].map((m) => decodeURIComponent(m[1]));
+      // `?${params}` hides the keys; `?page=${page}` doesn't
+      const hidden = /(^|&)\u0001/.test(qs);
+      q = hidden || q == null ? null : [...new Set(q.concat(keys))];
+    } else if (qdyn) q = null;
+    const hi = s.indexOf('#'); if (hi >= 0) s = s.slice(0, hi);
+    let host = '', lead = false;
+    const abs = /^(?:https?:)?\/\/([^/\u0001]*)/.exec(s);
+    if (abs) { host = abs[1]; s = s.slice(abs[0].length) || '/'; }
+    else if (s[0] === '\u0001') {   // `${API_URL}/items`: the value in front is the server
+      lead = true;
+      s = s.replace(/^\u0001+/, '');
+    }
+    if (s && s[0] !== '/') s = '/' + s;
+    const unres = !s.replace(/[/\u0001]/g, '').length && s !== '/';
+    const segs = s.split('/').map((g) => (g.includes('\u0001') || /^\{[^}]*\}$/.test(g) ? '{}' : g));
+    let shownPath = shown.replace(/^[^/]*?\/\/[^/]*/, '').replace(/^\u0002+/, '');
+    const qa = shownPath.indexOf('?'); if (qa > 0) shownPath = shownPath.slice(0, qa);
+    return { p: segs.join('/'), host, lead, q, unres, shown: shownPath.replace(/\u0002/g, '') };
+  }
+  const reqAt = new Map();   // call → the request it makes (a wrapper's own inner call included)
+  {
+    const paramOfReq = (r) => r.parts.concat(Array.isArray(r.m) ? r.m : []).find((p) => p.t === 'param');
+    for (let round = 0; round < 5; round++) {
+      let grew = false;
+      for (const c of calls) {
+        const r = reqOf(c, null);
+        if (!r) continue;
+        if (!reqAt.has(c)) grew = true;
+        reqAt.set(c, r);
+        // a URL or method from a parameter makes the function around the call a wrapper
+        const pf = paramOfReq(r);
+        if (pf && pf.fn && pf.fn !== r.via && !wrappers.has(pf.fn)) { wrappers.set(pf.fn, c); grew = true; }
+      }
+      // a module-level function (not a component or hook) that makes exactly one request
+      const perFn = new Map();
+      for (const [c, r] of reqAt) {
+        if (paramOfReq(r)) continue;
+        const fn = enclosingFn(c);
+        if (!fn || !fn.body || !moduleLevel(fn) || wrappers.has(fn)) continue;
+        const u = unitOf(c);
+        if (u && u.kind !== 'fn') continue;
+        perFn.set(fn, perFn.has(fn) ? null : c);
+      }
+      for (const [fn, c] of perFn) if (c && !clientFns.has(fn)) { clientFns.set(fn, c); grew = true; }
+      if (!grew) break;
+    }
+    for (const r of reqAt.values()) if (r.via) outerCalls.set(r.via, (outerCalls.get(r.via) || 0) + 1);
+  }
+  const proxy = readProxy(root);
+  const httpOut = {};
+  // the request a call makes, as the page shows it: {m, u, id}; null for a wrapper's own inner call
+  function httpCall(c) {
+    if (httpOf.has(c)) return httpOf.get(c);
+    let out = null;
+    const r = reqAt.get(c);
+    if (r && !hasParam(r.parts) && !Array.isArray(r.m) && (r.sure || urlish(r.parts))) {
+      const P2 = toPath(r);
+      const id = P + 'h' + Object.keys(httpOut).length;
+      const shown = (r.via ? P2.shown : urlText(r.src)) || P2.shown;
+      out = { m: r.m, u: shown.length > 60 ? shown.slice(0, 59) + '…' : shown, id, via: r.via || null };
+      const fn = enclosingFn(c);
+      const alt = P2.lead || P2.host ? null : proxyPath(P2.p, proxy);
+      httpOut[id] = Object.assign({ m: out.m, p: P2.p }, alt && alt !== P2.p ? { alt } : {}, P2.lead ? { lead: 1 } : {},
+        P2.host ? { host: P2.host } : {}, P2.q ? { q: P2.q } : { qx: 1 }, P2.unres || !urlish(r.parts) ? { unres: 1 } : {},
+        clientFns.get(fn) === c && outerCalls.get(fn) ? { inner: 1 } : {});
+    }
+    httpOf.set(c, out);
+    return out;
+  }
+  // a client function that only makes its request: an action's path can stop at the call to it
+  function thinClient(fn) {
+    const req = clientFns.get(fn) || wrappers.get(fn);
+    let other = false;
+    const v = (n) => {
+      if (other || n === req) return;
+      if (ts.isCallExpression(n) && !/^(json|text|blob|then|catch|finally|stringify|parse|toString|get|set|append)$/.test(calleeName(n))) { other = true; return; }
+      ts.forEachChild(n, v);
+    };
+    if (fn.body) v(fn.body);
+    return !other;
+  }
+  // is a function named anywhere (passed as `queryFn: ItemsService.readItems`, say)
+  function referenced(fn) {
+    const decl = ts.isMethodDeclaration(fn) || ts.isFunctionDeclaration(fn) ? fn : upOuter(fn).parent;
+    const nm = decl && decl.name;
+    const sym = nm && symOf(nm);
+    if (!sym) return false;
+    if ((refs.get(sym) || []).length) return true;
+    const txt = nm.getText();
+    for (const list of idsByFile.values()) for (const x of list) if (x.pa && x.node.text === txt && symOf(x.node) === sym) return true;
+    return false;
+  }
   function urlText(e) {
     e = skipOuter(e);
     if (!e) return '';
@@ -561,77 +926,87 @@ export function analyze(ts, root, { tag = '' } = {}) {
     if (ts.isStringLiteral(e) || ts.isNoSubstitutionTemplateLiteral(e)) t = e.text;
     else if (ts.isTemplateExpression(e)) {
       t = e.head.text + e.templateSpans.map((s) => '${' + s.expression.getText() + '}' + s.literal.text).join('');
+    } else if (ts.isObjectLiteralExpression(e)) {
+      const u = propOf(e, 'url', null);
+      return u.e ? urlText(u.e) : '';
     } else t = e.getText();
     t = t.replace(/\s+/g, ' ');
     const q = t.indexOf('?');
     if (q > 0) t = t.slice(0, q);
-    return t.length > 60 ? t.slice(0, 59) + '…' : t;
-  }
-  const looksLikeUrl = (e) => {
-    e = skipOuter(e);
-    if (!e) return false;
-    const head = ts.isStringLiteral(e) || ts.isNoSubstitutionTemplateLiteral(e) ? e.text : ts.isTemplateExpression(e) ? e.head.text || '${' : null;
-    return head != null && (/^(\/|https?:)/.test(head) || head === '${');
-  };
-  function httpCall(c) {
-    if (httpOf.has(c)) return httpOf.get(c);
-    let r = null;
-    const callee = skipOuter(c.expression);
-    const a0 = c.arguments[0];
-    if (ts.isIdentifier(callee) && callee.text === 'fetch' && a0) {
-      let m = 'GET';
-      const init = c.arguments[1] && skipOuter(c.arguments[1]);
-      if (init && ts.isObjectLiteralExpression(init)) {
-        for (const p of init.properties) {
-          if (ts.isPropertyAssignment(p) && p.name.getText() === 'method') {
-            const v = skipOuter(p.initializer);
-            m = ts.isStringLiteral(v) || ts.isNoSubstitutionTemplateLiteral(v) ? v.text.toUpperCase() : v.getText();
-          }
-        }
-      }
-      r = { m, u: urlText(a0) };
-    } else if (ts.isPropertyAccessExpression(callee) && METHODS.has(callee.name.text) && a0) {
-      const base = skipOuter(callee.expression);
-      const obj = skipOuter(a0);
-      const urlProp = ts.isObjectLiteralExpression(obj) && obj.properties.find((p) => ts.isPropertyAssignment(p) && p.name.getText() === 'url');
-      if ((ts.isIdentifier(base) && base.text === 'axios') || looksLikeUrl(a0)) r = { m: callee.name.text.toUpperCase(), u: urlText(a0) };
-      else if (urlProp && looksLikeUrl(urlProp.initializer)) r = { m: callee.name.text.toUpperCase(), u: urlText(urlProp.initializer) };
-    } else if (ts.isPropertyAccessExpression(callee) && callee.name.text === 'fetch' && ts.isIdentifier(callee.expression) && callee.expression.text === 'window' && a0) {
-      r = { m: 'GET', u: urlText(a0) };
-    } else if (ts.isIdentifier(callee) && callee.text === 'axios' && a0) {
-      const o = skipOuter(a0);
-      if (ts.isObjectLiteralExpression(o)) {
-        let m = 'GET', u = '';
-        for (const p of o.properties) {
-          if (!ts.isPropertyAssignment(p)) continue;
-          if (p.name.getText() === 'method') m = skipOuter(p.initializer).getText().replace(/['"`]/g, '').toUpperCase();
-          if (p.name.getText() === 'url') u = urlText(p.initializer);
-        }
-        r = { m, u };
-      } else r = { m: 'GET', u: urlText(a0) };
-    } else {
-      // request(OpenAPI, { method: "POST", url: "/api/v1/items/" }) and the like
-      for (const a of c.arguments) {
-        const o = skipOuter(a);
-        if (!ts.isObjectLiteralExpression(o)) continue;
-        const get = (k) => o.properties.find((p) => ts.isPropertyAssignment(p) && p.name.getText() === k);
-        const mp = get('method'), up = get('url');
-        if (mp && up && looksLikeUrl(up.initializer)) {
-          const mv = skipOuter(mp.initializer);
-          r = { m: ts.isStringLiteral(mv) || ts.isNoSubstitutionTemplateLiteral(mv) ? mv.text.toUpperCase() : mv.getText(), u: urlText(up.initializer) };
-          break;
-        }
-      }
-    }
-    httpOf.set(c, r);
-    return r;
+    return t;
   }
   function noteApi(c) {
     const h = httpCall(c);
     if (!h) return null;
     const r = rowFor(c);
-    if (r && !r.api.some((x) => x.m === h.m && x.u === h.u)) r.api.push(h);
+    if (r && !r.api.some((x) => x.id === h.id)) { r.api.push(h); httpOut[h.id].row = r.id; }
     return r;
+  }
+  // every request gets its row, not only the ones an action reaches, so a route can say who calls it
+  for (const c of reqAt.keys()) {
+    if (!httpCall(c)) continue;
+    const fn = enclosingFn(c);
+    if (clientFns.get(fn) === c && (outerCalls.get(fn) || !referenced(fn))) continue;   // its callers stand for it
+    if (!unitOf(c) && fn) ensureUnit(fn);
+    noteApi(c);
+  }
+  function readEnv(dir) {
+    const out = new Map();
+    for (const f of ['.env', '.env.development', '.env.local', '.env.development.local']) {
+      let text;
+      try { text = fs.readFileSync(path.join(dir, f), 'utf8'); } catch (e) { continue; }
+      for (const line of text.split(/\r?\n/)) {
+        const m = /^\s*(?:export\s+)?([A-Za-z_]\w*)\s*=\s*(.*?)\s*$/.exec(line);
+        if (m) out.set(m[1], m[2].replace(/^(['"])(.*)\1$/, '$2'));
+      }
+    }
+    return out;
+  }
+  // dev-server rewrites between the page and the API: Vite's server.proxy, Next's rewrites()
+  function readProxy(dir) {
+    const rules = [];
+    let names = [];
+    try { names = fs.readdirSync(dir); } catch (e) { return rules; }
+    for (const f of names) {
+      if (!/^(vite|next)\.config\.[cm]?[jt]s$/.test(f)) continue;
+      let sf;
+      try { sf = ts.createSourceFile(f, fs.readFileSync(path.join(dir, f), 'utf8'), ts.ScriptTarget.Latest, true); } catch (e) { continue; }
+      const str = (e) => { e = e && skipOuter(e); return e && (ts.isStringLiteral(e) || ts.isNoSubstitutionTemplateLiteral(e)) ? e.text : null; };
+      const keyOf = (p) => p.name && (p.name.text != null ? p.name.text : p.name.getText());
+      const v = (n) => {
+        if (ts.isPropertyAssignment(n) && keyOf(n) === 'proxy' && ts.isObjectLiteralExpression(skipOuter(n.initializer))) {
+          for (const p of skipOuter(n.initializer).properties) {
+            if (!ts.isPropertyAssignment(p)) continue;
+            const from = keyOf(p).replace(/^\^/, '');
+            if (!from.startsWith('/')) continue;
+            let to = from;
+            const val = skipOuter(p.initializer);
+            const rw = ts.isObjectLiteralExpression(val) && val.properties.find((q) => keyOf(q) === 'rewrite');
+            if (rw) {
+              // rewrite: (path) => path.replace(/^\/api/, '')
+              const m = /replace\(\s*\/\^?((?:\\\/|[^/])*)\/[a-z]*\s*,\s*(['"`])(.*?)\2\s*\)/.exec(rw.getText());
+              to = m && m[1].replace(/\\\//g, '/') === from ? m[3] : null;
+            }
+            if (to != null) rules.push([from, to]);
+          }
+        }
+        if (ts.isObjectLiteralExpression(n)) {   // { source: '/api/:path*', destination: 'http://localhost:8000/:path*' }
+          const sp = n.properties.find((q) => keyOf(q) === 'source'), dp = n.properties.find((q) => keyOf(q) === 'destination');
+          const sv = sp && ts.isPropertyAssignment(sp) && str(sp.initializer), dv = dp && ts.isPropertyAssignment(dp) && str(dp.initializer);
+          if (sv && dv && sv.startsWith('/')) rules.push([sv.split(/[:(]/)[0], dv.replace(/^[a-z]+:\/\/[^/]*/i, '').split(/[:(]/)[0] || '/']);
+        }
+        ts.forEachChild(n, v);
+      };
+      v(sf);
+    }
+    return rules;
+  }
+  function proxyPath(p, rules) {
+    for (const [from, to] of rules) {
+      const f = from.replace(/\/$/, '');
+      if (f && (p === f || p.startsWith(f + '/'))) return (to.replace(/\/$/, '') + p.slice(f.length)) || '/';
+    }
+    return null;
   }
 
   // ════════════════════════════════════════════════════════════════════════════════════════
@@ -1339,7 +1714,8 @@ export function analyze(ts, root, { tag = '' } = {}) {
       if (api) { addStep([noteApi(c)], { unc }); }
       const cn = calleeName(c);
       if (CALLBACK_SKIP.has(cn)) return;
-      const targets = api ? [] : resolveValue(c.expression);
+      // a call to a client function that does more than its request still runs the rest
+      const targets = api && (!api.via || thinClient(api.via)) ? [] : resolveValue(c.expression);
       if (targets.length) handleTargets(targets, rowFor(c), level, unc);
       const calleeIsSetter = targets.some((t) => t.kind === 'setter');
       for (const a0 of c.arguments) {
@@ -1716,7 +2092,7 @@ export function analyze(ts, root, { tag = '' } = {}) {
   const rowsOut = {};
   for (const r of allRows) {
     rowsOut[r.id] = { u: r.u.id, a: r.a + 1, b: r.b + 1, t: r.text, i: r.ind, m: r.marks };
-    if (r.api.length) rowsOut[r.id].api = r.api.map((x) => [x.m, x.u]);
+    if (r.api.length) rowsOut[r.id].api = r.api.map((x) => [x.m, x.u, x.id]);
     if (r.kids.length) rowsOut[r.id].kids = r.kids;
     if (r.unc) rowsOut[r.id].unc = 1;
   }
@@ -1775,6 +2151,7 @@ export function analyze(ts, root, { tag = '' } = {}) {
   return {
     version: 1, root: path.basename(root), tag,
     units: outUnits, rows: rowsOut, states: stateOut, actions: actOut,
+    http: Object.fromEntries(Object.entries(httpOut).filter(([, h]) => h.row)),
     stats: { files: sources.length, components: units.filter((u) => u.kind === 'component').length, ms: Date.now() - t0, typescript: ts.version },
   };
 }

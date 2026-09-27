@@ -428,6 +428,21 @@ body.nomap .minimap{display:none}
 .rc{display:inline-flex;align-items:center;gap:4px;font:700 10px/1 var(--mono);padding:3px 6px;border-radius:6px;border:1px solid var(--line);background:var(--panel2);color:var(--ink2);white-space:nowrap;text-indent:0;vertical-align:1px}
 .rc.api{color:var(--m-get);background:var(--m-get-bg);border-color:color-mix(in srgb,var(--m-get) 35%,var(--line));margin-left:6px}
 .rc.api .dot{width:6px;height:6px;border-radius:50%;background:var(--ok)}
+/* a request's route: click to open it; red marks say why it won't get there as written */
+.rrow .rc.api,.rrow .rc.bad{white-space:normal;overflow-wrap:anywhere;max-width:100%;line-height:1.25}
+a.rc.api{text-decoration:none;cursor:pointer}
+a.rc.api:hover{border-color:var(--m-get)}
+.rc.api.off{color:var(--ink2);background:var(--panel2);border-color:var(--line)}
+.rc.api.off .dot{background:var(--ink3,#999)}
+.rc.bad{color:var(--del);background:color-mix(in srgb,var(--del) 10%,var(--panel));border-color:color-mix(in srgb,var(--del) 45%,var(--line));margin-left:4px}
+a.rc.bad{text-decoration:none;cursor:pointer}
+a.rc.bad:hover{border-color:var(--del)}
+.rc.quiet{color:var(--ink2);border-style:dashed;margin-left:4px;cursor:default}
+.callers{display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap;font:600 11px/1 var(--ui,inherit);color:var(--ink2);margin-left:8px}
+.callers .rc{font-size:11px;padding:4px 7px;text-decoration:none;cursor:pointer;color:var(--def,var(--accent))}
+.callers .rc:hover{border-color:var(--accent)}
+.callers button.rc{font-family:var(--mono)}
+.rc.nocall{font-size:11px;padding:4px 7px;margin-left:8px;border-style:dashed;cursor:default}
 .rc.rerun{position:absolute;top:-10px;right:10px;z-index:4;color:var(--chg);border-color:color-mix(in srgb,var(--chg) 50%,var(--line));background:var(--panel);box-shadow:inset 0 0 0 20px var(--chg-soft);cursor:help;padding:2px 6px 2px 3px}
 .rc.rerun[hidden]{display:none}
 .rc.rerun.unc{border-style:dashed;opacity:.75}
@@ -753,10 +768,11 @@ function build(ep){
 
  layout();
  closeDrawer();
- $('#epinfo').innerHTML='<span class="m '+esc(ep.method.toUpperCase())+'">'+esc(ep.method)+'</span><span class="path" title="'+esc(ep.path)+'">'+esc(ep.path)+'</span><span class="sum" title="'+esc(ep.summary||'')+'">'+esc(ep.summary||'')+'</span>'+modelChips(ep)+statusChips(ep);
+ $('#epinfo').innerHTML='<span class="m '+esc(ep.method.toUpperCase())+'">'+esc(ep.method)+'</span><span class="path" title="'+esc(ep.path)+'">'+esc(ep.path)+'</span><span class="sum" title="'+esc(ep.summary||'')+'">'+esc(ep.summary||'')+'</span>'+modelChips(ep)+statusChips(ep)+callerChips(ep);
  renderLegend(varColor);
  fit(false);
  setupChgNav();
+ rBar();
 }
 
 // what the route can answer: the success status, HTTP errors it raises on purpose, and 500 for an
@@ -1307,7 +1323,7 @@ function rBox(U){
    if(st){row.dataset.s=st.id;row.tabIndex=0;row.setAttribute('role','button');row.setAttribute('aria-pressed','false');
      row.setAttribute('aria-label',(st.name||st.setter)+' state, show where it is set');
      h+='<span class="sets">set in '+st.sites.length+' place'+(st.sites.length===1?'':'s')+'</span>';}
-   (r.api||[]).forEach(([m,u])=>{h+='<span class="rc api"><span class="dot"></span>'+esc(m+' '+u)+'</span>';});
+   (r.api||[]).forEach(a=>{h+=apiChips(a);});
    row.innerHTML=h;body.appendChild(row);
  });
  if(U.code){
@@ -1406,9 +1422,12 @@ function rStops(){
 function rCur(){return rv.pin?rv.sstep:rv.step;}
 function rDis(e,v){e.setAttribute('aria-disabled',String(!!v));}
 function rBar(){
- const bar=$('#stepbar');if(!RMODE){bar.hidden=true;return;}
- const st=rStops();bar.hidden=!st.length&&!rhist.length;
- rDis($('#sbback'),!rhist.length);
+ const bar=$('#stepbar');
+ if(!RMODE){bar.hidden=!xhist.length;if(bar.hidden)return;
+   ['#sbprev','#sbnext','#sbcount','#sbname'].forEach(q=>{$(q).style.display='none';});bar.querySelector('.sbsep').style.display='none';
+   bar.classList.remove('idle');rDis($('#sbback'),false);return;}
+ const st=rStops();bar.hidden=!st.length&&!rhist.length&&!xhist.length;
+ rDis($('#sbback'),!rhist.length&&!xhist.length);
  const on=st.length>0;['#sbprev','#sbnext','#sbcount','#sbname'].forEach(q=>{$(q).style.display=on?'':'none';});
  bar.querySelector('.sbsep').style.display=on?'':'none';
  if(!on)return;
@@ -1468,7 +1487,7 @@ function rPin(id){rv.pin=rv.pin===id?null:id;rv.sstep=1;rBuild();}
 
 world.addEventListener('click',e=>{
  if(!RMODE)return;
- const a=e.target.closest('a.go');if(a){e.preventDefault();e.stopPropagation();rJump(a);return;}
+ const a=e.target.closest('a.go');if(a){e.preventDefault();e.stopPropagation();if(a.dataset.go.startsWith('e|'))goRoute(a.dataset.go.slice(2));else rJump(a);return;}
  const b=e.target.closest('.num[data-step]');if(b){e.stopPropagation();rGo(+b.dataset.step);return;}
  const sr=e.target.closest('.srow');if(sr){rPin(sr.dataset.s);return;}
  const r=e.target.closest('.rrow[data-step]');if(r)rGo(+r.dataset.step);
@@ -1480,7 +1499,87 @@ world.addEventListener('focusout',e=>{if(!RMODE)return;const r=e.target.closest(
 world.addEventListener('keydown',e=>{if(!RMODE)return;const r=e.target.closest('.srow');if(r&&e.target===r&&(e.key==='Enter'||e.key===' ')){e.preventDefault();rPin(r.dataset.s);}});
 $('#sbprev').onclick=()=>rGo(rCur()-1);
 $('#sbnext').onclick=()=>rGo(rCur()+1);
-$('#sbback').onclick=rBack;
+$('#sbback').onclick=()=>{if(RMODE&&rhist.length)rBack();else xBack();};
+
+// ── a request and the route it reaches ──
+// graph.react.http[id].ln (from flowsegul_gen.link_http): st ok | shadow | method | noroute | unres | ext,
+// `to` the route it goes to, extra/miss query keys. The chip names the route the way the backend writes it.
+const EPBYID={};graph.endpoints.forEach(e=>{EPBYID[e.id]=e;});
+const HTTP=(RX&&RX.http)||{};
+function apiChips([m,u,id]){
+ const H=HTTP[id],ln=H&&H.ln,dot='<span class="dot"></span>';
+ const plain=(cls)=>'<span class="rc api'+(cls||'')+'">'+dot+esc(m+' '+u)+'</span>';
+ if(!ln||ln.st==='ext')return plain('');
+ if(ln.st==='unres')return plain(' off')+'<span class="rc quiet">route ?</span>';
+ if(ln.st==='noroute')return plain(' off')+'<span class="rc bad">no route</span>';
+ const E=EPBYID[ln.to];if(!E)return plain('');
+ const go=(cls,text,tip)=>'<a class="rc '+cls+' go" href="#" data-go="e|'+esc(E.id)+'"'+(tip?' data-tip="'+esc(tip)+'"':'')+'>'+text+'</a>';
+ let h='';
+ if(ln.st==='shadow'){const M=EPBYID[ln.meant];
+   h+=go('bad','goes to '+esc(E.path),M?'not '+M.method.toUpperCase()+' '+M.path:'');}
+ else if(ln.st==='method')h+=go('api off',dot+esc(E.method.toUpperCase()+' '+E.path))+'<span class="rc bad">'+esc(m+' ≠ '+(ln.want||[]).join(' '))+'</span>';
+ else h+=go('api',dot+esc(E.method.toUpperCase()+' '+E.path));
+ if(ln.slash)h+='<span class="rc quiet" data-tip="'+esc(H.p+' → '+E.path)+'">307</span>';
+ (ln.extra||[]).slice(0,3).forEach(k=>{h+='<span class="rc bad">no param '+esc(k)+'</span>';});
+ (ln.miss||[]).slice(0,3).forEach(k=>{h+='<span class="rc bad">needs '+esc(k)+'</span>';});
+ return h;
+}
+// route header: who calls it
+function callerChips(ep){
+ if(!RX)return '';
+ if(ep.nocaller)return '<span class="rc nocall">no caller</span>';
+ const rows=(ep.callers||[]).filter(r=>RR[r]);if(!rows.length)return '';
+ const seen=new Map();rows.forEach(r=>{const u=RR[r].u;if(!seen.has(u))seen.set(u,r);});
+ const chip=([u,r])=>{const R=RR[r],U=RU[u];return '<a class="rc call" href="#" data-row="'+esc(r)+'" data-tip="'+esc(U.file+':'+R.a+'\n'+R.t)+'">'+esc(U.name)+'</a>';};
+ const all=[...seen];let h='<span class="callers">called from '+all.slice(0,3).map(chip).join('');
+ if(all.length>3)h+='<button class="rc more" type="button" data-more="'+esc(all.slice(3).map(x=>x[1]).join(' '))+'">+'+(all.length-3)+'</button>';
+ return h+'</span>';
+}
+// between a request and its route: xhist remembers where you came from, Alt+← goes back
+let xhist=[],xnav=false;
+function xHere(){
+ const v={x:view.x,y:view.y,s:view.s};
+ if(!RMODE)return curEp&&!curEp.__act?{kind:'ep',id:curEp.id,v}:null;
+ if(rv.base)return {kind:'act',id:rv.base.id,step:rv.step,pin:rv.pin,v};
+ return {kind:'unit',row:rv.unitRow,v};
+}
+function xSelect(item){const x=epEls.find(e=>e.ep===item||e.ep.id===item.id);xnav=true;try{if(x)selectEp(x.ep,x.d);}finally{xnav=false;}return !!x;}
+function goRoute(id){
+ const E=EPBYID[id];if(!E)return;const h=xHere();
+ if(!xSelect(E))return;if(h)xhist.push(h);rBar();
+}
+function openCaller(row){
+ const h=xHere();
+ let best=null;(RX.actions||[]).forEach(A=>{const i=A.steps.findIndex(s=>s.r.includes(row));if(i>=0&&(!best||i<best[1]))best=[A,i];});
+ if(best){const it=epEls.find(e=>e.ep.__act===best[0]);if(!it)return;xnav=true;try{selectEp(it.ep,it.d);}finally{xnav=false;}
+   rv.step=best[1]+1;rPaint();}
+ else rUnitView(row);
+ if(h)xhist.push(h);rBar();
+ const e=rEl(row);if(e){rReveal(e,true);rFlash(e);}
+}
+// a call no action reaches: its component on its own, the line lit
+function rUnitView(row){
+ const R=RR[row],U=R&&RU[R.u];if(!U)return;
+ side.querySelectorAll('.ep').forEach(x=>x.classList.remove('on'));
+ if(!RMODE){RMODE=true;svg.innerHTML='';$('#chgnav').hidden=true;closeDrawer();}
+ curEp={id:'unit:'+row,nodes:[],react:true};
+ Object.assign(rv,{base:null,act:null,step:1,hover:null,pin:null,sstep:1,extra:new Set([U.id]),shownKey:'',unitRow:row});rhist=[];
+ rBuild(true);fit(false);
+ $('#epinfo').innerHTML='<span class="path">'+esc(U.name)+'</span><span class="sum">'+esc(U.file+':'+R.a)+'</span>';
+ rLegend();
+ const e=rEl(row);if(e)e.classList.add('lit');
+}
+function xBack(){
+ const h=xhist.pop();if(!h)return;
+ if(h.kind==='ep'){xSelect(EPBYID[h.id]||{id:h.id});}
+ else if(h.kind==='act'){const it=epEls.find(e=>e.ep.__act&&e.ep.__act.id===h.id);if(it){xnav=true;try{selectEp(it.ep,it.d);}finally{xnav=false;}rv.step=h.step||1;if(h.pin)rv.pin=h.pin;rBuild();}}
+ else if(h.kind==='unit')rUnitView(h.row);
+ view.x=h.v.x;view.y=h.v.y;view.s=h.v.s;applyView();rBar();
+}
+$('#epinfo').addEventListener('click',e=>{
+ const c=e.target.closest('a.rc.call');if(c){e.preventDefault();openCaller(c.dataset.row);return;}
+ const m=e.target.closest('button.rc.more');if(m){m.outerHTML=m.dataset.more.split(' ').map(r=>{const R=RR[r],U=RU[R.u];return '<a class="rc call" href="#" data-row="'+esc(r)+'" data-tip="'+esc(U.file+':'+R.a+'\n'+R.t)+'">'+esc(U.name)+'</a>';}).join('');}
+});
 
 function rLegend(){
  $('#legend').innerHTML='<summary><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 4 4 4-4 4"/></svg>Key</summary><div class="lgbody"><div class="rkey">'
@@ -1491,6 +1590,8 @@ function rLegend(){
   +'<span><span class="rc rerun">reruns</span></span><span>function runs again, hover for why</span>'
   +'<span><span class="tk on">setX</span></span><span>same setter, other name</span>'
   +'<span><span class="dash"></span></span><span>not sure: spread props, context</span>'
+  +(Object.keys(HTTP).length&&graph.endpoints.length?'<span><span class="rc api" style="margin:0"><span class="dot"></span>GET /items</span></span><span>request, click for its route</span>'
+    +'<span><span class="rc bad" style="margin:0">no route</span></span><span>won\'t reach a route as written</span>':'')
   +'<span><kbd>Esc</kbd></span><span>clear</span>'
   +'</div></div>';
 }
@@ -1510,7 +1611,7 @@ function selectAction(A){
 const side=$('#side');
 const epEls=[];
 let curGroup=null, anyChg=0; const chgFns=new Set();
-function selectEp(ep,d){side.querySelectorAll('.ep').forEach(x=>x.classList.remove('on'));d.classList.add('on');d.scrollIntoView({block:'nearest'});store.set('ep',ep.id);if(ep.__act){selectAction(ep.__act);curEp=ep;}else build(ep);}
+function selectEp(ep,d){if(!xnav)xhist=[];side.querySelectorAll('.ep').forEach(x=>x.classList.remove('on'));d.classList.add('on');d.scrollIntoView({block:'nearest'});store.set('ep',ep.id);if(ep.__act){selectAction(ep.__act);curEp=ep;}else build(ep);}
 const bothKinds=graph.endpoints.length&&RX&&RX.actions.length;
 if(bothKinds)side.appendChild(el('div','grp sect','Routes'));
 graph.endpoints.forEach((ep,i)=>{
@@ -1652,7 +1753,9 @@ window.addEventListener('pageshow',()=>{$('#loading').hidden=true;});
 
 // ── keyboard ──
 window.addEventListener('keydown',e=>{
- if(RMODE&&e.altKey&&e.key==='ArrowLeft'&&!(e.target.closest&&e.target.closest('input,textarea,[contenteditable]'))){if(rhist.length){e.preventDefault();rBack();}return;}
+ if(e.altKey&&e.key==='ArrowLeft'&&!(e.target.closest&&e.target.closest('input,textarea,[contenteditable]'))){
+   if(RMODE&&rhist.length){e.preventDefault();rBack();}else if(xhist.length){e.preventDefault();xBack();}
+   if(RMODE||xhist.length)return;}
  if((e.metaKey||e.ctrlKey)&&(e.key==='k'||e.key==='K')){e.preventDefault();if(document.body.classList.contains('noside'))toggleSide();$('#q').focus();$('#q').select();return;}
  if(e.metaKey||e.ctrlKey||e.altKey)return;
  const typing=e.target.closest&&e.target.closest('input,textarea,[contenteditable]');

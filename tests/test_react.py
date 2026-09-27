@@ -131,10 +131,10 @@ class ReactAnalyzerTest(unittest.TestCase):
 
     def test_fetch_chip(self):
         steps = self.action('click Apply')['steps']
-        apis = [a for s in steps for r in s['r'] for a in self.rows[r].get('api', [])]
+        apis = [a[:2] for s in steps for r in s['r'] for a in self.rows[r].get('api', [])]
         self.assertEqual(apis, [['GET', '/orders/preview']])
         load = self.action('page load')['steps']
-        self.assertIn(['GET', '/cart'], [a for s in load for r in s['r'] for a in self.rows[r].get('api', [])])
+        self.assertIn(['GET', '/cart'], [a[:2] for s in load for r in s['r'] for a in self.rows[r].get('api', [])])
 
     def test_spread_is_uncertain(self):
         theme = self.state('theme')
