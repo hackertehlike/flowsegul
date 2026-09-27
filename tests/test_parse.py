@@ -13,8 +13,10 @@ def get_current_user(token):
         return decode(token)
     except InvalidTokenError, ValidationError:
         raise HTTPException(status_code=403)
+'''
 
-
+# except* needs Python 3.11+ even with brackets
+GROUP_SRC = '''
 def group(x):
     try:
         run(x)
@@ -29,6 +31,11 @@ class ParseTest(unittest.TestCase):
         fn = tree.body[0]
         self.assertEqual(fn.name, 'get_current_user')
         self.assertEqual(fn.body[0].handlers[0].lineno, 5)   # line numbers unchanged
+
+    @unittest.skipIf(sys.version_info < (3, 11), 'except* needs Python 3.11+')
+    def test_bare_except_star_tuple(self):
+        tree = parse_py(GROUP_SRC)
+        self.assertEqual(tree.body[0].body[0].handlers[0].lineno, 5)
 
     def test_real_syntax_error_still_raises(self):
         with self.assertRaises(SyntaxError):
