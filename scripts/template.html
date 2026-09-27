@@ -1172,8 +1172,8 @@ function setSpotH(H,nid){
    const r=inside(originsOf(card.dataset.id,e.dataset.var,e.dataset.path),H);
    if(r===2)e.classList.add('vhot');else if(r===1||(r===-1&&up.has(card.dataset.id)))e.classList.add('vhot','vpart');});
  const G=groupEdges();
- svg.querySelectorAll('[data-keys]').forEach(e=>{const r=inside(e.dataset.keys.split(' ').map(splitKey),H),g=G[+e.dataset.g];
-   if(r>0||(r===-1&&g&&up.has(g.dst)))e.classList.add('vhot');});
+ svg.querySelectorAll('[data-keys]').forEach(e=>{const r=inside(e.dataset.keys.split(' ').map(splitKey),H),g=G[+(e.dataset.g??(e.getAttribute('class').match(/\bge(\d+)/)||[])[1])];
+   if(r>0||(r===-1&&g&&up.has(g.dst)&&!e.classList.contains('gr')))e.classList.add('vhot');});
 }
 // a Key row names a variable without saying which box it's in: take every box that produces it
 function legendOrigins(v){
