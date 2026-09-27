@@ -2176,6 +2176,27 @@ function paintAsk(){
  });
  Object.values(nodes).forEach(nd=>nd.el.classList.toggle('ask-on',onN.has(nd.def.id)));
  marks.innerHTML=html;
+ askCodeLines();
+}
+// with the code open, the lines an answer points at stay lit too: the code lines of every lit row,
+// and for a route parameter the signature line that declares it
+function askCodeLines(){
+ const N=t=>t.replace(/\s+/g,'');
+ world.querySelectorAll('.node.ask-on').forEach(card=>{
+   const pre=card.querySelector('pre.code');if(!pre||pre.hidden)return;
+   const dls=[...pre.querySelectorAll('.dl')],txt=dls.map(l=>N(l.textContent.replace(/^[+-]/,'')));
+   const hit=(from,to)=>{for(let k=from;k<=to;k++)dls[k].classList.add('ask-hit');};
+   card.querySelectorAll('.step.ask-hit,.ins .in.ask-hit').forEach(r=>{
+     const want=N(r.textContent).replace(/…$/,'');if(want.length<4)return;
+     for(let i=0;i<dls.length;i++){if(!txt[i]||!want.startsWith(txt[i].slice(0,Math.min(txt[i].length,want.length))))continue;
+       let j=i,acc=txt[i];while(acc.length<want.length&&j+1<dls.length){j++;acc+=txt[j];}
+       if(acc.startsWith(want)||want.startsWith(acc)){hit(i,j);}}});
+   // a value that arrives as a parameter: light the signature line that declares it
+   ASK.steps.forEach(st=>{if(!nodes[st.nid]||nodes[st.nid].el!==card||st.chip)return;
+     const m=/^\s*([A-Za-z_]\w*)\s*[:=]/.exec(st.code||'')||(st.v?[0,st.v]:null);if(!m)return;const name=m[1];const re=new RegExp('\\b'+name.replace(/[$]/g,'\\$&')+'\\b');
+     let i=txt.findIndex(t=>/^(async)?def/.test(t));if(i<0)return;
+     for(;i<dls.length;i++){if(re.test(dls[i].textContent))dls[i].classList.add('ask-hit');if(/\)(->.*)?:$/.test(txt[i])||/:$/.test(txt[i])&&i>0)break;}});
+ });
 }
 // empty-canvas click (not a drag) clears the answer
 {let down=null;
