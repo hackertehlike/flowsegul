@@ -98,10 +98,10 @@ class ReactReviewTest(unittest.TestCase):
 
     def test_state_that_clears(self):
         clr = {f[1]: (n, t, f) for n, t, f, _ in self.flagged('clr')}
-        self.assertEqual(set(clr), {'n lost every render', 'open lost every render'})   # no diff given: only the always-bad ones
-        self.assertEqual(clr['n lost every render'][1], 'const [n, setN] = useState(0);')    # Counter is declared inside Badge
-        self.assertIn('<Counter />', clr['n lost every render'][2][2])
-        self.assertEqual(clr['open lost every render'][1], '<Tip key={Math.random()} />')
+        self.assertEqual(set(clr), {'n lost: Counter inside Badge', 'open lost: random key'})   # no diff given: only the always-bad ones
+        self.assertEqual(clr['n lost: Counter inside Badge'][1], 'const [n, setN] = useState(0);')    # Counter is declared inside Badge
+        self.assertIn('function Counter() {', clr['n lost: Counter inside Badge'][2][2])
+        self.assertEqual(clr['open lost: random key'][1], '<Tip key={Math.random()} />')
         # every component with state says what unmounts it
         coupon = next(u for u in self.d['units'] if u['name'] == 'CouponField')
         self.assertIn('showPromo', [k for k, _ in coupon['mount']])
@@ -119,7 +119,7 @@ class ReactReviewTest(unittest.TestCase):
         self.assertIn('{showPromo && <CouponField onApply={onApply} />}', f[2])
         self.assertIn(['clr', rid], d['problems'])
         # PriceLine and Badge sit where they were: nothing new unmounts them
-        self.assertEqual(set(clr), {'draft lost if !showPromo', 'n lost every render', 'open lost every render'})
+        self.assertEqual(set(clr), {'draft lost if !showPromo', 'n lost: Counter inside Badge', 'open lost: random key'})
 
     def test_lost_when(self):
         from flowsegul_gen import lost_when

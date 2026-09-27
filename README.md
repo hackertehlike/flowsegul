@@ -96,8 +96,9 @@ one opens its component with the line lit, and the mark sits on that line:
   or an effect's request whose data is used without checking whether it has arrived or failed.
   Faded when every read has a fallback (`data ?? []`); no `no error state` when the app handles
   errors in one place (a `QueryCache` `onError`, `throwOnError`, an axios response interceptor).
-- `draft lost every render` on a `useState` whose value React throws away each render: its
-  component is declared inside another one, or gets `key={Math.random()}`. With `--changed` / `--from`, also a state that the
+- `n lost: Counter inside Badge` / `open lost: random key` on a `useState` whose value React throws
+  away on every render: its component is declared inside another one (a new function each time),
+  or gets a new `key={Math.random()}` each time. With `--changed` / `--from`, also a state that the
   base kept and the change now loses (`draft lost if !showPromo`), because its component (or one above it) now sits under a new
   condition (`{showPromo && <CouponField />}`), after an early return, or behind a new key. Hover
   for the line responsible.

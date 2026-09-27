@@ -1968,7 +1968,7 @@ export function analyze(ts, root, { tag = '' } = {}) {
   //  - `read by N` on a context provider: the components that rerun when its value changes
   //  - `no loading state` / `no error state`: a query or an effect's request whose data is used
   //    without looking at whether it has arrived or failed
-  //  - `draft lost every render` / `draft lost if !open`: a state that React throws away, because its component is declared inside
+  //  - `n lost: Counter inside Badge` / `open lost: random key` / `draft lost if !open`: a state that React throws away, because its component is declared inside
   //    another one or gets a new random key each render (and, with a diff, a new mount condition)
   // ════════════════════════════════════════════════════════════════════════════════════════
   const problems = [];
@@ -2271,7 +2271,6 @@ export function analyze(ts, root, { tag = '' } = {}) {
   // ── state that clears ──
   // `key={Math.random()}` (or Date.now(), uuid()): a new key each render, so the child starts over
   const RANDOM_KEY = /^(Math\.random|Date\.now|uuid|uuidv4|v4|nanoid|crypto\.randomUUID|performance\.now)\s*\(/;
-  const clearsTip = (S) => where(S.decl);
   for (const u of units) {
     for (const r of u.renders) {
       const key = r.op.attributes.properties.find((p) => ts.isJsxAttribute(p) && attrName(p) === 'key');
@@ -2280,7 +2279,7 @@ export function analyze(ts, root, { tag = '' } = {}) {
       const own = r.child.states;
       if (!own.length) continue;
       squiggle(e, 'new key each render');
-      for (const S of own) flag(rowFor(r.op), 'clr', (S.name || S.setter) + ' lost every render', clearsTip(S), true);
+      for (const S of own) flag(rowFor(r.op), 'clr', (S.name || S.setter) + ' lost: random key', where(e), true);
     }
   }
   // a component declared inside another: a new type each render, so its state starts over
@@ -2309,7 +2308,7 @@ export function analyze(ts, root, { tag = '' } = {}) {
             const nm = el && ts.isBindingElement(el) ? el.name.getText() : 'state';
             const stmt = d.parent && d.parent.parent && ts.isVariableStatement(d.parent.parent) ? d.parent.parent : d;
             squiggle(name, 'declared inside ' + u.name);
-            flag(rowFor(stmt), 'clr', nm + ' lost every render', where(used.parent), true);
+            flag(rowFor(stmt), 'clr', nm + ' lost: ' + name.text + ' inside ' + u.name, where(name), true);
           }
         }
         return;
