@@ -474,6 +474,7 @@ body.nomap .minimap{display:none}
 .rc.api{color:var(--m-get);background:var(--m-get-bg);border-color:color-mix(in srgb,var(--m-get) 35%,var(--line));margin-left:6px}
 .rc.api .dot{width:6px;height:6px;border-radius:50%;background:var(--ok)}
 /* a request's route: click to open it; red marks say why it won't get there as written */
+.leftwrap{display:inline-flex;align-items:center;gap:2px;flex:0 1 auto;min-width:60px;overflow-x:auto;scrollbar-width:none;margin-left:8px}.leftwrap .rc{flex:none}.crumb .path:has(~ .leftwrap){flex:none;max-width:40%}.leftk{font:600 10.5px var(--sans);color:var(--del);margin-right:2px;white-space:nowrap}.lefts{cursor:pointer}
 .rrow .rc.api,.rrow .rc.bad{white-space:normal;overflow-wrap:anywhere;max-width:100%;line-height:1.25}
 a.rc.api{text-decoration:none;cursor:pointer}
 a.rc.api:hover{border-color:var(--m-get)}
@@ -1829,7 +1830,8 @@ function rBar(){
  if(!on)return;
  bar.classList.toggle('idle',!!(rv.hover&&rv.hover!==rv.pin));
  $('#sbname').textContent=rv.pin?(RS[rv.pin].setter||RS[rv.pin].name):rv.act.label;
- $('#sbcount').textContent=rCur()+' / '+st.length;
+ const cut=!rv.pin&&rv.act&&rv.act.cut;   // the path hit its step limit: there is more past the last step
+ $('#sbcount').textContent=rCur()+' / '+st.length+(cut?'+':'');$('#sbcount').dataset.tip=cut?'Stopped after '+st.length+' steps: the path goes on past the last one':'';
  rDis($('#sbprev'),rCur()<=1);rDis($('#sbnext'),rCur()>=st.length);
 }
 function rGo(n){
@@ -1880,6 +1882,7 @@ function rBack(){
 }
 function rEsc(){rv.act=null;rv.pin=null;rv.hover=null;if(document.activeElement&&world.contains(document.activeElement))document.activeElement.blur();rBuild();}
 function rPin(id){rv.pin=rv.pin===id?null:id;rv.sstep=1;rBuild();}
+document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('#epinfo .lefts');if(b&&RMODE)rPin(b.dataset.s);});
 
 world.addEventListener('click',e=>{
  if(!RMODE)return;
@@ -1998,7 +2001,11 @@ function selectAction(A){
  Object.assign(rv,{base:A,act:A,step:1,hover:null,pin:null,sstep:1,extra:new Set(),shownKey:''});rhist=[];
  rBuild(true);fit(false);
  const R=RR[A.row],U=R&&RU[R.u];
- $('#epinfo').innerHTML='<span class="path" title="'+esc(A.label)+'">'+esc(A.label)+'</span><span class="sum">'+esc(A.sub)+(U?' · '+esc(U.file)+':'+R.a:'')+'</span>';
+ // an event that ends the stream: the state other events set that no ending event resets outlives it
+ // (a card left on screen after Stop). Each chip pins that state: where it's set, where it shows.
+ const left=(A.left||[]).filter(([sid])=>RS[sid]).map(([sid,by])=>'<button class="rc bad lefts" data-s="'+esc(sid)+'" data-tip="'+esc('Set by '+by.join(', ')+'.\nNo event that ends the stream (DONE, STOPPED, ERROR…) resets it.')+'">'+esc(RS[sid].name)+'</button>').join('');
+ $('#epinfo').innerHTML='<span class="path" title="'+esc(A.label)+'">'+esc(A.label)+'</span><span class="sum">'+esc(A.sub)+(U?' · '+esc(U.file)+':'+R.a:'')+'</span>'
+  +(left?'<span class="leftwrap"><span class="leftk">outlives the stream</span>'+left+'</span>':'');
  rLegend();
  const first=rStops()[0];if(first)rReveal(first,true);
 }

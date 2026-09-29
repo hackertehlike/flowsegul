@@ -127,19 +127,13 @@ def discover_repos(workspace):
 
 
 def auto_workspace():
-    """Umbrella dir holding the sibling repos. Works whether run from the umbrella or inside a repo."""
+    """Umbrella dir (all child repos) when run from one, else just the repo you're inside."""
     cwd = os.getcwd()
     # run from the umbrella (contains git subdirs)?
     if any(os.path.isdir(os.path.join(cwd, n, '.git')) for n in os.listdir(cwd)
            if os.path.isdir(os.path.join(cwd, n))):
         return cwd
-    top = git('.', 'rev-parse', '--show-toplevel')
-    if top:
-        parent = os.path.dirname(top)          # catch sibling repos next to this one
-        if discover_repos(parent):
-            return parent
-        return top
-    return cwd
+    return git('.', 'rev-parse', '--show-toplevel') or cwd
 
 
 def prefer_remote(repo, base):
@@ -547,6 +541,49 @@ class Index:
             common = common[:common.rfind('/')] if '/' in common else ''
         for qual, method, path, prefix in full:
             self.routes.append((qual, method, prefix + path, prefix[len(common):]))
+
+    def library_hooks(self, cls):
+        """(library base, [quals]) for a class that extends a class from outside the repo: its private
+        methods nothing in the repo calls, e.g. `_agenerate` on a LangChain `LLM`. The library calls
+        those itself (`ainvoke` → `_agenerate`), which is the only way they run."""
+        ext = [b for b in self.bases.get(cls, []) if b not in self.bases]
+        if not ext:
+            return None, []
+        hooks = []
+        for name, quals in self.by_method.items():
+            if not (name.startswith('_') and not name.startswith('__')):
+                continue
+            for q in quals:
+                f = self.funcs[q]
+                if f['cls'] != cls or f['node'].decorator_list:   # decorated: registered some other way
+                    continue
+                if not self._called_anywhere(name):
+                    hooks.append(q)
+        return ext[0], sorted(hooks, key=lambda q: self.funcs[q]['lineno'])
+
+    def instance_attrs(self, cls):
+        """Names a class keeps on its instances (`x: T` in the body, `self.x = …` in a method): calling
+        one (`self.streaming_callback(…)`) calls whatever was stored there, not a library method."""
+        memo = self.__dict__.setdefault('_iattrs', {})
+        if cls not in memo:
+            names = {k for _, v in self.attr_types.get(cls, []) for k in v}
+            for q, f in self.funcs.items():
+                if f['cls'] != cls:
+                    continue
+                for n in ast.walk(f['node']):
+                    for t in (n.targets if isinstance(n, ast.Assign) else [n.target] if isinstance(n, ast.AnnAssign) else []):
+                        if isinstance(t, ast.Attribute) and isinstance(t.value, ast.Name) and t.value.id == 'self':
+                            names.add(t.attr)
+            memo[cls] = names
+        return memo[cls]
+
+    def _called_anywhere(self, name):
+        """Does any repo source call `name(…)` or `.name(…)`? (a def line doesn't count)"""
+        memo = self.__dict__.setdefault('_called', {})
+        if name not in memo:
+            pat = re.compile(r'(?<!def )(?<![A-Za-z0-9_])' + re.escape(name) + r'\s*\(')
+            memo[name] = any(pat.search(src) for src in self.file_src.values())
+        return memo[name]
 
     def method_of(self, cls, name, seen=None):
         """Qual of method `name` on class `cls` or the nearest base class that defines it."""
@@ -1314,6 +1351,21 @@ def steps_for(info, idx):
                 out.append({'var': '·', 'expr': one_line(f'{arg.arg}: {unparse(v)}', 60),
                             'target': nid_for(q), 'arg': '', 'ret': '', 'uses': [],
                             '_qual': q, 'dep': True, '_catch': []})
+    # `self.ainvoke(…)` on a class that extends a library class (LangChain's LLM): the library runs
+    # this class's own hooks (`_agenerate`), so the call goes on into them
+    if caller_cls:
+        lib, hooks = idx.library_hooks(caller_cls)
+        for c in ast.walk(info['node']):
+            f = c.func if isinstance(c, ast.Call) else None
+            if not (hooks and isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name)
+                    and f.value.id == 'self' and not idx.method_of(caller_cls, f.attr)
+                    and f.attr not in idx.instance_attrs(caller_cls)):
+                continue
+            for q in hooks:
+                if q != caller_qual and not any(o['_qual'] == q for o in out):
+                    out.append({'var': '·', 'expr': one_line(f'self.{f.attr}(…) → {lib} runs {idx.funcs[q]["name"]}', 70),
+                                'target': nid_for(q), 'arg': '', 'ret': '', 'uses': [], '_qual': q, 'dep': True,
+                                '_catch': []})
     # our own decorators wrap every call: `@decorators.retry_on_429(max_attempts=3)`
     for dec in info['node'].decorator_list:
         q = idx.resolve(ast.Call(func=dec.func if isinstance(dec, ast.Call) else dec, args=[], keywords=[]),
@@ -1689,6 +1741,26 @@ def _helpers(_cache=[]):
     return _cache[0]
 
 
+def leads_to(idx, targets):
+    """Every function that reaches one of `targets` (targets included), walking calls backwards."""
+    key = frozenset(targets)
+    cache = idx.__dict__.setdefault('_leads', {})
+    if key not in cache:
+        callers = idx.__dict__.get('_callers')
+        if callers is None:
+            callers = idx._callers = {}
+            for q, info in idx.funcs.items():
+                for st in steps_for(info, idx):
+                    callers.setdefault(st['_qual'], set()).add(q)
+        out, todo = set(key), list(key)
+        while todo:
+            for c in callers.get(todo.pop(), ()):
+                if c not in out:
+                    out.add(c); todo.append(c)
+        cache[key] = out
+    return cache[key]
+
+
 def build_endpoint(entry_qual, idx, meta, depth, tag, changed_q=frozenset(), changed_m=frozenset(),
                    diffs=None, used_by=None):
     """BFS the call tree from entry_qual into an endpoint spec, ids/fnKeys namespaced by `tag`.
@@ -1702,13 +1774,17 @@ def build_endpoint(entry_qual, idx, meta, depth, tag, changed_q=frozenset(), cha
     col = {entry_qual: 0}
     order = [entry_qual]
     seen = {entry_qual}
+    # --depth trims only branches with no changed code in them: the way down to a change is always drawn
+    toward = leads_to(idx, changed_q) if changed_q else set()
     i = 0
     while i < len(order):
         q = order[i]; i += 1
-        if col[q] >= depth:
+        if col[q] >= depth and q not in toward:
             continue
         for s in steps_for(idx.funcs[q], idx):
             cq = s['_qual']
+            if col[q] >= depth and cq not in toward:
+                continue
             if cq not in col:
                 col[cq] = col[q] + 1
             if cq not in seen:

@@ -1658,7 +1658,9 @@ export function analyze(ts, root, { tag = '' } = {}) {
   }
 
   // ── the walk ──
-  function pathFor(entry) {
+  const MAXSTEPS = 60;
+  const TIMERS = new Set(['setTimeout', 'setInterval', 'requestAnimationFrame', 'requestIdleCallback']);
+  function pathFor(entry, max = MAXSTEPS) {
     const steps = [];
     const rowStep = new Map();
     const statesDone = new Set();
@@ -1676,10 +1678,11 @@ export function analyze(ts, root, { tag = '' } = {}) {
       fresh.forEach((r) => rowStep.set(r, steps.length));
       steps.push(st);
     };
-    const MAXSTEPS = 60;
+    const pending = [];   // state changes whose reruns and effects are still to follow
+    const direct = new Set();   // state the entry's own code sets (not an effect it sets off)
 
     function consequences(S, level, unc) {
-      if (statesDone.has(S) || steps.length > MAXSTEPS) return;
+      if (statesDone.has(S) || steps.length > max) return;
       statesDone.add(S);
       const { R, E } = flows(S);
       const rr = R.slice(0, 40).map((e) => [e.unit, e.row, e.unc || unc]);
@@ -1690,7 +1693,7 @@ export function analyze(ts, root, { tag = '' } = {}) {
       else { addStep([S.row], { tk: [S], unc }); addStep(childRows, { rr, tv: [S], unc }); }
       if (level >= 3) return;
       for (const { ef, unc: eu } of E) {
-        if (steps.length > MAXSTEPS) return;
+        if (steps.length > max) return;
         addStep([rowFor(ef.call), rowFor(ef.deps)], { tv: [S], unc: unc || eu });
         walkFn(ef.cb, level + 1, unc || eu);
       }
@@ -1701,7 +1704,8 @@ export function analyze(ts, root, { tag = '' } = {}) {
         if (t.kind === 'setter') {
           addStep([callRow], { tk: [t.S], unc: u2 });
           for (const h of t.hops) addStep([h.row], { tk: [t.S], unc: u2 || h.unc });
-          consequences(t.S, level, u2);
+          pending.push([t.S, level, u2]);   // after this handler's own lines: see drain()
+          if (level === 0) direct.add(t.S);
         } else if (t.kind === 'fn') {
           if (fnDone.has(t.fn)) continue;
           ensureUnit(t.fn);
@@ -1719,7 +1723,10 @@ export function analyze(ts, root, { tag = '' } = {}) {
     }
     const CALLBACK_SKIP = new Set(['useCallback', 'useMemo', 'useEffect', 'useLayoutEffect', 'useState', 'useReducer', 'useRef']);
     function onCall(c, level, unc) {
-      if (steps.length > MAXSTEPS) return;
+      if (steps.length > max) return;
+      // a timer's callback runs later (a fallback after 10 s, a poll), not as the next line: show the
+      // line that sets it, dashed, and leave its body off the path
+      if (TIMERS.has(calleeName(c))) { addStep([rowFor(c)], { unc: true }); return; }
       const api = httpCall(c);
       if (api) { addStep([noteApi(c)], { unc }); }
       const cn = calleeName(c);
@@ -1741,6 +1748,8 @@ export function analyze(ts, root, { tag = '' } = {}) {
     function visitExpr(node, level, unc) {
       const v = (n) => {
         if (isFnLike(n)) return;   // runs later, when something calls it
+        // only when the try fails: the line shows it (dashed), its body stays off the main path
+        if (ts.isCatchClause(n)) { addStep([rowFor(n)], { unc: true }); return; }
         ts.forEachChild(n, v);
         if (ts.isCallExpression(n)) onCall(n, level, unc);
       };
@@ -1751,7 +1760,14 @@ export function analyze(ts, root, { tag = '' } = {}) {
       fnDone.add(fn);
       if (fn.body) visitExpr(fn.body, level, unc);
     }
-    return { steps, addStep, walkFn, visitExpr, handleTargets, rowStep };
+    // breadth first: a handler's own lines come before what its state changes set off, so the
+    // first setter's cascade can't use up the step budget before the handler's later lines
+    function drain() {
+      while (pending.length && steps.length <= max) { const [S, level, unc] = pending.shift(); consequences(S, level, unc); }
+    }
+    const top = (f) => (...a) => { f(...a); drain(); };
+    return { steps, addStep, walkFn: top(walkFn), visitExpr: top(visitExpr), handleTargets: top(handleTargets), rowStep,
+      direct, cut: () => steps.length > max || pending.length > 0 };
   }
 
   // ── actions ──
@@ -1991,7 +2007,7 @@ export function analyze(ts, root, { tag = '' } = {}) {
                 else { W.visitExpr(e2, 0, false); W.handleTargets(resolveValue(e2), srow, 0, false); }
               }
             }
-            addAction({ label: obj ? verb + ' ' + labelText(obj) : code, sub: s.parent.name, group: groupOf(s.parent), u: s.parent, owner: s.parent, row: srow, event, steps: W.steps });
+            addAction({ label: obj ? verb + ' ' + labelText(obj) : code, sub: s.parent.name, group: groupOf(s.parent), u: s.parent, owner: s.parent, row: srow, event, steps: W.steps, ...(W.cut() ? { cut: 1 } : {}) });
           }
           continue;
         }
@@ -2005,7 +2021,7 @@ export function analyze(ts, root, { tag = '' } = {}) {
             W.addStep([rowFor(b.at)]);
             W.visitExpr(b.body, 0, false);
             const keys = b.keys.map(keyName).join(' or ');
-            addAction({ label: 'press ' + keys + (obj ? ' in ' + labelText(obj) : ''), sub: u.name, group: groupOf(u), u, owner: u, row, event, steps: W.steps });
+            addAction({ label: 'press ' + keys + (obj ? ' in ' + labelText(obj) : ''), sub: u.name, group: groupOf(u), u, owner: u, row, event, steps: W.steps, ...(W.cut() ? { cut: 1 } : {}) });
           }
           continue;
         }
@@ -2013,8 +2029,75 @@ export function analyze(ts, root, { tag = '' } = {}) {
         W.addStep([row]);
         if (isFnLike(V)) W.walkFn(V, 0, false);
         else { W.visitExpr(V, 0, false); W.handleTargets(resolveValue(V), row, 0, false); }
-        addAction({ label: obj ? verb + ' ' + labelText(obj) : code, sub: u.name, group: groupOf(u), u, owner: u, row, event, steps: W.steps });
+        addAction({ label: obj ? verb + ' ' + labelText(obj) : code, sub: u.name, group: groupOf(u), u, owner: u, row, event, steps: W.steps, ...(W.cut() ? { cut: 1 } : {}) });
       }
+    }
+  }
+  // ── server events: `stream.subscribe({ next: (event) => { switch (event.event_type) { case X: … } } })` ──
+  // (or `source.onmessage = …`). Each case is something the server makes happen, so each is an action,
+  // and for the events that end the stream we note the state other events set that none of them touch.
+  const ENDING = /^(DONE|STOPPED|ERROR|ABORTED?|CANCELL?ED|COMPLETED?|ENDED?|CLOSED?|FINISHED)$/i;
+  const caseName = (x) => { x = skipOuter(x); return ts.isPropertyAccessExpression(x) ? x.name.text : keyLit(x); };
+  function eventHandlers() {
+    const out = [];
+    for (const c of calls) {
+      if (calleeName(c) !== 'subscribe') continue;
+      for (const a0 of c.arguments) {
+        const a = skipOuter(a0);
+        if (!ts.isObjectLiteralExpression(a)) continue;
+        for (const p of a.properties) {
+          const fn = ts.isPropertyAssignment(p) && p.name.getText() === 'next' ? skipOuter(p.initializer) : ts.isMethodDeclaration(p) && p.name.getText() === 'next' ? p : null;
+          if (fn && isFnLike(fn)) out.push({ fn, at: p });
+        }
+      }
+    }
+    for (const sf of sources) {
+      const v = (n) => {
+        if (ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.EqualsToken && ts.isPropertyAccessExpression(n.left)
+            && n.left.name.text === 'onmessage' && isFnLike(skipOuter(n.right))) out.push({ fn: skipOuter(n.right), at: n });
+        ts.forEachChild(n, v);
+      };
+      v(sf);
+    }
+    return out;
+  }
+  for (const { fn, at } of eventHandlers()) {
+    const u = unitOf(at);
+    if (!u || !fn.body || !ts.isBlock(fn.body)) continue;
+    const owner = u.kind === 'hook' ? (hookOwners(u)[0] || {}).unit || u : u;
+    const cases = [];
+    const onStmt = (st) => {
+      if (ts.isSwitchStatement(st) && ts.isPropertyAccessExpression(skipOuter(st.expression))) {
+        let names = [], first = null;
+        for (const c of st.caseBlock.clauses) {
+          const k = ts.isCaseClause(c) ? caseName(c.expression) : null;
+          if (k == null) { names = []; first = null; continue; }
+          names.push(k); first = first || c;
+          if (c.statements.length) { cases.push({ names, at: first, body: c }); names = []; first = null; }
+        }
+      } else if (ts.isBlock(st)) st.statements.forEach(onStmt);
+    };
+    fn.body.statements.forEach(onStmt);
+    if (cases.length < 2) continue;
+    const row = rowFor(at);
+    const made = cases.map((cs) => {
+      const W = pathFor();
+      W.addStep([row]);
+      W.addStep([rowFor(cs.at)]);
+      W.visitExpr(cs.body, 0, false);
+      // what the event's own code sets, walked in full: the shown path may stop at the step limit
+      const F = pathFor(null, 1000);
+      F.visitExpr(cs.body, 0, false);
+      return { cs, W, set: F.direct, ending: cs.names.some((n) => ENDING.test(n)) };
+    });
+    // state some event sets and no ending event (DONE, STOPPED, ERROR…) touches: it outlives the stream
+    const touched = new Set(made.filter((m) => m.ending).flatMap((m) => [...m.set]));
+    const left = new Map();
+    for (const m of made) if (!m.ending) for (const S of m.set) if (!touched.has(S) && S.unit === owner) (left.get(S) || left.set(S, []).get(S)).push(m.cs.names.join(' or '));
+    for (const m of made) {
+      const o = { label: 'server sends ' + m.cs.names.join(' or '), sub: owner.name, group: groupOf(owner), u, owner, row: rowFor(m.cs.at), event: 'stream', steps: m.W.steps, ...(m.W.cut() ? { cut: 1 } : {}) };
+      if (m.ending && left.size) o.left = [...left].map(([S, by]) => [S, by]);
+      addAction(o);
     }
   }
   // queries run when the component mounts: page load too
@@ -2033,7 +2116,7 @@ export function analyze(ts, root, { tag = '' } = {}) {
     const init = ts.isPropertyAssignment(q) ? skipOuter(q.initializer) : q;
     if (ts.isMethodDeclaration(init) || ts.isArrowFunction(init) || ts.isFunctionExpression(init)) { W.addStep([qrow]); W.walkFn(init, 1, false); }
     else if (init) W.handleTargets(resolveValue(init), qrow, 1, false);
-    addAction({ label: 'page load', sub: (owner || u).name, group: groupOf(owner || u), u, owner: owner || u, row, event: calleeName(c), steps: W.steps });
+    addAction({ label: 'page load', sub: (owner || u).name, group: groupOf(owner || u), u, owner: owner || u, row, event: calleeName(c), steps: W.steps, ...(W.cut() ? { cut: 1 } : {}) });
   }
   // page load: effects with an empty deps list
   for (const u of units) {
@@ -2045,7 +2128,7 @@ export function analyze(ts, root, { tag = '' } = {}) {
       const row = rowFor(ef.call);
       W.addStep([row, rowFor(ef.deps)]);
       W.walkFn(ef.cb, 1, false);
-      addAction({ label: 'page load', sub: (owner || u).name, group: groupOf(owner || u), u, owner: owner || u, row, event: 'useEffect', steps: W.steps });
+      addAction({ label: 'page load', sub: (owner || u).name, group: groupOf(owner || u), u, owner: owner || u, row, event: 'useEffect', steps: W.steps, ...(W.cut() ? { cut: 1 } : {}) });
     }
   }
 
@@ -2199,7 +2282,8 @@ export function analyze(ts, root, { tag = '' } = {}) {
     };
   });
   const actOut = actions.map((a) => ({
-    id: a.id, label: a.label, sub: a.sub, group: a.group, u: a.u.id, row: a.row.id, event: a.event,
+    id: a.id, label: a.label, sub: a.sub, group: a.group, u: a.u.id, row: a.row.id, event: a.event, ...(a.cut ? { cut: 1 } : {}),
+    ...(a.left ? { left: a.left.map(([S, by]) => [S.id, [...new Set(by)]]) } : {}),
     steps: a.steps.filter((s) => s.r.length || s.rr.length).map((s) => {
       const o = { r: s.r.map((r) => r.id) };
       if (s.tk.length) o.tk = [...new Set(s.tk.map((S) => S.id))];
