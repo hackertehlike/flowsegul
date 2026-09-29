@@ -13,7 +13,7 @@
 //  - every useState / useReducer, with every line that sets it, following the setter when it is
 //    passed down as a prop under another name, through wrappers (`const h = v => setX(v)`,
 //    useCallback), custom hook returns and context values
-//  - user actions (event handler props on DOM elements, `useEffect(..., [])` as page load) and,
+//  - user actions (event handler props on DOM elements, `useEffect(..., [])` as a page load, named by what it fetches) and,
 //    for each, the ordered path through the code: handler → prop hops up the tree → setter →
 //    state → components that rerun → effects that depend on it → fetch calls → further setters
 // Anything it can't resolve for sure (spread props, context) is marked `unc` and never claimed.
@@ -66,6 +66,7 @@ function main() {
 // ── files ──
 const SKIP_DIRS = new Set(['node_modules', 'dist', 'build', 'out', 'coverage', 'vendor', 'public', 'static',
   '__tests__', '__mocks__', 'test', 'tests', 'e2e', 'cypress', 'playwright', 'storybook-static', 'tmp']);
+const ASSET_DIRS = new Set(['public', 'static']);
 const SRC_RE = /\.(tsx|ts|jsx|js|mjs)$/;
 const SKIP_FILE_RE = /(\.d\.ts|\.(test|spec|stories|story|e2e)\.[cm]?[jt]sx?|\.config\.[cm]?[jt]s|\.min\.js)$/;
 
@@ -78,7 +79,8 @@ function listFiles(root) {
     for (const e of ents) {
       const p = path.join(dir, e.name);
       if (e.isDirectory()) {
-        if (e.name.startsWith('.') || SKIP_DIRS.has(e.name)) continue;
+        // `public/` and `static/` hold assets at the app's top, but code further in (src/pages/public)
+        if (e.name.startsWith('.') || (SKIP_DIRS.has(e.name) && !(dir !== root && ASSET_DIRS.has(e.name)))) continue;
         walk(p);
       } else if (e.isFile() && SRC_RE.test(e.name) && !SKIP_FILE_RE.test(e.name)) {
         try { if (fs.statSync(p).size < 400000) out.push(p); } catch (err) { /* unreadable */ }
@@ -848,6 +850,7 @@ export function analyze(ts, root, { tag = '' } = {}) {
     const unres = !s.replace(/[/\u0001]/g, '').length && s !== '/';
     const segs = s.split('/').map((g) => (g.includes('\u0001') || /^\{[^}]*\}$/.test(g) ? '{}' : g));
     let shownPath = shown.replace(/^[^/]*?\/\/[^/]*/, '').replace(/^\u0002+/, '');
+    if (lead) shownPath = shownPath.replace(/^(\$\{[^}]*\})+/, '');   // `${env.API_URL}/items` shows as /items
     const qa = shownPath.indexOf('?'); if (qa > 0) shownPath = shownPath.slice(0, qa);
     return { p: segs.join('/'), host, lead, q, unres, shown: shownPath.replace(/\u0002/g, '') };
   }
@@ -1568,8 +1571,15 @@ export function analyze(ts, root, { tag = '' } = {}) {
   function queryFnOf(expr, depth = 0) {
     expr = skipOuter(expr);
     if (!expr || depth > 4) return null;
-    if (ts.isObjectLiteralExpression(expr)) return expr.properties.find((q) => q.name && q.name.getText() === 'queryFn') || null;
+    if (ts.isObjectLiteralExpression(expr)) {
+      const own = expr.properties.find((q) => q.name && q.name.getText() === 'queryFn');
+      if (own) return own;
+      // useInfiniteQuery({ ...commentsQueryOptions(id) })
+      for (const p of expr.properties) if (ts.isSpreadAssignment(p)) { const q = queryFnOf(p.expression, depth + 1); if (q) return q; }
+      return null;
+    }
     if (ts.isCallExpression(expr)) {
+      if (QUERY_WRAP.has(calleeName(expr))) return queryFnOf(expr.arguments[0], depth + 1);
       const t = resolveValue(expr.expression).find((x) => x.kind === 'fn');
       if (t) for (const r of returnsOf(t.fn)) { const q = queryFnOf(r, depth + 1); if (q) return q; }
       return null;
@@ -1657,6 +1667,72 @@ export function analyze(ts, root, { tag = '' } = {}) {
     return f;
   }
 
+  // ── query keys: which queries a `queryClient.invalidateQueries({ queryKey })` reloads ──
+  // A key is known by the functions it is built through (`getCommentsQueryOptions(id).queryKey`,
+  // a `commentKeys.all()` factory) and by its first word (`['comments', id]`): React Query
+  // reloads every query whose key starts the same way.
+  const QUERY_WRAP = new Set(['queryOptions', 'infiniteQueryOptions']);
+  const RELOADS = new Set(['invalidateQueries', 'refetchQueries', 'resetQueries']);
+  function declInit(id) {
+    const d = ((symOf(id) || {}).declarations || []).find((x) => ts.isVariableDeclaration(x) && x.initializer);
+    return d ? d.initializer : null;
+  }
+  function keyInfo(expr, info, depth = 0) {
+    expr = skipOuter(expr);
+    if (!expr || depth > 6) return info;
+    if (ts.isStringLiteral(expr) || ts.isNoSubstitutionTemplateLiteral(expr)) { info.lit = info.lit || expr.text; return info; }
+    if (ts.isArrayLiteralExpression(expr)) {
+      const e0 = expr.elements[0];
+      if (e0) keyInfo(ts.isSpreadElement(e0) ? e0.expression : e0, info, depth + 1);
+      return info;
+    }
+    if (ts.isPropertyAccessExpression(expr) && expr.name.text === 'queryKey') return optionsKey(expr.expression, info, depth + 1);
+    if (ts.isIdentifier(expr) || ts.isPropertyAccessExpression(expr)) {
+      const init = ts.isIdentifier(expr) ? declInit(expr) : null;
+      if (init) return keyInfo(init, info, depth + 1);
+      const t = resolveValue(expr).find((x) => x.kind === 'fn');
+      if (t) info.fns.add(t.fn);
+      return info;
+    }
+    if (ts.isCallExpression(expr)) {
+      const t = resolveValue(expr.expression).find((x) => x.kind === 'fn');
+      if (t && !info.fns.has(t.fn)) { info.fns.add(t.fn); for (const r of returnsOf(t.fn)) keyInfo(r, info, depth + 1); }
+    }
+    return info;
+  }
+  function optionsKey(expr, info, depth = 0) {
+    expr = skipOuter(expr);
+    if (!expr || depth > 6) return info;
+    if (ts.isObjectLiteralExpression(expr)) {
+      for (const p of expr.properties) {
+        if (ts.isSpreadAssignment(p)) optionsKey(p.expression, info, depth + 1);
+        else if (p.name && p.name.getText() === 'queryKey') {
+          if (ts.isPropertyAssignment(p)) keyInfo(p.initializer, info, depth + 1);
+          else if (ts.isShorthandPropertyAssignment(p)) { const i = declInit(p.name); if (i) keyInfo(i, info, depth + 1); }
+        }
+      }
+      return info;
+    }
+    if (ts.isIdentifier(expr)) { const i = declInit(expr); return i ? optionsKey(i, info, depth + 1) : info; }
+    if (ts.isCallExpression(expr)) {
+      if (QUERY_WRAP.has(calleeName(expr))) return optionsKey(expr.arguments[0], info, depth + 1);
+      const t = resolveValue(expr.expression).find((x) => x.kind === 'fn');
+      if (t && !info.fns.has(t.fn)) { info.fns.add(t.fn); for (const r of returnsOf(t.fn)) optionsKey(r, info, depth + 1); }
+    }
+    return info;
+  }
+  let queryIndex = null;
+  function queriesFor(key) {
+    if (!queryIndex) {
+      queryIndex = [];
+      for (const c of calls) {
+        if (!/^use(Suspense)?(Infinite)?Query$/.test(calleeName(c)) || !c.arguments[0]) continue;
+        queryIndex.push({ c, key: optionsKey(c.arguments[0], { fns: new Set(), lit: null }) });
+      }
+    }
+    return queryIndex.filter(({ key: k }) => [...key.fns].some((f) => k.fns.has(f)) || (key.lit && key.lit === k.lit)).map((q) => q.c);
+  }
+
   // ── the walk ──
   function pathFor(entry) {
     const steps = [];
@@ -1738,9 +1814,28 @@ export function analyze(ts, root, { tag = '' } = {}) {
         }
       }
     }
+    // `invalidateQueries({ queryKey })`: the lists on screen that read that key load again
+    function onReload(c, level, unc) {
+      addStep([rowFor(c)], { unc });
+      const a = c.arguments[0] && skipOuter(c.arguments[0]);
+      if (!a) return;
+      const key = ts.isObjectLiteralExpression(a) ? optionsKey(a, { fns: new Set(), lit: null }) : keyInfo(a, { fns: new Set(), lit: null });
+      for (const q of queriesFor(key).slice(0, 3)) {
+        if (steps.length > MAXSTEPS) return;
+        const u = unitOf(q);
+        if (!u) continue;
+        const owners = u.kind === 'hook' ? hookOwners(u) : [{ unit: u, call: q }];
+        addStep(owners.slice(0, 3).map((o) => rowFor(o.call)), { unc });
+        const qf = queryFnOf(q.arguments[0]);
+        const init = qf && (ts.isPropertyAssignment(qf) ? skipOuter(qf.initializer) : qf);
+        if (init && (ts.isMethodDeclaration(init) || isFnLike(init))) walkFn(init, level + 1, unc);
+        else if (init) handleTargets(resolveValue(init), rowFor(qf), level + 1, unc);
+      }
+    }
     function visitExpr(node, level, unc) {
       const v = (n) => {
         if (isFnLike(n)) return;   // runs later, when something calls it
+        if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && RELOADS.has(n.expression.name.text)) { onReload(n, level, unc); return; }
         ts.forEachChild(n, v);
         if (ts.isCallExpression(n)) onCall(n, level, unc);
       };
@@ -2017,6 +2112,12 @@ export function analyze(ts, root, { tag = '' } = {}) {
       }
     }
   }
+  // a page load is named by what it fetches (`load /stats`), so several on one page tell apart
+  const loadLabel = (steps) => {
+    const seen = [];
+    for (const st of steps) for (const r of st.r) for (const a of r.api || []) seen.push(a.u.split('?')[0]);
+    return seen.length ? 'load ' + seen[0] : 'page load';   // the first request is the load's own; later ones are what it sets off
+  };
   // queries run when the component mounts: page load too
   const QUERIES = new Set(['useQuery', 'useSuspenseQuery', 'useInfiniteQuery', 'useSuspenseInfiniteQuery']);
   for (const c of calls) {
@@ -2033,7 +2134,7 @@ export function analyze(ts, root, { tag = '' } = {}) {
     const init = ts.isPropertyAssignment(q) ? skipOuter(q.initializer) : q;
     if (ts.isMethodDeclaration(init) || ts.isArrowFunction(init) || ts.isFunctionExpression(init)) { W.addStep([qrow]); W.walkFn(init, 1, false); }
     else if (init) W.handleTargets(resolveValue(init), qrow, 1, false);
-    addAction({ label: 'page load', sub: (owner || u).name, group: groupOf(owner || u), u, owner: owner || u, row, event: calleeName(c), steps: W.steps });
+    addAction({ label: loadLabel(W.steps), sub: (owner || u).name, group: groupOf(owner || u), u, owner: owner || u, row, event: calleeName(c), steps: W.steps });
   }
   // page load: effects with an empty deps list
   for (const u of units) {
@@ -2045,8 +2146,64 @@ export function analyze(ts, root, { tag = '' } = {}) {
       const row = rowFor(ef.call);
       W.addStep([row, rowFor(ef.deps)]);
       W.walkFn(ef.cb, 1, false);
-      addAction({ label: 'page load', sub: (owner || u).name, group: groupOf(owner || u), u, owner: owner || u, row, event: 'useEffect', steps: W.steps });
+      addAction({ label: loadLabel(W.steps), sub: (owner || u).name, group: groupOf(owner || u), u, owner: owner || u, row, event: 'useEffect', steps: W.steps });
     }
+  }
+
+  // ── state a PR starts throwing away ──
+  // For each component with state: the conditions that unmount it (a condition around its tag,
+  // an early return before it, a key), its ancestors' too. flowsegul_gen compares them with the
+  // base of a diff and marks the state whose component now sits under a new one.
+  const where = (node) => {
+    const sf = node.getSourceFile();
+    return rel(sf) + ':' + (startLine(node) + 1) + '\n' + lineText(sf, startLine(node)).trim();
+  };
+  const mountCache = new Map();
+  function siteConds(site) {
+    const out = [];
+    const fn = site.parent.fn;
+    const norm = (s) => s.replace(/\s+/g, ' ').trim();
+    // `a && b && <X />` is two conditions, so adding `a` in a PR reads as one new condition
+    const atoms = (e, neg, n) => {
+      e = skipOuter(e);
+      if (!neg && ts.isBinaryExpression(e) && e.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken) return atoms(e.left, false, n).concat(atoms(e.right, false, n));
+      return [{ t: (neg ? '!' : '') + norm(e.getText()), n }];
+    };
+    let x = site.op;
+    for (let p = x.parent; p && p !== fn; x = p, p = p.parent) {
+      if (ts.isConditionalExpression(p) && (p.whenTrue === x || p.whenFalse === x)) out.push(...atoms(p.condition, p.whenFalse === x, p));
+      else if (ts.isBinaryExpression(p) && p.right === x && p.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken) out.push(...atoms(p.left, false, p));
+      else if (ts.isIfStatement(p) && (p.thenStatement === x || p.elseStatement === x)) out.push(...atoms(p.expression, p.elseStatement === x, p));
+      else if (ts.isCallExpression(p) && calleeName(p) === 'map') return null;   // a list: items come and go on purpose
+      if (ts.isBlock(p) && isFnLike(p.parent)) {
+        // `if (!open) return null;` before the return that renders it
+        for (const st of p.statements) {
+          if (st === x || st.getStart() >= x.getStart()) break;
+          if (ts.isIfStatement(st) && /\breturn\b/.test(st.thenStatement.getText())) out.push({ t: 'if ' + norm(st.expression.getText()) + ' return', n: st });
+        }
+      }
+    }
+    const key = site.op.attributes.properties.find((a) => ts.isJsxAttribute(a) && attrName(a) === 'key');
+    if (key && key.initializer) out.push({ t: 'key=' + norm(key.initializer.getText()), n: site.op });
+    return out;
+  }
+  function mountsOf(u, depth = 0) {
+    if (mountCache.has(u)) return mountCache.get(u);
+    mountCache.set(u, []);
+    const out = [];
+    if (depth < 12) {
+      for (const site of renderSites.get(u) || []) {
+        const cs = siteConds(site);
+        if (!cs) continue;
+        // keyed by the condition alone: renaming the parent (ColorPicker → ColorPickerComponent) changes nothing
+        for (const c of cs) out.push({ k: c.t, n: c.n });
+        for (const m of mountsOf(site.parent, depth + 1)) out.push(m);
+      }
+    }
+    const uniq = [];
+    for (const m of out) if (!uniq.some((x) => x.k === m.k)) uniq.push(m);
+    mountCache.set(u, uniq);
+    return uniq;
   }
 
   // ── setter sites for every state ──
@@ -2175,6 +2332,7 @@ export function analyze(ts, root, { tag = '' } = {}) {
       depth: u.depth, parents: u.parents.map((p) => p.id), sig: sigOf(u), rows: rowsHere.map((r) => r.id),
       propRows, code: code.length > 60000 ? code.slice(0, 60000) : code, codeLine: startLine(u.stmt) + 1,
       callRows: (hookRows.get(u) || []).map((r) => r.id),
+      ...(u.kind === 'component' && u.states.length ? { mount: mountsOf(u).slice(0, 40).map((m) => [m.k, where(m.n)]) } : {}),
     };
   });
   // late rows (from sig or render pass) get finished too

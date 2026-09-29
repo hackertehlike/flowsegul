@@ -59,15 +59,18 @@ python3 scripts/flowsegul_gen.py --changed --out /tmp/flowsegul.html   # then op
   hashes, but they diff via the *merge-base* — branch semantics.)
 - **`--depth`** (default 6), **`--title`**, **`--out`** (default a temp file).
 - **`--react [DIR]`** — map a React + TypeScript app (or only the folder `DIR` in the repo): each
-  user action (click, typing, submit, page load) and the ordered path it sets off — handler,
+  user action (click, typing, submit, what a screen loads as it opens: `load /orders`) and the ordered path it sets off — handler,
   callback props up the tree, the `useState` setter, the components that rerun, effects on that
   state and the requests they make. On by default for a repo with `.tsx` files. With a FastAPI
   backend too, each request links to the route it reaches, the route lists its callers, and red
   marks flag `no route`, `GET ≠ POST`, a route declared earlier that catches it, and query keys
   the route ignores or requires.
   Needs `node` and the `typescript` package (the app's own, a global one, or `FLOWSEGUL_TS=DIR`).
-  Reads the working tree; `--changed` etc. apply to routes only. Anything it can't pin down is
-  marked uncertain (faded), never claimed.
+  A click that refreshes a list (`invalidateQueries`) leads on to that list and its request.
+  Reads the working tree; with `--changed` etc. it also compares with the base and marks state
+  the change now erases (`draft erased when showPromo is false`: a new condition, early return or
+  key above its component). Anything it can't pin
+  down is marked uncertain (faded), never claimed.
 
 **Coverage guarantee (`--changed` / `--from`):** every changed *function* is drawn as a node in
 some endpoint's flow, or as its own root chart if no endpoint reaches it; every changed *class*
