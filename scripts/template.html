@@ -160,8 +160,8 @@ kbd{font:600 10.5px/1 var(--mono);padding:3px 5px;border-radius:5px;border:1px s
 .main{flex:1;display:flex;min-height:0}
 
 /* ── sidebar ────────────────────────────────────────────────────────────── */
-.side{width:252px;flex:none;border-right:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;min-height:0;transition:margin-left .22s var(--ease)}
-body.noside .side{margin-left:-252px}
+.side{width:var(--sidew,252px);flex:none;position:relative;border-right:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;min-height:0;transition:margin-left .22s var(--ease)}
+body.noside .side{margin-left:calc(-1*var(--sidew,252px))}
 .search{padding:10px 10px 6px;flex:none}
 .search label{display:flex;align-items:center;gap:7px;height:32px;padding:0 8px 0 9px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);color:var(--muted);transition:border-color .15s,box-shadow .15s}
 .search label:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
@@ -549,7 +549,7 @@ button.num{cursor:pointer}
 .brand h1{font-weight:500;letter-spacing:-.02em}
 .logo{background:#18181b;box-shadow:inset 0 0 0 1px #ffffff1f;border-radius:50%}
 .side{background:var(--panel);border-right:0;margin:0 0 14px 14px;border-radius:var(--r);box-shadow:var(--shadow)}
-body.noside .side{margin-left:-266px}
+body.noside .side{margin-left:calc(-14px - var(--sidew,252px))}
 .stage{background-image:radial-gradient(circle at 1px 1px,var(--grid) .9px,transparent 0);background-size:14px 14px}
 .node{border-color:transparent;background:var(--panel)}
 .nhead{padding:16px 16px 12px 18px}
@@ -766,6 +766,36 @@ pre.code{border-color:transparent;border-radius:16px;background:var(--panel2)}
 .ast .schip.http{background:var(--chip);color:var(--ink2)}
 .ast .more{background:var(--chip);color:var(--muted)}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+/* find in this map: a pill at the start of the zoom bar */
+.mfind{display:flex;align-items:center;gap:4px;height:30px;padding:0 4px 0 10px;border-radius:999px;background:var(--panel2);color:var(--muted);cursor:text;transition:box-shadow .15s}
+.mfind:focus-within{box-shadow:0 0 0 2px var(--lit-fill)}
+.mfind>svg{width:14px;height:14px;flex:none}
+.mfind input{width:96px;border:0;background:none;outline:none;font:12px var(--sans);color:var(--ink);transition:width .2s var(--ease)}
+.mfind input::-webkit-search-cancel-button{display:none}
+.mfind input::placeholder{color:var(--faint)}
+.mfind:focus-within input,.mfind.has input{width:150px}
+#mqn{font:600 11px var(--mono);color:var(--muted);white-space:nowrap}
+.mfind.none #mqn{color:var(--del)}
+.mfind:not(.has) #mqn,.mfind:not(.has) button{display:none}
+.dock .mfind button{width:24px;height:24px}
+.dock .mfind button svg{width:13px;height:13px}
+#world.finding .node:not(.fnode){opacity:.3}
+#world.finding .node,#world #edges{transition:opacity .15s}
+#world.finding #edges{opacity:.4}
+.mfind.none button{display:none}
+/* like a browser's find: every match marked, the current one inverted */
+.nohl .fline{background:color-mix(in srgb,var(--lit-fill) 30%,transparent)!important}
+.nohl .fline.fcur{box-shadow:0 0 0 2px var(--lit)}
+::highlight(mfcur){background-color:var(--ink);color:var(--panel)}
+.node.fcurn{box-shadow:0 0 0 2px var(--lit-fill),var(--shadow)}
+::highlight(mfind){background-color:var(--lit-fill);color:var(--lit-on)}
+/* sidebar width: drag its right edge, double-click to reset */
+.sgrip{position:absolute;top:14px;bottom:14px;right:-7px;width:10px;cursor:col-resize;z-index:5;touch-action:none}
+.sgrip::after{content:"";position:absolute;left:4px;top:50%;height:36px;margin-top:-18px;width:3px;border-radius:2px;background:var(--line2);opacity:0;transition:opacity .15s}
+.sgrip:hover::after,.sgrip.drag::after{opacity:1}
+body.sizing,body.sizing *{cursor:col-resize!important;user-select:none}
+body.sizing .side{transition:none}
+body.noside .sgrip{display:none}
 </style>
 </head>
 <body>
@@ -796,6 +826,7 @@ pre.code{border-color:transparent;border-radius:16px;background:var(--panel2)}
 </header>
 <div class="main">
  <nav class="side" id="sidebar">
+  <div class="sgrip" id="sgrip" role="separator" aria-orientation="vertical" aria-label="Resize sidebar" data-tip="Drag to resize · double-click to reset"></div>
   <div class="search"><label><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg><input id="q" type="search" placeholder="Filter endpoints" autocomplete="off" spellcheck="false"><kbd>/</kbd></label><div class="seg sidetabs" id="sidetabs" hidden><button class="segb" data-k="be">Backend <i id="nbe"></i></button><button class="segb" data-k="fe">Frontend <i id="nfe"></i></button></div></div>
   <div class="eplist" id="side"></div>
   <div class="revbar"><div class="lbl"><b id="revcount">0</b><span id="revof">of 0 reviewed</span></div><div class="track"><div class="fill" id="revfill"></div></div></div>
@@ -808,6 +839,8 @@ pre.code{border-color:transparent;border-radius:16px;background:var(--panel2)}
    <div class="float fxstrip" id="fxstrip" hidden></div>
    <details class="float legend" id="legend"></details>
    <div class="float dock">
+    <label class="mfind" id="mfind"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg><input id="mq" type="search" placeholder="Find in map" autocomplete="off" spellcheck="false" aria-label="Find in this map" aria-keyshortcuts="Control+F"><span id="mqn" aria-live="polite"></span><button id="mqprev" type="button" aria-label="Previous match (Shift+Enter)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 10 4-4 4 4"/></svg></button><button id="mqnext" type="button" aria-label="Next match (Enter)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 6 4 4 4-4"/></svg></button></label>
+    <span class="dsep"></span>
     <span class="seg scrollseg wheelseg" role="group" aria-label="Scroll wheel"><button class="segb" data-mode="pan" data-tip="Scroll wheel pans  (W)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v12M2 8h12M8 2 6.3 3.7M8 2l1.7 1.7M8 14l-1.7-1.7M8 14l1.7-1.7M2 8l1.7-1.7M2 8l1.7 1.7M14 8l-1.7-1.7M14 8l-1.7 1.7"/></svg>Pan</button><button class="segb" data-mode="zoom" data-tip="Scroll wheel zooms  (W)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3M5 7h4M7 5v4"/></svg>Zoom</button></span>
     <span class="dsep"></span>
     <button id="zout" data-tip="Zoom out  (−)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3.5 8h9"/></svg></button>
@@ -835,6 +868,7 @@ pre.code{border-color:transparent;border-radius:16px;background:var(--panel2)}
   <h5>Keys</h5>
   <div class="kr"><span>Change what's compared</span><span><kbd>G</kbd></span></div>
   <div class="kr"><span>Filter endpoints</span><span><kbd>/</kbd><kbd>⌘K</kbd></span></div>
+  <div class="kr"><span>Find in this map (next / previous)</span><span><kbd>Ctrl</kbd><kbd>F</kbd><kbd>↵</kbd><kbd>⇧↵</kbd></span></div>
   <div class="kr"><span>Next / previous endpoint</span><span><kbd>J</kbd><kbd>K</kbd></span></div>
   <div class="kr"><span>Fit to screen</span><span><kbd>F</kbd><kbd>⇧1</kbd></span></div>
   <div class="kr"><span>Zoom</span><span><kbd>+</kbd><kbd>−</kbd><kbd>0</kbd></span></div>
@@ -1531,7 +1565,9 @@ function focusNode(nd){
  setTimeout(()=>nd.el.classList.remove('flash'),1800);
 }
 world.addEventListener('click',e=>{const c=e.target.closest&&e.target.closest('.call[data-target]');
- if(!c)return;e.stopPropagation();focusNode(nodes[c.dataset.target]);});
+ if(!c)return;e.stopPropagation();const nd=nodes[c.dataset.target];if(!nd)return;
+ if(!RMODE){const h=xHere();if(h){h.kind='view';xhist.push(h);rBar();}}
+ focusNode(nd);});
 // scroll = smooth zoom toward the cursor; pan is done by dragging empty canvas (or two-finger scroll)
 function zoomAt(cx,cy,factor){
  const r=stage.getBoundingClientRect();const mx=cx-r.left,my=cy-r.top;
@@ -2004,7 +2040,8 @@ function xBack(){
  if(h.kind==='ep'){xSelect(EPBYID[h.id]||{id:h.id});}
  else if(h.kind==='act'){const it=epEls.find(e=>e.ep.__act&&e.ep.__act.id===h.id);if(it){xnav=true;try{selectEp(it.ep,it.d);}finally{xnav=false;}rv.step=h.step||1;if(h.pin)rv.pin=h.pin;rBuild();}}
  else if(h.kind==='unit')rUnitView(h.row);
- view.x=h.v.x;view.y=h.v.y;view.s=h.v.s;applyView();rBar();
+ else if(h.kind==='view'&&(RMODE||!curEp||curEp.id!==h.id)){xhist=xhist.filter(x=>x.kind!=='view');return xBack();}
+ view.x=h.v.x;view.y=h.v.y;view.s=h.v.s;if(h.kind==='view')animateView();else applyView();rBar();
 }
 $('#epinfo').addEventListener('click',e=>{
  const c=e.target.closest('a.rc.call');if(c){e.preventDefault();openCaller(c.dataset.row);return;}
@@ -2589,10 +2626,83 @@ function askCodeLines(){
 {let down=null;
  stage.addEventListener('pointerdown',e=>{down=e.target.closest('.node,.float,.drawer')?null:[e.clientX,e.clientY];});
  stage.addEventListener('pointerup',e=>{if(down&&Math.abs(e.clientX-down[0])+Math.abs(e.clientY-down[1])<4)clearAsk();down=null;});}
-// a keyboard-focused box off-screen: glide to it
-world.addEventListener('focusin',e=>{if(!e.target.classList||!e.target.classList.contains('node'))return;const r=e.target.getBoundingClientRect(),s=stage.getBoundingClientRect();
+// a keyboard-focused box off-screen: glide to it. Not on a mouse press: that focus comes from
+// clicking inside the box, and gliding then would slide a call name away before the click lands.
+let ptrFocus=0;
+world.addEventListener('pointerdown',()=>{ptrFocus=Date.now();},true);
+world.addEventListener('focusin',e=>{if(!e.target.classList||!e.target.classList.contains('node')||Date.now()-ptrFocus<600)return;const r=e.target.getBoundingClientRect(),s=stage.getBoundingClientRect();
  if(r.left<s.left||r.right>s.right||r.top<s.top||r.bottom>s.bottom)focusNode(nodes[e.target.dataset.id]);});
 
+// ── find in this map ──
+// Matches function names first, then any row or code line, in the boxes of the current map.
+// Enter / Shift+Enter (or ↓ ↑) step through them; each step glides to the box and lights the line.
+const MF={q:'',hits:[],i:-1};
+function mfNorm(t){return t.replace(/\s+/g,'').toLowerCase();}
+function mfName(card){const t=card.querySelector('.ntitle');if(!t)return '';
+ return [...t.childNodes].filter(n=>n.nodeType===3||n.classList.contains('rsig')).map(n=>n.textContent).join('');}
+function mfClear(){world.classList.remove('finding');
+ world.querySelectorAll('.fnode,.fname,.fcurn').forEach(e=>e.classList.remove('fnode','fname','fcurn'));
+ world.querySelectorAll('.fline').forEach(e=>e.classList.remove('fline','fcur'));
+ if(MF_HL){CSS.highlights.delete('mfind');CSS.highlights.delete('mfcur');}}
+function mfRanges(el,q){const out=[],w=document.createTreeWalker(el,NodeFilter.SHOW_TEXT);let n;
+ while((n=w.nextNode())){if(n.parentElement.closest('.nsub,.ub,button'))continue;const t=n.nodeValue.toLowerCase();let k=t.indexOf(q);
+  while(k>=0){const r=new Range();r.setStart(n,k);r.setEnd(n,k+q.length);out.push(r);k=t.indexOf(q,k+q.length);}}
+ return out;}
+function mfRun(jump){
+ const q=$('#mq').value.trim(),ql=q.toLowerCase(),box=$('#mfind');mfClear();
+ MF.q=q;MF.hits=[];MF.i=-1;box.classList.toggle('has',!!q);box.classList.remove('none');
+ if(!q){MF.i=-1;$('#mqn').textContent='';return;}
+ const cards=Object.values(nodes).filter(nd=>nd.el&&nd.el.isConnected&&!nd.el.hidden).sort((a,b)=>a.x-b.x||a.y-b.y);
+ const names=[],lines=[];
+ cards.forEach(nd=>{const card=nd.el;
+  if(mfName(card).toLowerCase().includes(ql))names.push({nd,el:null});
+  // a summary row and its code line say the same thing: count it once, prefer what is on screen
+  const seen=new Set(),pre=card.querySelector('pre.code'),rows=[...card.querySelectorAll('.nbody>.step,.nbody>.ins,.nbody>.rrow')],dls=pre?[...pre.querySelectorAll('.dl')]:[];
+  const hit=e=>e.textContent.toLowerCase().includes(ql);
+  const first=pre&&!pre.hidden?[dls,rows]:[rows,dls];
+  const nm=names.length&&names[names.length-1].nd===nd?mfNorm(mfName(card)):null;
+  first.forEach(list=>list.filter(hit).forEach(e=>{const k=mfNorm(e.textContent);
+   if([...seen].some(x=>x.includes(k)))return;
+   if(nm&&e.classList.contains('dl')&&/^(async)?(def|function|const)/.test(k)&&k.includes(nm.replace(/^(async)?(function)/,'').replace(/\(.*/,'')))return;
+   seen.add(k);lines.push({nd,el:e});}));});
+ MF.hits=names.concat(lines);
+ MF.hits.forEach(h=>{h.nd.el.classList.add('fnode');if(!h.el){h.nd.el.classList.add('fname');h.r=mfRanges(h.nd.el.querySelector('.ntitle'),ql);}
+  else{h.el.classList.add('fline');h.r=mfRanges(h.el,ql);}});
+ mfPaint();
+ world.classList.add('finding');
+ if(!MF.hits.length){MF.i=-1;box.classList.add('none');$('#mqn').textContent='0';return;}
+ MF.i=jump?0:-1;mfCount();if(jump)mfShow();
+}
+const MF_HL=!!(window.CSS&&CSS.highlights&&window.Highlight);document.documentElement.classList.toggle('nohl',!MF_HL);
+function mfPaint(){if(!MF_HL)return;const all=[],cur=[];MF.hits.forEach((h,i)=>(i===MF.i?cur:all).push(...(h.r||[])));
+ CSS.highlights.set('mfind',new Highlight(...all));CSS.highlights.set('mfcur',new Highlight(...cur));}
+function mfCount(){$('#mqn').textContent=(MF.i<0?'':(MF.i+1)+'/')+MF.hits.length;}
+function mfStep(d){if(!MF.hits.length)return;MF.i=(MF.i+d+MF.hits.length)%MF.hits.length;mfCount();mfShow();}
+function mfShow(){
+ const h=MF.hits[MF.i];if(!h)return;
+ world.querySelectorAll('.fcur').forEach(e=>e.classList.remove('fcur'));world.querySelectorAll('.fcurn').forEach(e=>e.classList.remove('fcurn'));
+ h.nd.el.classList.add('fcurn');
+ const pre=h.el&&h.el.closest('pre.code');
+ if(pre&&pre.hidden){setNodeCode(h.nd.el,true);relayout();setTimeout(()=>mfShow(),80);return;}
+ mfPaint();
+ if(!h.el){focusNode(h.nd);return;}
+ h.el.classList.add('fcur');
+ if(pre){const top=h.el.offsetTop-pre.offsetTop;if(top<pre.scrollTop||top>pre.scrollTop+pre.clientHeight-20)pre.scrollTop=top-pre.clientHeight/3;}
+ // centre the line (not the whole box, which can be taller than the screen)
+ const r=stage.getBoundingClientRect(),card=h.nd.el;let y=0,e=h.el;while(e&&e!==card){y+=e.offsetTop;e=e.offsetParent;}if(pre)y-=pre.scrollTop;
+ view.x=r.width/2-(h.nd.x+card.offsetWidth/2)*view.s;view.y=r.height/2-(h.nd.y+y+h.el.offsetHeight/2)*view.s;animateView();
+}
+{const mq=$('#mq');let t=null;
+ mq.addEventListener('input',()=>{clearTimeout(t);t=setTimeout(()=>mfRun(true),120);});
+ mq.addEventListener('keydown',e=>{
+  if(e.key==='Enter'||e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();clearTimeout(t);
+   if(mq.value.trim()!==MF.q){mfRun(true);return;}mfStep(e.key==='ArrowUp'||(e.key==='Enter'&&e.shiftKey)?-1:1);}
+  else if(e.key==='Escape'){e.stopPropagation();if(mq.value){mq.value='';mfRun(false);}else mq.blur();}});
+ $('#mqnext').onclick=()=>mfStep(1);$('#mqprev').onclick=()=>mfStep(-1);
+ // a new map (another route or action, code shown or hidden): search it again, without moving the view
+ let pend=0;new MutationObserver(()=>{if(!MF.q||pend)return;pend=requestAnimationFrame(()=>{pend=0;mfRun(false);});})
+  .observe(world,{childList:true});
+}
 // V marks the changed box under the pointer, else the one the Changes stepper is on
 let hoverNode=null;
 world.addEventListener('mouseover',e=>{const c=e.target.closest('.node');hoverNode=c?c.dataset.id:null;});
@@ -2603,6 +2713,7 @@ window.addEventListener('keydown',e=>{
  if(e.altKey&&e.key==='ArrowLeft'&&!(e.target.closest&&e.target.closest('input,textarea,[contenteditable]'))){
    if(RMODE&&rhist.length){e.preventDefault();rBack();}else if(xhist.length){e.preventDefault();xBack();}
    if(RMODE||xhist.length)return;}
+ if((e.metaKey||e.ctrlKey)&&!e.altKey&&!e.shiftKey&&(e.key==='f'||e.key==='F')){e.preventDefault();$('#mq').focus();$('#mq').select();return;}
  if((e.metaKey||e.ctrlKey)&&(e.key==='k'||e.key==='K')){e.preventDefault();if(document.body.classList.contains('noside'))toggleSide();$('#q').focus();$('#q').select();return;}
  if(e.metaKey||e.ctrlKey||e.altKey)return;
  const typing=e.target.closest&&e.target.closest('input,textarea,[contenteditable]');
@@ -2635,6 +2746,17 @@ window.addEventListener('keydown',e=>{
 if(store.get('review',false))toggleReview();
 if(store.get('nomap',false))toggleMap();
 if(store.get('noside',false))document.body.classList.add('noside');
+// sidebar width: drag the right edge (200–520px), double-click resets; remembered per browser
+{const SW0=252,g=$('#sgrip'),root=document.documentElement,clamp=w=>Math.max(200,Math.min(520,Math.round(w)));
+ const setW=w=>{root.style.setProperty('--sidew',w+'px');};
+ const w0=store.get('sidew',null);if(w0)setW(clamp(w0));
+ g.addEventListener('pointerdown',e=>{if(e.button!==0)return;e.preventDefault();g.setPointerCapture(e.pointerId);
+  const sx=e.clientX,sw=$('#sidebar').offsetWidth;document.body.classList.add('sizing');g.classList.add('drag');
+  const mv=ev=>setW(clamp(sw+ev.clientX-sx));
+  const up=()=>{g.removeEventListener('pointermove',mv);g.removeEventListener('pointerup',up);g.removeEventListener('pointercancel',up);
+   document.body.classList.remove('sizing');g.classList.remove('drag');store.set('sidew',$('#sidebar').offsetWidth);drawMinimap();};
+  g.addEventListener('pointermove',mv);g.addEventListener('pointerup',up);g.addEventListener('pointercancel',up);});
+ g.addEventListener('dblclick',()=>{setW(SW0);store.set('sidew',null);drawMinimap();});}
 updateRevProgress();
 applyView();
 if(!epEls.length){
