@@ -1191,6 +1191,20 @@ def steps_for(info, idx):
     caller_cls = info.get('cls')
     caller_qual = info['qual']
     own_names = set(local_names(info['node']))
+    cl = code_lines_of(info, src)
+    lines = src.splitlines()
+    ctx = []        # headers of the blocks around the statement being walked: [[first, last] code line]
+    at = [None]     # the statement's own code lines, for the box's folded code
+
+    def span(a, b):
+        return [cl(a), cl(b)]
+
+    def kw_line(after, before, word):
+        """The `else:` / `finally:` line between two statements (the AST has no node for it)."""
+        for k in range(after + 1, before):
+            if re.match(r'\s*' + word + r'\b', lines[k - 1] if k - 1 < len(lines) else ''):
+                return span(k, k)
+        return None
 
     def emit(var, expr_nodes, disp):
         calls = [c for en in expr_nodes for c in ast.walk(en)
@@ -1228,19 +1242,39 @@ def steps_for(info, idx):
                 'ret': one_line(idx.funcs[qual]['returns'], 46), 'uses': uses, '_qual': qual,
                 'bind': bindings_for(call, idx.funcs[qual]),
                 '_catch': [h for blk in catching for h in blk],
+                'ln': at[0], 'ctx': [list(c) for c in ctx],
             })
             first = False
         for qual in refs:
             out.append({
                 'var': var, 'expr': expr if first else '', 'target': nid_for(qual), 'arg': '(deferred)',
                 'ret': one_line(idx.funcs[qual]['returns'], 46), 'uses': uses, '_qual': qual,
+                'ln': at[0], 'ctx': [list(c) for c in ctx],
             })
             first = False
         if var not in ('return', '·') and var not in assigned:
             assigned.append(var)
 
+    def block(stmts, *heads):
+        """Walk a nested block with the header lines (`if x:`, `else:`, `except E:`) that open it."""
+        hs = [h for h in heads if h]
+        ctx.extend(hs)
+        walk(stmts)
+        del ctx[len(ctx) - len(hs):]
+
+    def orelse(s, head):
+        if not s.orelse:
+            return
+        # `elif` is an If inside orelse with no `else:` line of its own
+        if (len(s.orelse) == 1 and isinstance(s.orelse[0], ast.If)
+                and re.match(r'\s*elif\b', lines[s.orelse[0].lineno - 1])):
+            block(s.orelse, head)
+        else:
+            block(s.orelse, head, kw_line(s.body[-1].end_lineno, s.orelse[0].lineno, 'else'))
+
     def walk(stmts):
         for s in stmts:
+            at[0] = span(s.lineno, s.end_lineno)
             if isinstance(s, ast.Assign):
                 emit(unparse(s.targets[0]), [s.value], s.value)  # RHS only — chip supplies "var ="
             elif isinstance(s, ast.AnnAssign) and s.value is not None:
@@ -1248,19 +1282,28 @@ def steps_for(info, idx):
             elif isinstance(s, ast.Return) and s.value is not None:
                 emit('return', [s.value], s.value)  # value only — the row already prefixes "return"
             elif isinstance(s, (ast.If, ast.While)):
-                emit('·', [s.test], s.test); walk(s.body); walk(s.orelse)
+                head = at[0] = span(s.lineno, s.test.end_lineno)
+                emit('·', [s.test], s.test); block(s.body, head); orelse(s, head)
             elif isinstance(s, (ast.For, ast.AsyncFor)):
-                emit('·', [s.iter], s.iter); walk(s.body); walk(s.orelse)
+                head = at[0] = span(s.lineno, s.iter.end_lineno)
+                emit('·', [s.iter], s.iter); block(s.body, head); orelse(s, head)
             elif isinstance(s, (ast.With, ast.AsyncWith)):
+                head = at[0] = span(s.lineno, s.items[-1].context_expr.end_lineno)
                 emit('·', [it.context_expr for it in s.items], s.items[0].context_expr)
-                walk(s.body)
+                block(s.body, head)
             elif isinstance(s, ast.Try):
+                head = span(s.lineno, s.lineno)
                 catching.append([handler_info(h) for h in s.handlers])
-                walk(s.body)
+                block(s.body, head)
                 catching.pop()
                 for h in s.handlers:
-                    walk(h.body)
-                walk(s.orelse); walk(s.finalbody)
+                    block(h.body, head, span(h.lineno, h.type.end_lineno if h.type else h.lineno))
+                last = (s.handlers[-1].end_lineno if s.handlers else s.body[-1].end_lineno)
+                if s.orelse:
+                    block(s.orelse, head, kw_line(last, s.orelse[0].lineno, 'else'))
+                    last = s.orelse[-1].end_lineno
+                if s.finalbody:
+                    block(s.finalbody, head, kw_line(last, s.finalbody[0].lineno, 'finally'))
             elif isinstance(s, ast.Expr):
                 emit('·', [s.value], s)
             else:  # raise, assert, etc. — no nested statement bodies to recurse into
@@ -1271,8 +1314,24 @@ def steps_for(info, idx):
                         seg = None
                     raises.append({'t': exc_name(s.exc), 'status': http_status(s.exc),
                                    'text': one_line(seg or unparse(s), 90),
-                                   '_catch': [h for blk in catching for h in blk]})
+                                   '_catch': [h for blk in catching for h in blk],
+                                   'ln': at[0], 'ctx': [list(c) for c in ctx]})
                 emit('·', [s], s)
+
+    def dep_lines(pname, dep):
+        # a `Depends(...)` in this def, else (an alias like `CurrentUser`) the parameter that uses it
+        fn = info['node']
+        if any(d is dep for part in [fn.args, *fn.decorator_list] for d in ast.walk(part)):
+            return span(dep.lineno, dep.end_lineno)
+        a = next((x for x in [*fn.args.posonlyargs, *fn.args.args, *fn.args.kwonlyargs] if x.arg == pname), None)
+        return span(a.lineno, a.end_lineno) if a else None
+
+    def dep_ctx(dep):
+        # a Depends inside `@router.post(..., dependencies=[...])` keeps its `@router.post(` line
+        for d in info['node'].decorator_list:
+            if any(x is dep for x in ast.walk(d)):
+                return [span(d.lineno, d.lineno)]
+        return []
 
     # FastAPI dependencies run before the body: `user: CurrentUser`, `db = Depends(get_db)`,
     # `@router.get(…, dependencies=[Depends(auth)])`. Each is a call into our code.
@@ -1281,11 +1340,29 @@ def steps_for(info, idx):
         if q and q != caller_qual:
             out.append({'var': pname or '·', 'expr': one_line(unparse(dep), 60), 'target': nid_for(q),
                         'arg': '', 'ret': one_line(idx.funcs[q]['returns'], 46), 'uses': [],
-                        '_qual': q, 'dep': True, '_catch': []})
+                        '_qual': q, 'dep': True, '_catch': [],
+                        'ln': dep_lines(pname, dep), 'ctx': dep_ctx(dep)})
     walk(info['node'].body)
     cache[info['qual']] = out
     idx.raise_cache[info['qual']] = raises
     return out
+
+
+def code_lines_of(info, src):
+    """file line -> 0-based line of the box's code (def_source: decorators, then the def)."""
+    node = info['node']
+    decs, off = [], 0
+    for d in getattr(node, 'decorator_list', []):
+        seg = ast.get_source_segment(src, d)
+        if seg:
+            decs.append((d.lineno, d.end_lineno, off))
+            off += seg.count('\n') + 1
+    def cl(n):
+        for a, b, o in decs:
+            if a <= n <= b:
+                return o + n - a
+        return off + n - node.lineno
+    return cl
 
 
 def _depends_in(node, idx, rel, seen=()):
@@ -1633,6 +1710,8 @@ def statuses_for(entry_qual, idx, changed_q):
         o = out.setdefault(code, {'code': code, 'kind': kind, 'types': [], 'new': False})
         if t not in o['types']:
             o['types'].append(t)
+        if text and text not in o.setdefault('lines', []):
+            o['lines'].append(text)     # the raise lines that give this answer, for its hover
         o['new'] = o['new'] or origin in changed_q
     return sorted(out.values(), key=lambda o: (o['kind'] != 'ok', o['code']))
 
@@ -1709,7 +1788,7 @@ def build_endpoint(entry_qual, idx, meta, depth, tag, changed_q=frozenset(), cha
         for r in idx.raise_cache.get(q, []):
             here = caught_by(r['t'], r['_catch'], idx)
             a = app_status(r['t'], idx)
-            x = {'t': r['t'], 'text': r['text'],
+            x = {'t': r['t'], 'text': r['text'], 'ln': r['ln'], 'ctx': r['ctx'],
                  'esc': not r['status'] and a is None and not here}
             # what the client gets if nothing on the way up handles it: the raise's own HTTP status,
             # an app-level handler's, else 500. `here` = an `except` in this same function stops it.

@@ -119,8 +119,10 @@ wrappers like `api('/items')`. Vite's `server.proxy` rewrites, Next.js `rewrites
 - **Draggable node graph** per endpoint — opens fitted to the screen; drag to pan, pinch or
   Ctrl/⌘+scroll to zoom, and a Pan / Zoom switch (`W`) for what the mouse wheel does; minimap to jump around.
   Code wraps instead of scrolling sideways.
-- **Inline source** per node, syntax-highlighted, one click (or `C` for all) away. Changed
-  functions always show their diff.
+- **The code itself in each box**, folded to the lines that call something or raise, with the
+  `if` / `for` / `with` / `try` lines around them; `⋯` stands for the lines in between, and arrows
+  leave from the call's own line. `View code` (or `C` for all) unfolds the rest. Changed
+  functions always show their whole diff.
 - **Color-coded data flow** — each produced variable gets one consistent color across its chip, its
   arrows, and every line of source that touches it. Solid arrows = arguments in; dashed = value
   returned (labeled `type → variable`).
@@ -141,16 +143,15 @@ wrappers like `api('/items')`. Vite's `server.proxy` rewrites, Next.js `rewrites
 - **Full route paths** — prefixes from `APIRouter(prefix=…)` and `include_router(…, prefix=…)`
   (also a constant or `settings.API_V1_STR`) are joined into the path. FastAPI dependencies
   (`Depends(get_current_user)`, `Annotated[…, Depends(…)]`) are drawn as calls.
-- **Side effects in order** — a strip under the route header lists what the request does to the
-  world, in the order it runs: `add Order` → `email` → `commit`. It covers database writes
-  (`session.add`, `delete`, `execute(update(…))`), the commit (`session.commit()`, the end of
-  `with session.begin():`, or a commit after `yield` in a Depends generator, drawn dashed and
-  labelled `get_db`), and steps that can't be undone: email, HTTP POST/PUT/PATCH/DELETE, stripe,
-  boto3 writes, files, queued tasks. A step that can't be undone gets a red squiggle when an error
-  or the commit can still come after it; hover it to see which, and click any chip to go to its box.
-  Steps on only some paths are faded, with their `if`. With writes but no commit in sight the strip
-  ends in `commit ?` and marks nothing red. Name your own wrappers in `.flowsegul.json`:
+- **Steps that can't be undone, before the commit** — a line that sends an email, makes an HTTP
+  POST/PUT/PATCH/DELETE, calls stripe, writes with boto3 or a file, or queues a task gets a red
+  squiggle and `before commit` when the commit (or an error, `before ValueError`) can still come
+  after it on the way through the route. The commit is found as `session.commit()`, the end of
+  `with session.begin():`, or a commit after `yield` in a Depends generator; with no commit in
+  sight nothing is marked. Name your own wrappers in `.flowsegul.json`:
   `{"irreversible": ["mailer.send_*", "*.instance.send*"]}`.
+- **Responses** — the route header lists the statuses it can answer with. Hover one to light the
+  `raise` lines that give it; click it to keep that path lit.
 - **Change detection** (`--changed`) — per-node Diff / New / Old toggle, a **Changes** navigator
   (`N` / `Shift+N`), and deleted defs shown as removal diffs. Decorator edits count, and so do
   edits to a module-level name a function reads (`LIMIT = 500`): that function's diff opens with

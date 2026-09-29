@@ -246,7 +246,8 @@ body.review .revbar{display:block}
 .stc.bad{color:#fff;background:var(--del);border-color:var(--del)}
 .stc.new::after{content:'';position:absolute;top:-3px;right:-3px;width:7px;height:7px;border-radius:50%;background:var(--chg);border:1.5px solid var(--panel)}
 #world.errfocus .node:not(.errhot){opacity:.35;transition:opacity .12s}
-#world.errfocus .errhot .step:not(.errhot){opacity:.45}
+#world.errfocus .errhot .step:not(.errhot),#world.errfocus .errhot pre.code>.dl{opacity:.45}
+#world.errfocus pre.code .step.raise.errhot{background:color-mix(in srgb,var(--del) 12%,transparent)}
 .errhot.sq,.errhot.sqok,.step.errhot{text-decoration-thickness:2px}
 #edges.errfocus .ge{opacity:.08}
 /* at rest only where an error starts (the raise line) and ends (the route's status chip) are red;
@@ -262,23 +263,10 @@ body.review .revbar{display:block}
 #edges .errpath{opacity:0;transition:opacity .12s}
 #edges.errfocus .errpath.errhot{opacity:1;stroke-dasharray:6 4;animation:flow .6s linear infinite}
 
-/* side effects, in the order the route runs them: a strip under the route header. Red squiggle:
-   can't be undone, and an error or the commit can still come after it. Faded: only on some paths. */
-.fxstrip[hidden]{display:none}
-.fxstrip{left:14px;top:14px;display:flex;flex-wrap:wrap;align-items:flex-start;gap:5px 3px;padding:6px 8px;max-width:calc(100% - 262px);max-height:118px;overflow-y:auto}
-.fxw{display:inline-flex;flex-direction:column;align-items:center;gap:3px;min-width:0}
-.fxw i{font:10px/1 var(--mono);font-style:normal;color:var(--muted);max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.fx{font:500 11px/1 var(--mono);color:var(--ink2);background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:4px 8px;white-space:nowrap;cursor:pointer}
-.fx:hover{border-color:var(--line2)}
-.fx b{font-weight:600;color:var(--muted)}
-.fx.commit{color:var(--ok);background:color-mix(in srgb,var(--ok) 11%,var(--panel));border-color:color-mix(in srgb,var(--ok) 35%,var(--line))}
-.fx.via{border-style:dashed;border-color:var(--muted)}
-.fx.unk{color:var(--muted);background:none;border-style:dashed;border-color:var(--muted);cursor:default}
-.fx.risk{color:var(--del);background:color-mix(in srgb,var(--del) 10%,var(--panel));border-color:color-mix(in srgb,var(--del) 35%,var(--line));text-decoration:underline wavy var(--del);text-decoration-thickness:1px;text-underline-offset:3px;text-decoration-skip-ink:none}
-.fxw.cond{opacity:.5}
-.fxa{color:var(--faint);font:11px/1 var(--mono);padding-top:5px}
-.stage.hasfx .chgnav{top:auto;bottom:14px}
-.node.fxhot{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft),var(--shadow-lg)}
+/* a step that can't be undone (email, HTTP call, file, queue) while an error or the commit can still
+   come after it: red squiggle on its own line in the code, and what can follow it */
+pre.code .fxsq{text-decoration:underline wavy var(--del);text-decoration-thickness:1px;text-underline-offset:3px;text-decoration-skip-ink:none}
+pre.code .fxtag{font:600 10px/1 var(--mono);color:var(--del);margin-left:8px;white-space:nowrap}
 
 .node{position:absolute;width:320px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);z-index:2;transition:box-shadow .18s,border-color .18s}
 .node:hover{box-shadow:var(--shadow-lg)}
@@ -557,7 +545,7 @@ pre.code{border-color:transparent;border-radius:16px;background:var(--panel2)}
 .rangebtn,.rangepop,.search label,.combo input,.thpop{border-color:transparent}
 .rangepop{border-radius:22px}
 /* pills and round buttons */
-.tb,.mchip,.m,.lay,.stc,.fx,.ub,.vwbtn,.codebtn,.chgbadge,.rc,.seg,.segb,.dock button,.dock .pct,.ep,.rp-go,.rp-cmdline button{border-radius:999px}
+.tb,.mchip,.m,.lay,.stc,.ub,.vwbtn,.codebtn,.chgbadge,.rc,.seg,.segb,.dock button,.dock .pct,.ep,.rp-go,.rp-cmdline button{border-radius:999px}
 .tb{background:var(--raise);box-shadow:var(--shadow-sm),0 4px 12px -6px rgba(0,0,0,.12);height:36px;padding:0 14px;font-weight:500}
 .tb.icon{width:36px}
 .tb:hover{background:var(--raise);border-color:var(--line2)}
@@ -580,11 +568,6 @@ pre.code{border-color:transparent;border-radius:16px;background:var(--panel2)}
 .stc.ok{background:color-mix(in srgb,var(--ok) 14%,var(--panel));border-color:transparent}
 .stc.bad{background:var(--del)}
 .mchip{border-color:transparent;background:var(--chip);padding:5px 10px}
-.fx{border-color:transparent;background:var(--chip);padding:6px 11px}
-.fx.commit{border-color:transparent}
-.fx.via,.fx.unk{border-color:var(--muted)}
-.fx.risk{border-color:transparent}
-.fxstrip{padding:8px 10px;border-radius:22px}
 .vwbtn,.codebtn{border-color:transparent;background:var(--chip)}
 .seg{border-color:transparent;background:var(--chip)}
 .segb.on{background:var(--raise)}
@@ -640,7 +623,7 @@ pre.code{border-color:transparent;border-radius:16px;background:var(--panel2)}
 .chgbadge{background:var(--chg)}
 .node.svc{box-shadow:0 0 0 2px var(--lit-fill)}
 .node.svc.changed{box-shadow:none}
-.float,.legend,.minimap,.fxstrip{box-shadow:none}
+.float,.legend,.minimap{box-shadow:none}
 /* hover still lifts a box a little */
 .node:hover{box-shadow:0 14px 34px -14px rgba(0,0,0,.22)}
 :root[data-theme=dark] .node:hover{box-shadow:0 14px 34px -14px rgba(0,0,0,.7)}
@@ -730,7 +713,7 @@ pre.code{border-color:transparent;border-radius:16px;background:var(--panel2)}
 .aq code{font:600 11.5px var(--mono);color:var(--ink);background:var(--chip);border-radius:4px;padding:0 4px}
 #world.asking .node{transition:opacity .15s}
 #world.asking .node:not(.ask-on){opacity:.25}
-#world.asking .node.ask-on :is(.step,.ins .in,.codebar,.seg):not(.ask-hit),#world.asking .node.ask-on pre.code .dl:not(.ask-hit){opacity:.3}
+#world.asking .node.ask-on :is(.nbody>.step,.ins .in,.codebar,.seg):not(.ask-hit),#world.asking .node.ask-on pre.code .dl:not(.ask-hit):not(.ask-hit .dl){opacity:.3}
 #world.asking .ins{border-color:var(--line)}
 #edges.asking .ge:not(.ask-on),#edges.asking .errpath:not(.ask-on),#edges.asking .errlab:not(.ask-on){opacity:.15}
 #edges .askerr{fill:var(--del);font-weight:700}
@@ -761,6 +744,20 @@ pre.code{border-color:transparent;border-radius:16px;background:var(--panel2)}
 .ast .schip.http{background:var(--chip);color:var(--ink2)}
 .ast .more{background:var(--chip);color:var(--muted)}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+/* folded code: a box shows the lines that call something or raise, plus the if/for/try/with lines
+   around them; ⋯ stands for the lines in between. Each call's lines are one .step the arrows leave from */
+pre.code .step{display:block;font:inherit;background:none;padding:0 0 0 7px;margin:0 0 0 -9px;border-radius:3px;border:0;border-left:2px solid transparent;outline:none;cursor:auto}
+pre.code .step.hl{background:var(--accent-tk,rgba(0,0,0,.06));outline:none}
+pre.code .step.raise{border-left-color:var(--del)}
+pre.code .step.raise.handled{border-left-color:var(--line2)}
+.node.pyc:not(.wide){width:max-content;min-width:320px;max-width:560px}
+pre.code .dl.f{display:none}
+pre.code.full .dl.f{display:block}
+pre.code .fmk{display:block;color:var(--muted);line-height:1.1;letter-spacing:2px;cursor:pointer;user-select:none}
+pre.code .fmk:hover{color:var(--ink2)}
+pre.code.full .fmk{display:none}
+pre.code.none:not(.full){display:none}
+.codebar .codebtn[hidden]{display:none}
 </style>
 </head>
 <body>
@@ -800,7 +797,6 @@ pre.code{border-color:transparent;border-radius:16px;background:var(--panel2)}
    <div class="empty" id="empty" hidden><div><svg width="64" height="48" viewBox="0 0 64 48" fill="none"><rect x="2" y="6" width="22" height="14" rx="4" stroke="currentColor" stroke-width="1.5"/><rect x="40" y="28" width="22" height="14" rx="4" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 3"/><path d="M24 13c10 0 6 22 16 22" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 3"/></svg><b id="emptyh">Nothing to draw</b><span id="emptyp">No endpoints were found for this run.</span></div></div>
    <div class="float chgnav" id="chgnav" hidden><button id="chgprev" data-tip="Previous  (⇧N)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 10 4-4 4 4"/></svg></button><span id="chglabel"></span><button id="chgnext" data-tip="Next  (N)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 6 4 4 4-4"/></svg></button></div>
    <div class="float stepbar" id="stepbar" hidden role="toolbar" aria-label="Steps"><button class="sbback" id="sbback" aria-label="Back (Alt+Left)" data-tip="Back  (Alt+←)" aria-disabled="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 4 3 7.5 6.5 11"/><path d="M3.5 7.5H10a3 3 0 0 1 0 6H8"/></svg></button><span class="sbsep"></span><span class="sbname" id="sbname"></span><button id="sbprev" aria-label="Previous step (Shift+N)" data-tip="Previous  (⇧N)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 10 4-4 4 4"/></svg></button><span id="sbcount" aria-live="polite"></span><button id="sbnext" aria-label="Next step (N)" data-tip="Next  (N)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 6 4 4 4-4"/></svg></button></div>
-   <div class="float fxstrip" id="fxstrip" hidden></div>
    <details class="float legend" id="legend"></details>
    <div class="float dock">
     <span class="seg scrollseg wheelseg" role="group" aria-label="Scroll wheel"><button class="segb" data-mode="pan" data-tip="Scroll wheel pans  (W)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v12M2 8h12M8 2 6.3 3.7M8 2l1.7 1.7M8 14l-1.7-1.7M8 14l1.7-1.7M2 8l1.7-1.7M2 8l1.7 1.7M14 8l-1.7-1.7M14 8l-1.7 1.7"/></svg>Pan</button><button class="segb" data-mode="zoom" data-tip="Scroll wheel zooms  (W)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3M5 7h4M7 5v4"/></svg>Zoom</button></span>
@@ -823,9 +819,9 @@ pre.code{border-color:transparent;border-radius:16px;background:var(--panel2)}
  <p>Each box is a function. Endpoints sit on the left and fan out to whatever they call. Every value keeps one colour everywhere it travels.</p>
  <div class="cols">
   <h5>Reading</h5>
-  <div class="how">Hover a <b>variable</b> to trace it across rows, code and arrows. Hover a <b>row</b> to light up the arrow it sends.</div>
+  <div class="how">Hover a <b>variable</b> to trace it across the code and arrows. Hover a <b>call line</b> to light up the arrow it sends.</div>
   <div class="how">Click a <b>variable</b> to number its path: where it comes from and where it goes. The <b>?</b> on a box asks where a parameter comes from, why the box can fail, or which routes reach it.</div>
-  <div class="how">Click a row to jump to that call site in the code. Click an underlined call in the code to fly to its box.</div>
+  <div class="how">Boxes show the lines that call something or raise, with their <b>if</b> / <b>for</b> / <b>try</b> lines; <b>⋯</b> or <b>View code</b> unfolds the rest. Click an underlined call to fly to its box.</div>
   <div class="how">Solid arrows carry arguments in. Dashed arrows carry the typed return value back.</div>
   <h5>Keys</h5>
   <div class="kr"><span>Change what's compared</span><span><kbd>G</kbd></span></div>
@@ -889,14 +885,18 @@ function hl(src,vars,calls,locals){
 
 function hlDiff(diff,vars,calls,locals){
  if(!diff)return '(new definition — no previous version)';
+ let nln=0,skip=false;
  return diff.split('\n').map(l=>{
+   const h=l.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+   if(h){nln=+h[1];skip=false;}else if(l.startsWith('@@'))skip=true;
    if(l.startsWith('@@'))return '<span class="dl dhunk">'+esc(l)+'</span>';
    if(l.startsWith('+++')||l.startsWith('---'))return '<span class="dl dfile">'+esc(l)+'</span>';
    const add=l.startsWith('+'), del=l.startsWith('-'), ctx=l.startsWith(' ');
    const cls=add?'dadd':del?'ddel':'';
    // keep the +/-/space marker literal, syntax-highlight the code after it (same var colours as New/Old)
    const marker=(add||del||ctx)?l[0]:'';
-   return lineBlock(esc(marker)+(hl(marker?l.slice(1):l,vars,calls,locals)||' '),cls,marker?l.slice(1):l,marker?1:0);
+   const ln=(!skip&&(add||ctx))?nln++ -1:null;
+   return lineBlock(esc(marker)+(hl(marker?l.slice(1):l,vars,calls,locals)||' '),cls,marker?l.slice(1):l,marker?1:0,ln);
  }).join('');
 }
 
@@ -920,13 +920,13 @@ function diffFlags(diff){
 }
 
 // full source, syntax-highlighted, with the diffed lines tinted (cls = dadd on new side, ddel on old side)
-function hlSide(src,vars,flags,cls,calls,locals){
- return codeLines(src,vars,calls,locals,i=>flags.has(i+1)?cls:'');
+function hlSide(src,vars,flags,cls,calls,locals,noLn){
+ return codeLines(src,vars,calls,locals,i=>flags.has(i+1)?cls:'',null,noLn);
 }
 // Highlight the whole source once (so multi-line strings stay coloured), then cut it into one block
 // per line. hl() emits flat spans, so a span crossing a newline is closed and reopened on the next line.
 // Each line carries its own indent so wrapped continuation lines hang under the code, not at column 0.
-function codeLines(src,vars,calls,locals,clsOf,hlf){
+function codeLines(src,vars,calls,locals,clsOf,hlf,noLn){
  src=String(src==null?'':src);
  const raw=src.split('\n'),html=(hlf||hl)(src,vars,calls,locals),out=[];
  let cur='',open='';
@@ -936,15 +936,15 @@ function codeLines(src,vars,calls,locals,clsOf,hlf){
    else t.split('\n').forEach((p,k)=>{if(k){if(open)cur+='</span>';out.push(cur);cur=open;}cur+=p;});
  });
  out.push(cur);
- return out.map((l,i)=>lineBlock(l||' ',clsOf?clsOf(i):'',raw[i]||'',0)).join('');
+ return out.map((l,i)=>lineBlock(l||' ',clsOf?clsOf(i):'',raw[i]||'',0,noLn?null:i)).join('');
 }
-function lineBlock(inner,cls,rawLine,extra){const ind=rawLine.match(/^\s*/)[0].replace(/\t/g,'    ').length+(extra||0);return '<span class="dl'+(cls?' '+cls:'')+'" style="--ind:'+ind+'ch">'+inner+'</span>';}
+function lineBlock(inner,cls,rawLine,extra,ln){const ind=rawLine.match(/^\s*/)[0].replace(/\t/g,'    ').length+(extra||0);return '<span class="dl'+(cls?' '+cls:'')+'"'+(ln!=null?' data-ln="'+ln+'"':'')+' style="--ind:'+ind+'ch">'+inner+'</span>';}
 
 const stage=$('#stage'), world=$('#world'), svg=$('#edges');
 let view={x:40,y:20,s:1};
 function applyView(){world.style.transform='translate('+view.x+'px,'+view.y+'px) scale('+view.s+')';$('#zpct').textContent=Math.round(view.s*100)+'%';drawMinimap();}
-let FLOW={}, nodes={}, edges=[], curEp=null, dragMoved=false, inputTokens={}, legendInputs=[], pvcolor={}, chgList=[], chgIdx=-1, chgNavOn=false;
-// overview first: boxes open as their call rows; source is one click (or C) away. Changed code always shows its diff.
+let FXL={}, FLOW={}, nodes={}, edges=[], curEp=null, dragMoved=false, inputTokens={}, legendInputs=[], pvcolor={}, chgList=[], chgIdx=-1, chgNavOn=false;
+// overview first: boxes open on their folded code; the rest is one click (or C) away. Changed code always shows its diff.
 let codeShown=store.get('code',false);
 const REVKEY='flowsegul_reviewed';
 function loadReviewed(){try{return new Set(JSON.parse(localStorage.getItem(REVKEY)||'[]'));}catch(e){return new Set();}}
@@ -998,6 +998,7 @@ function build(ep){
  // map node id -> the callee's simple function name, to light up call sites inside the code
  const nameById={}; ep.nodes.forEach(n=>{nameById[n.id]=(n.title||'').split('.').pop();});
 
+ FXL={};(((ep.effects||{}).items)||[]).forEach(it=>{if(it.risk&&it.ln)(FXL[it.node]=FXL[it.node]||[]).push(it);});
  ep.nodes.forEach((n,idx)=>{
    const c=code[n.fnKey]||{};
    // which function names this node calls → colour (matches its arrow) + target node to jump to
@@ -1013,27 +1014,26 @@ function build(ep){
    card.appendChild(head);
    if(n.changed)head.querySelector('.vwbtn').onclick=(e)=>{e.stopPropagation();setViewed(n,!card.classList.contains('viewed'));};
    const body=el('div','nbody');
-   // one row per statement; extra calls in the same statement have no expr — they still get an
-   // arrow (edge), but we don't render a blank duplicate row for them.
    (n.notes||[]).forEach(t=>body.appendChild(el('div','step note',esc(t))));
    const nodeVars=nodeVarsFor(n);
    const ins=renderIns(n,nodeVars);if(ins)body.appendChild(ins);
-   (n.steps||[]).forEach(s=>{if(s.expr==='')return;const row=renderStep(s,nodeVars);if(s.target&&nameById[s.target])row.dataset.callee=nameById[s.target];body.appendChild(row);});
-   // raise lines: red when nothing on the way to the route handles the error
-   (n.raises||[]).forEach(r=>{const m=/^raise\s+/.test(r.text)?r.text.replace(/^raise\s+/,''):r.text;
-     const row=el('div','step raise'+(r.esc?'':' handled'),'<span class="kw">raise</span> '+(r.esc?'<span class="sq" data-err="'+esc(r.t)+'" data-tip="'+esc(r.t)+'">'+esc(m)+'</span>':esc(m)));
-     row.dataset.err=r.t;body.appendChild(row);});
-   if(c.code||n.diff||n.base!=null){   // deleted nodes have no HEAD code but do have a removal diff
+   const hasCode=!!(c.code||n.diff||n.base!=null);
+   // no source to fold (a caller grafted in from outside): its calls as one-line rows
+   if(!hasCode)(n.steps||[]).forEach((s,si)=>{if(s.expr==='')return;const row=renderStep(s,nodeVars);row.dataset.si=si;if(s.target&&nameById[s.target])row.dataset.callee=nameById[s.target];body.appendChild(row);});
+   if(hasCode){card.classList.add('pyc');   // deleted nodes have no HEAD code but do have a removal diff
      const pre=el('pre','code');
      const flags=diffFlags(n.diff||'');
      const lset=new Set(n.locals||[]);
      const paint=(mode)=>{
-       if(mode==='Plain'){pre.className='code';pre.innerHTML=codeLines(c.code,nodeVars,callMarks,lset);return;}
-       pre.className='code diff';
+       const full=pre.classList.contains('full');
+       if(mode==='Plain'){pre.className='code';pre.innerHTML=codeLines(c.code,nodeVars,callMarks,lset);}
+       else{pre.className='code diff';
        if(mode==='Diff')pre.innerHTML=hlDiff(n.diff||'',nodeVars,callMarks,lset);
-       else if(mode==='Old')pre.innerHTML=hlSide(n.base||'',nodeVars,flags.oldRemoved,'ddel',callMarks,lset);
+       else if(mode==='Old')pre.innerHTML=hlSide(n.base||'',nodeVars,flags.oldRemoved,'ddel',callMarks,lset,true);
        else if(n.deleted)pre.innerHTML='(deleted — no current version)';
-       else pre.innerHTML=hlSide(c.code,nodeVars,flags.newAdded,'dadd',callMarks,lset);
+       else pre.innerHTML=hlSide(c.code,nodeVars,flags.newAdded,'dadd',callMarks,lset);}
+       pre.classList.toggle('full',full||mode!=='Plain');
+       foldCode(pre,n,nodeVars,nameById,c.code);
      };
      if(n.changed&&(n.diff||n.base!=null)){
        // changed code is the point of a review, so its diff always stays open
@@ -1047,8 +1047,8 @@ function build(ep){
        const bar=el('div','codebar');
        const btn=el('button','codebtn');
        bar.appendChild(btn);
-       btn.onclick=(e)=>{e.stopPropagation();setNodeCode(card,pre.hidden);relayout();};
-       body.appendChild(bar);body.appendChild(pre);paint('Plain');
+       btn.onclick=(e)=>{e.stopPropagation();setNodeCode(card,!pre.classList.contains('full'));relayout();};
+       body.appendChild(pre);body.appendChild(bar);paint('Plain');
        setNodeCode(card,codeShown,pre,btn);
      }
    }
@@ -1060,7 +1060,7 @@ function build(ep){
  });
 
  // edges: every node's steps that target another node
- ep.nodes.forEach(n=>{(n.steps||[]).forEach(s=>{if(s.target&&nodes[s.target])edges.push({src:n.id,dst:s.target,color:(s.var&&s.var!=='return')?varColor[s.var]:'var(--edge)',rowVar:s.var,label:s.arg||'',ret:s.ret||'',bind:s.bind||[],keys:edgeKeys(n.id,s),esc:s.esc||[],caught:s.caught||[]});});});
+ ep.nodes.forEach(n=>{(n.steps||[]).forEach(s=>{if(s.target&&nodes[s.target])edges.push({src:n.id,dst:s.target,color:(s.var&&s.var!=='return')?varColor[s.var]:'var(--edge)',rowVar:s.var,si:n.steps.indexOf(s),label:s.arg||'',ret:s.ret||'',bind:s.bind||[],keys:edgeKeys(n.id,s),esc:s.esc||[],caught:s.caught||[]});});});
  // schema edges: only the response shape (dashed). The request model is shown as a node but not
  // wired with an arrow — it's the input type, not a call, so an arrow would just be documentation.
  (ep.modelEdges||[]).forEach(m=>{if(m.kind==='resp'&&nodes[m.src]&&nodes[m.dst])
@@ -1069,7 +1069,6 @@ function build(ep){
  layout();
  closeDrawer();
  $('#epinfo').innerHTML='<span class="m '+esc(ep.method.toUpperCase())+'">'+esc(ep.method)+'</span><span class="path" title="'+esc(ep.path)+'">'+esc(ep.path)+'</span><span class="sum" title="'+esc(ep.summary||'')+'">'+esc(ep.summary||'')+'</span>'+modelChips(ep)+statusChips(ep)+callerChips(ep);pinSt=null;okFocus(false);setErr(null);
- fxStrip(ep);
  renderLegend(varColor);
  fit(false);
  setupChgNav();
@@ -1081,45 +1080,81 @@ function build(ep){
 function statusChips(ep){
  if(!(ep.statuses||[]).length)return '';
  return '<span class="stchips" role="group" aria-label="Responses">'+ep.statuses.map(s=>'<button type="button" aria-pressed="false" class="stc '+esc(s.kind)+(s.new?' new':'')+'" data-st="'+esc(s.code)+'"'
-   +(s.types.length?' data-err="'+esc(s.types.join(' '))+'" data-tip="'+esc(s.types.join('\n'))+'"':'')+'>'+esc(s.code)+'</button>').join('')+'</span>';
+   +(s.types.length?' data-err="'+esc(s.types.join(' '))+'" data-tip="'+esc((s.lines&&s.lines.length?s.lines.slice(0,4):s.types).join('\n'))+'"':'')+'>'+esc(s.code)+'</button>').join('')+'</span>';
 }
 
-// what the route does to the world, in the order it happens: database writes, the commit, and
-// steps that can't be undone (email, HTTP, files, queues). Hover a chip to see its line and box;
-// click to go there. A red one can't be undone while an error or the commit can still follow it.
-function fxStrip(ep){
- const box=$('#fxstrip'),F=(ep&&ep.effects)||{};let items=F.items||[];
- box.hidden=!items.length;stage.classList.toggle('hasfx',!box.hidden);
- if(!items.length){box.innerHTML='';return;}
- const MAX=12;
- const chip=it=>{
-   const errs=(it.risk||[]).filter(r=>r!=='commit');
-   const tip=it.code+'\n'+it.fn+' · '+it.file.split('/').pop()+':'+it.line+(it.risk?'\ncan follow: '+it.risk.join(' · '):'');
-   return '<span class="fxw'+(it.cond?' cond':'')+'"><button class="fx '+esc(it.k)+(it.risk?' risk':'')+(it.via?' via':'')+'" data-go="'+esc(it.node)+'" data-tip="'+esc(tip)+'"'
-     +(errs.length?' data-err="'+esc(errs.join(' '))+'"':'')+'>'+esc(it.label)+(it.n>1?' <b>×'+it.n+'</b>':'')+'</button>'
-     +((it.via||it.cond)?'<i>'+esc(it.via||it.cond)+'</i>':'')+'</span>';
- };
- // a long strip shows each step once, where it first happens (×n counts the rest), keeps every
- // red one, and folds runs of the others into a +N chip
- if(items.length>MAX){const seen=new Map();items=items.reduce((out,it)=>{const k=[it.k,it.label,it.via||'',!!it.risk].join('|'),o=seen.get(k);
-   if(o){o.n=(o.n||1)+(it.n||1);if(!it.cond)o.cond='';if(it.risk)o.risk=[...new Set(o.risk.concat(it.risk))];return out;}
-   const c=Object.assign({},it);seen.set(k,c);out.push(c);return out;},[]);}
- const h=[];let run=[];
- const flush=()=>{if(run.length)h.push('<span class="fxw"><span class="fx unk" data-tip="'+esc(run.map(i=>i.label).join('\n'))+'">+'+run.length+'</span></span>');run=[];};
- items.forEach((it,i)=>{if(i<MAX||it.risk){flush();h.push(chip(it));}else run.push(it);});
- flush();
- if(F.commit==='unknown')h.push('<span class="fxw"><span class="fx unk" data-tip="no commit found">commit ?</span></span>');
- box.innerHTML=h.join('<span class="fxa">→</span>');
-}
-$('#fxstrip').addEventListener('click',e=>{const c=e.target.closest('.fx[data-go]');if(c)focusNode(nodes[c.dataset.go]);});
-$('#fxstrip').addEventListener('mouseover',e=>{const c=e.target.closest('.fx[data-go]'),nd=c&&nodes[c.dataset.go];if(nd)nd.el.classList.add('fxhot');});
-$('#fxstrip').addEventListener('mouseout',e=>{world.querySelectorAll('.node.fxhot').forEach(n=>n.classList.remove('fxhot'));});
 
+// a box opens on its folded code: the lines that call something or raise, and the if/for/try/with
+// lines around them. "View code" unfolds the rest in place, so no line is ever shown twice.
 function setNodeCode(card,show,pre,btn){
  pre=pre||card.querySelector('pre.code');btn=btn||card.querySelector('.codebtn');
  if(!pre||!btn)return;
- pre.hidden=!show;card.classList.toggle('wide',show);
- btn.innerHTML=ICON_CODE+(show?'Hide code':'View code');
+ if(pre.classList.contains('js')){pre.hidden=!show;card.classList.toggle('wide',show);btn.innerHTML=ICON_CODE+(show?'Hide code':'View code');return;}
+ pre.classList.toggle('full',show);card.classList.toggle('wide',show);
+ btn.innerHTML=ICON_CODE+(show?'Fold code':'View code');
+ btn.hidden=!pre.querySelector('.dl.f');
+}
+const codeOpen=pre=>!!pre&&pre.classList.contains('full');
+// wrap each statement's lines into a .step (the arrows leave from it) and mark the rest folded
+function foldCode(pre,n,nv,nameById,src){
+ const own=new Map(),keep=new Set(),items=[];
+ const add=(ln,ctx,mk)=>{if(!ln)return;const k=ln[0]+'-'+ln[1];let it=own.get(ln[0]);
+   if(!it||it.k!==k){it={k,ln,si:[],mk};items.push(it);for(let i=ln[0];i<=ln[1];i++)own.set(i,it);}
+   (ctx||[]).forEach(([a,b])=>{for(let i=a;i<=b;i++)keep.add(i);});return it;};
+ (n.steps||[]).forEach((s,si)=>{const it=add(s.ln,s.ctx,'s');if(!it)return;it.si.push(si);if(!it.s)it.s=s;});
+ (n.raises||[]).forEach((r,ri)=>{const it=add(r.ln,r.ctx,'r');if(it){it.r=r;it.ri=ri;}});
+ const fx=FXL[n.id]||[];
+ const raw=String(src||'').split('\n');
+ fx.forEach(f=>{for(let i=f.ln[0];i<=f.ln[1];i++)keep.add(i);blockHeads(raw,f.ln[0]).forEach(i=>keep.add(i));});
+ let cur=null,curIt=null,gap=false;
+ [...pre.children].forEach(dl=>{
+   if(!dl.classList.contains('dl'))return;
+   const ln=dl.dataset.ln==null?null:+dl.dataset.ln,it=ln==null?null:own.get(ln);
+   if(it){
+     if(curIt!==it){cur=el('span',stepClass(it));decorate(cur,it,nv,nameById);dl.before(cur);curIt=it;}
+     cur.appendChild(dl);gap=false;return;
+   }
+   cur=curIt=null;
+   if(ln!=null&&!keep.has(ln)){dl.classList.add('f');if(!gap){dl.before(el('span','fmk','⋯'));gap=true;}}else gap=false;
+ });
+ // an irreversible step with an error or the commit still to come: squiggle its lines, say what follows
+ fx.forEach(f=>{const dls=[...pre.querySelectorAll('.dl')].filter(d=>d.dataset.ln!=null&&+d.dataset.ln>=f.ln[0]&&+d.dataset.ln<=f.ln[1]);if(!dls.length)return;
+   const errs=f.risk.filter(r=>r!=='commit');
+   dls.forEach(d=>{d.classList.add('fxsq');d.dataset.tip=f.risk.join(' · ');if(errs.length)d.dataset.err=errs.join(' ');});
+   dls[dls.length-1].insertAdjacentHTML('beforeend','<span class="fxtag">before '+esc(f.risk.includes('commit')?'commit':errs[0])+'</span>');});
+ // squiggles go on the call's own name (or the whole raise) once its lines are in place
+ pre.querySelectorAll('.step').forEach(st=>{const it=st._it;
+   if(it.r){if(it.r.esc)st.querySelectorAll('.dl').forEach(d=>{d.classList.add('sq');d.dataset.err=it.r.t;});return;}
+   (it.si||[]).forEach(si=>{const s=n.steps[si];const c=[...st.querySelectorAll('.call')].find(x=>x.dataset.target===s.target)||st.querySelector('.call');if(!c)return;
+     if(s.esc&&s.esc.length){c.classList.add('sq');c.dataset.err=s.esc.join(' ');}
+     else if(s.caught&&s.caught.length){c.classList.add('sqok');c.dataset.err=s.caught.map(x=>x[0]).join(' ');c.dataset.st=String(s.caught[0][1]||'');}});});
+ // leading and trailing folded lines need no marker: the box's edges say it
+ pre.classList.toggle('none',!pre.querySelector('.dl:not(.f)'));
+ const kids=[...pre.children].filter(e=>!e.classList.contains('f'));
+ if(kids[0]&&kids[0].classList.contains('fmk'))kids[0].remove();
+ const last=kids[kids.length-1];if(last&&last.classList.contains('fmk'))last.remove();
+}
+// the `if …:` / `for …:` / `with …:` lines a line sits in, by indentation
+function blockHeads(raw,k){
+ const out=[],ind=l=>l.match(/^\s*/)[0].replace(/\t/g,'    ').length;let cur=raw[k]==null?0:ind(raw[k]);
+ for(let j=k-1;j>=0&&cur>0;j--){const t=raw[j].trim();if(!t||t[0]==='#')continue;const i=ind(raw[j]);if(i>=cur)continue;
+   if(/^(async\s+)?def\b/.test(t))break;
+   if(/^(if|elif|else|for|async\s+for|while|with|async\s+with|try|except|finally|match|case)\b.*:\s*(#.*)?$/.test(t))out.push(j);
+   cur=i;}
+ return out;
+}
+function stepClass(it){
+ if(it.r)return 'step raise'+(it.r.esc?'':' handled');
+ return 'step'+(it.s&&it.s.var==='return'?' ret':'');
+}
+function decorate(row,it,nv,nameById){
+ row._it=it;
+ if(it.r){row.dataset.err=it.r.t;if(it.r.st)row.dataset.st=it.r.st;row.dataset.ri=it.ri;}
+ if(!it.s)return;
+ const s=it.s,col=(s.var&&s.var!=='return')?nv[s.var]:null;
+ if(col)row.style.borderLeftColor=col;
+ row.dataset.rowvar=s.var;row.dataset.si=it.si.join(' ');
+ if(s.target&&nameById[s.target])row.dataset.callee=nameById[s.target];
 }
 
 // ── values across calls ──
@@ -1208,7 +1243,7 @@ function layout(){
    // order the column by the mean height of the caller rows pointing into each box (the barycenter
    // step of layered layout), so arrows run roughly level and cross less. Stable for ties/roots.
    const bary={};
-   ids.forEach((id,i)=>{const ys=edges.filter(e=>e.dst===id&&!e.plain&&nodes[e.src]&&nodes[e.src].def.col<col).map(e=>anchorRow(nodes[e.src],e.rowVar));bary[id]=ys.length?ys.reduce((a,b)=>a+b,0)/ys.length:Infinity;});
+   ids.forEach((id,i)=>{const ys=edges.filter(e=>e.dst===id&&!e.plain&&nodes[e.src]&&nodes[e.src].def.col<col).map(e=>anchorRow(nodes[e.src],e.rowVar,e.si));bary[id]=ys.length?ys.reduce((a,b)=>a+b,0)/ys.length:Infinity;});
    ids=ids.map((id,i)=>[id,i]).sort((a,b)=>(bary[a[0]]-bary[b[0]])||(a[1]-b[1])).map(p=>p[0]);
    let y=padTop, maxW=320;
    ids.forEach(id=>{const nd=nodes[id];nd.x=x;nd.y=y;place(nd);y+=nd.el.offsetHeight+gapY;maxW=Math.max(maxW,nd.el.offsetWidth);});
@@ -1218,7 +1253,20 @@ function layout(){
 }
 function relayout(){requestAnimationFrame(()=>{layout();});}
 function place(nd){nd.el.style.left=nd.x+'px';nd.el.style.top=nd.y+'px';}
-function anchorRow(nd,rowVar){const rows=nd.el.querySelectorAll('.step');if(!nd.el.classList.contains('shut'))for(const r of rows){if(r.dataset.rowvar===rowVar)return nd.y+r.offsetTop+r.offsetHeight/2;}return nd.y+Math.min(nd.el.offsetHeight/2,24);}
+// the height an arrow leaves a box at: the middle of the call's own line (the first line of a call
+// that spans several), kept inside the code block when that scrolls
+function anchorRow(nd,rowVar,si){
+ const top=nd.y+Math.min(nd.el.offsetHeight/2,24);
+ if(nd.el.classList.contains('shut'))return top;
+ const rows=[...nd.el.querySelectorAll('.step')];
+ const r=(si!=null&&rows.find(x=>(x.dataset.si||'').split(' ').includes(String(si))))||rows.find(x=>x.dataset.rowvar===rowVar);
+ if(!r||!r.getClientRects().length)return top;
+ const line=r.querySelector('.dl')||r,h=Math.min(line.offsetHeight||r.offsetHeight,20);
+ let y=0,e=line;while(e&&e!==nd.el){y+=e.offsetTop;e=e.offsetParent;}
+ const pre=r.closest('pre');
+ if(pre){y-=pre.scrollTop;let py=0,p=pre;while(p&&p!==nd.el){py+=p.offsetTop;p=p.offsetParent;}y=Math.max(py+8,Math.min(py+pre.clientHeight-8,y+h/2))-h/2;}
+ return nd.y+y+h/2;
+}
 function bez(x0,y0,cx0,cy0,cx1,cy1,x1,y1,t){const u=1-t;return[u*u*u*x0+3*u*u*t*cx0+3*u*t*t*cx1+t*t*t*x1, u*u*u*y0+3*u*u*t*cy0+3*u*t*t*cy1+t*t*t*y1];}
 function argTspans(text,base){return text.split(/,\s*/).map((piece,i)=>{const key=piece.split('=')[0].trim();const c=inputTokens[key];return '<tspan fill="'+(c||base)+'">'+esc((i?', ':'')+piece)+'</tspan>';}).join('');}
 // a value pill: the variable travelling along an arrow. Solid = produced here, dashed = consumed.
@@ -1256,7 +1304,7 @@ function drawEdges(){
    GKEYS[i]=[...gkeys];
    const dv=gkeys.size?' data-keys="'+esc([...gkeys].join(' '))+'"':'';
    // each call's own origin row (var-coloured) so you see exactly which line(s) make the call
-   const origins=g.items.map(e=>({y:e.rowVar?anchorRow(a,e.rowVar):a.y+34,col:e.color||'var(--edge)'}));
+   const origins=g.items.map(e=>({y:e.rowVar?anchorRow(a,e.rowVar,e.si):a.y+34,col:e.color||'var(--edge)'}));
    const rx=a.x+a.el.offsetWidth, ry=origins.reduce((s,o)=>s+o.y,0)/origins.length;
    const jx=origins.length>1?rx+26:rx;        // manifold junction: stubs fan in here, one arrow leaves
    // stubs: from each call line at the box edge, curving into the shared junction
@@ -1336,6 +1384,8 @@ svg.addEventListener('mouseout',e=>{if(e.target.closest('[data-g]'))setLink([]);
 // error touches stays lit (rows, arrow labels, the arrow it travels back along, the route's status)
 function errMatch(e,H){
  if(H.st&&e.dataset.st===H.st)return true;
+ // a response chip lights the raise lines that give its own status, not every raise of that type
+ if(H.chip&&e.dataset.st)return false;
  return (e.dataset.err||'').split(' ').some(x=>x&&H.t.includes(x));
 }
 function setErr(src){
@@ -1343,7 +1393,7 @@ function setErr(src){
  [world,svg,$('#epinfo')].forEach(r=>r.classList.toggle('errfocus',on));
  document.querySelectorAll('.errhot').forEach(e=>e.classList.remove('errhot'));
  if(!on)return;
- const H={t:(src.dataset.err||'').split(' ').filter(Boolean),st:src.dataset.st||''};
+ const H={t:(src.dataset.err||'').split(' ').filter(Boolean),st:src.dataset.st||'',chip:src.classList.contains('stc')};
  document.querySelectorAll('#world [data-err],#edges [data-err],#epinfo [data-err],#epinfo [data-st]').forEach(e=>{if(errMatch(e,H)){e.classList.add('errhot');
    const st=e.closest('.step');if(st)st.classList.add('errhot');const card=e.closest('.node');if(card)card.classList.add('errhot');}});
 }
@@ -1364,8 +1414,8 @@ if(HAS_ASK){const _start=startAsk;startAsk=function(nid,q){if(pinSt){pinSt=null;
 document.addEventListener('click',e=>{const t=HAS_ASK&&e.target.closest&&e.target.closest('.node .ub');if(!t)return;e.stopPropagation();
  const nid=t.closest('.node').dataset.id;if(questionsFor(nid).some(q=>q.k==='routes'))startAsk(nid,{k:'routes'});},true);
 document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('#epinfo .stc');if(!b)return;pinSt=pinSt===b.dataset.st?null:b.dataset.st;if(pinSt&&typeof clearAsk==='function')clearAsk(true);restorePin();});
-document.addEventListener('mouseover',e=>{const t=e.target.closest&&e.target.closest('.stc[data-err],.step.raise,.fx[data-err]');if(t){okFocus(false);setErr(t);}});
-document.addEventListener('mouseout',e=>{const t=e.target.closest&&e.target.closest('.stc[data-err],.step.raise,.fx[data-err]');if(t&&!(e.relatedTarget&&t.contains(e.relatedTarget))){if(pinSt)restorePin();else setErr(null);}});
+document.addEventListener('mouseover',e=>{const t=e.target.closest&&e.target.closest('.stc[data-err],.step.raise,.fxsq[data-err]');if(t){okFocus(false);setErr(t);}});
+document.addEventListener('mouseout',e=>{const t=e.target.closest&&e.target.closest('.stc[data-err],.step.raise,.fxsq[data-err]');if(t&&!(e.relatedTarget&&t.contains(e.relatedTarget))){if(pinSt)restorePin();else setErr(null);}});
 
 // variable spotlight: hover any variable → it lights up everywhere (chips, code tokens, and every
 // arrow that carries it), while the rest fades. This is the "trace this value" view.
@@ -1405,18 +1455,10 @@ world.addEventListener('mouseout',e=>{const t=e.target.closest('[data-var]');if(
 $('#legend').addEventListener('mouseover',e=>{const t=e.target.closest('[data-var]');if(t)setSpot(t.dataset.var);});
 $('#legend').addEventListener('mouseout',e=>{const t=e.target.closest('[data-var]');if(t)setSpot(null);});
 
-// click a step row (top summary) → scroll the code block below to that exact call site & flash it
-world.addEventListener('click',e=>{
- const st=e.target.closest('.step[data-callee]');
- if(!st||e.target.closest('[data-var]'))return;
- const card=st.closest('.node'), pre=card.querySelector('pre.code');if(!pre)return;
- if(pre.hidden){setNodeCode(card,true);relayout();}
- const tgt=[...pre.querySelectorAll('.call')].find(c=>c.textContent===st.dataset.callee);
- if(!tgt)return;
- tgt.scrollIntoView({block:'nearest',inline:'nearest',behavior:'smooth'});
- tgt.classList.remove('callflash');void tgt.offsetWidth;tgt.classList.add('callflash');
- setTimeout(()=>tgt.classList.remove('callflash'),1600);
-});
+// ⋯ in folded code unfolds the box
+world.addEventListener('click',e=>{const m=e.target.closest&&e.target.closest('pre.code .fmk');if(!m)return;e.stopPropagation();setNodeCode(m.closest('.node'),true);relayout();});
+// a scrolled code block moves its call lines, so the arrows follow
+world.addEventListener('scroll',e=>{if(e.target.matches&&e.target.matches('pre.code'))scheduleEdges();},true);
 
 // changed-node navigator (opt-in): step through the changed nodes of the current endpoint
 function setupChgNav(){
@@ -1558,7 +1600,7 @@ function fit(anim){
  if(!b||!r.width){view={x:20,y:20,s:1};applyView();return;}
  const pad=36,w=b.x1-b.x0,h=b.y1-b.y0;
  // keep the first boxes clear of the side-effect strip at the top
- const top=stage.classList.contains('hasfx')?$('#fxstrip').offsetHeight:0, H=r.height-top;
+ const top=0, H=r.height-top;
  let s=Math.min(1,(r.width-pad*2)/w,(H-pad*2-40)/h);
  s=Math.max(anim?0.2:0.75,s);
  view.s=s;
@@ -1982,7 +2024,7 @@ function openCaller(row){
 function rUnitView(row){
  const R=RR[row],U=R&&RU[R.u];if(!U)return;
  side.querySelectorAll('.ep').forEach(x=>x.classList.remove('on'));
- if(!RMODE){RMODE=true;svg.innerHTML='';$('#chgnav').hidden=true;fxStrip(null);closeDrawer();}
+ if(!RMODE){RMODE=true;svg.innerHTML='';$('#chgnav').hidden=true;closeDrawer();}
  curEp={id:'unit:'+row,nodes:[],react:true};
  Object.assign(rv,{base:null,act:null,step:1,hover:null,pin:null,sstep:1,extra:new Set([U.id]),shownKey:'',unitRow:row});rhist=[];
  rBuild(true);fit(false);
@@ -2019,7 +2061,7 @@ function rLegend(){
 }
 function rLeave(){if(!RMODE)return;RMODE=false;world.classList.remove('rdim');$('#stepbar').hidden=true;rv.pin=null;rv.hover=null;}
 function selectAction(A){
- RMODE=true;curEp={id:A.id,nodes:[],react:true};fxStrip(null);
+ RMODE=true;curEp={id:A.id,nodes:[],react:true};
  svg.innerHTML='';$('#chgnav').hidden=true;closeDrawer();
  Object.assign(rv,{base:A,act:A,step:1,hover:null,pin:null,sstep:1,extra:new Set(),shownKey:''});rhist=[];
  rBuild(true);fit(false);
@@ -2436,7 +2478,7 @@ function startAsk(nid,q){
  ASK={nid,q,steps:S.list,extra:S.extra,more:S.more,head,here,opened:[]};
  // everything the answer points at has to be visible: open collapsed boxes, and code for code lines
  S.list.forEach(st=>{const nd=nodes[st.nid];if(!nd)return;nd.el.classList.remove('shut');
-   if(st.t==='code'){const pre=nd.el.querySelector('pre.code');if(pre&&pre.hidden){setNodeCode(nd.el,true);ASK.opened.push(nd.el);}}});
+   if(st.t==='code'){const pre=nd.el.querySelector('pre.code');if(pre&&!codeOpen(pre)&&![...pre.querySelectorAll('.dl:not(.f)')].some(l=>l.textContent.trim()===st.line)){setNodeCode(nd.el,true);ASK.opened.push(nd.el);}}});
  renderAskList();relayout();if(S.list.length)requestAnimationFrame(()=>requestAnimationFrame(fitAnswer));
  const f=$('#asklist .ast');if(f)f.focus({preventScroll:true});
 }
@@ -2469,7 +2511,7 @@ function renderAskList(){
   +(ASK.more?'<li><span class="ast" style="cursor:default"><span class="askn more">+'+ASK.more+'</span></span></li>':'')
   +(!ASK.steps.length&&!ASK.extra.length?'<li><span class="ast" style="cursor:default;color:var(--muted)">not traced</span></li>':'');
  box.innerHTML='<div class="al-h"><span>'+ASK.head+'</span><button class="al-x" aria-label="Clear" data-tip="Clear  (Esc)">✕</button></div><ol>'+items+'</ol>';
- box.style.top=(stage.classList.contains('hasfx')?$('#fxstrip').offsetHeight+24:14)+'px';
+ box.style.top='14px';
  box.hidden=false;
 }
 $('#asklist').addEventListener('click',e=>{
@@ -2496,7 +2538,7 @@ function anchorOf(st){
    ||[...card.querySelectorAll('.nbody [data-var]')].find(x=>x.dataset.var===st.v&&x.getClientRects().length);   // no line of its own: the first row that uses it
  if(st.t==='var')return [...card.querySelectorAll('.nbody [data-var]')].find(x=>x.dataset.var===st.v&&(x.dataset.path||'')===(st.path||'')&&x.getClientRects().length)
    ||[...card.querySelectorAll('.nbody [data-var]')].find(x=>x.dataset.var===st.v&&x.getClientRects().length);
- if(st.t==='code'){const pre=card.querySelector('pre.code');return pre&&!pre.hidden?[...pre.querySelectorAll('.dl')].find(l=>l.textContent.trim()===st.line):null;}
+ if(st.t==='code'){const pre=card.querySelector('pre.code');return pre?[...pre.querySelectorAll('.dl')].find(l=>l.textContent.trim()===st.line&&l.getClientRects().length):null;}
  if(st.t==='ret'){const gi=st.g[0];return [...svg.querySelectorAll('g.pillg.ge'+gi+'.gr')].find(p=>p.textContent===st.v)||svg.querySelector('path.ge'+gi+'.gr');}
  return null;
 }
@@ -2542,7 +2584,7 @@ function paintAsk(){
 function askCodeLines(){
  const N=t=>t.replace(/\s+/g,'');
  world.querySelectorAll('.node.ask-on').forEach(card=>{
-   const pre=card.querySelector('pre.code');if(!pre||pre.hidden)return;
+   const pre=card.querySelector('pre.code');if(!pre)return;
    const dls=[...pre.querySelectorAll('.dl')],txt=dls.map(l=>N(l.textContent.replace(/^[+-]/,'')));
    const hit=(from,to)=>{for(let k=from;k<=to;k++)dls[k].classList.add('ask-hit');};
    card.querySelectorAll('.step.ask-hit,.ins .in.ask-hit').forEach(r=>{
