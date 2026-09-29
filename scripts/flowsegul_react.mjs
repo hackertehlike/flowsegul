@@ -375,7 +375,12 @@ export function analyze(ts, root, { tag = '' } = {}) {
     if (op) {
       const [a, b] = elemRange(op);
       const L = startLine(node);
-      if (L >= a && L <= b) return mkRow(node, a, b);
+      if (L >= a && L <= b) {
+        const r = mkRow(node, a, b);
+        // shown as at most 8 lines; where the tag's props really end, so a diff there is seen too
+        if (r) r.pe = Math.max(r.pe || r.b, endLine(op));
+        return r;
+      }
     }
     const a = startLine(node);
     let b = endLine(node);
@@ -1778,7 +1783,12 @@ export function analyze(ts, root, { tag = '' } = {}) {
           ensureUnit(t.fn);
           addStep([callRow], { unc: u2 });
           for (const h of t.hops) addStep([h.row], { unc: u2 || h.unc });
-          if (t.named) addStep([rowFor(t.def || t.fn)], { unc: u2 });
+          if (t.named) {
+            const dr = rowFor(t.def || t.fn);
+            // a change anywhere in the function's body is a change on this path
+            if (dr && !unitByFn.has(t.fn)) dr.e = Math.max(dr.e || dr.b, endLine(t.fn));
+            addStep([dr], { unc: u2 });
+          }
           walkFn(t.fn, level, u2);
         }
       }
@@ -1939,6 +1949,73 @@ export function analyze(ts, root, { tag = '' } = {}) {
     if (e === 'keydown' || e === 'keyup' || e === 'keypress') return 'press key in';
     return e;
   }
+  // ── one action per key: `if (e.key === 'Enter') … else if (e.key === 'ArrowUp') …` in a key handler ──
+  // is what the user does, so each key gets its own path instead of one onKeyDown that the first
+  // branch fills up. Follows thin wrappers (`(e) => handleKeyDown(e)`) down to the function that branches.
+  const isKeyProp = (x) => { x = skipOuter(x); return ts.isPropertyAccessExpression(x) && /^(key|code)$/.test(x.name.text); };
+  const keyLit = (x) => { x = skipOuter(x); return ts.isStringLiteral(x) || ts.isNoSubstitutionTemplateLiteral(x) ? x.text : null; };
+  function keysIn(cond) {
+    const out = [];
+    const v = (n) => {
+      n = skipOuter(n);
+      if (ts.isBinaryExpression(n)) {
+        const op = n.operatorToken.kind;
+        if (op === ts.SyntaxKind.EqualsEqualsEqualsToken || op === ts.SyntaxKind.EqualsEqualsToken) {
+          const k = isKeyProp(n.left) ? keyLit(n.right) : isKeyProp(n.right) ? keyLit(n.left) : null;
+          if (k != null) out.push(k);
+        } else if (op === ts.SyntaxKind.BarBarToken || op === ts.SyntaxKind.AmpersandAmpersandToken) { v(n.left); v(n.right); }
+      } else if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && n.expression.name.text === 'includes'
+          && n.arguments[0] && isKeyProp(n.arguments[0]) && ts.isArrayLiteralExpression(skipOuter(n.expression.expression))) {
+        for (const e of skipOuter(n.expression.expression).elements) { const k = keyLit(e); if (k != null) out.push(k); }
+      }
+    };
+    v(cond);
+    return out;
+  }
+  function keyBranches(fn) {
+    const out = [];
+    const onStmt = (st) => {
+      if (ts.isIfStatement(st)) {
+        const keys = keysIn(st.expression);
+        if (keys.length) out.push({ keys, at: st, body: st.thenStatement });
+        if (st.elseStatement) onStmt(st.elseStatement);
+      } else if (ts.isSwitchStatement(st) && isKeyProp(st.expression)) {
+        // `case 'ArrowDown': case 'ArrowUp': …` falls through: one action for the keys sharing a body
+        let keys = [], first = null;
+        for (const c of st.caseBlock.clauses) {
+          const k = ts.isCaseClause(c) ? keyLit(c.expression) : null;
+          if (k == null) { keys = []; first = null; continue; }   // `default:` or a non-literal case
+          keys.push(k); first = first || c;
+          if (c.statements.length) { out.push({ keys, at: first, body: c }); keys = []; first = null; }
+        }
+      } else if (ts.isBlock(st)) st.statements.forEach(onStmt);
+    };
+    if (fn.body && ts.isBlock(fn.body)) fn.body.statements.forEach(onStmt);
+    return out;
+  }
+  function keySplit(V) {
+    const pre = [];
+    let fn = isFnLike(V) ? V : null;
+    for (let d = 0; d < 3; d++) {
+      if (!fn) {
+        const t = resolveValue(V).find((x) => x.kind === 'fn');
+        if (!t) return null;
+        for (const h of t.hops) pre.push(h.row);
+        if (t.named) pre.push(rowFor(t.def || t.fn));
+        fn = t.fn;
+      }
+      const br = keyBranches(fn);
+      if (br.length) return { pre, br };
+      const calls2 = [];
+      const v = (n) => { if (n !== fn && isFnLike(n)) return; if (ts.isCallExpression(n)) calls2.push(n); ts.forEachChild(n, v); };
+      if (fn.body) v(fn.body);
+      if (calls2.length !== 1) return null;
+      pre.push(rowFor(calls2[0]));
+      V = calls2[0].expression; fn = null;
+    }
+    return null;
+  }
+  const keyName = (k) => (k === ' ' ? 'Space' : k);
   const groupOf = (u) => { const d = path.posix.dirname(u.file); return d === '.' ? '' : d; };
   const seenAction = new Set();
   function addAction(o) {
@@ -2014,6 +2091,19 @@ export function analyze(ts, root, { tag = '' } = {}) {
           continue;
         }
         const obj = labelObject(op, event);
+        const split = /^onKey(Down|Up|Press)$/.test(event) && keySplit(V);
+        if (split) {
+          for (const b of split.br) {
+            const W = pathFor();
+            W.addStep([row]);
+            for (const r of split.pre) W.addStep([r]);
+            W.addStep([rowFor(b.at)]);
+            W.visitExpr(b.body, 0, false);
+            const keys = b.keys.map(keyName).join(' or ');
+            addAction({ label: 'press ' + keys + (obj ? ' in ' + labelText(obj) : ''), sub: u.name, group: groupOf(u), u, owner: u, row, event, steps: W.steps });
+          }
+          continue;
+        }
         const W = pathFor();
         W.addStep([row]);
         if (isFnLike(V)) W.walkFn(V, 0, false);
@@ -2249,7 +2339,7 @@ export function analyze(ts, root, { tag = '' } = {}) {
   allRows.forEach((r) => { if (r.text == null) finishRow(r); });
   const rowsOut = {};
   for (const r of allRows) {
-    rowsOut[r.id] = { u: r.u.id, a: r.a + 1, b: r.b + 1, t: r.text, i: r.ind, m: r.marks };
+    rowsOut[r.id] = { u: r.u.id, a: r.a + 1, b: r.b + 1, t: r.text, i: r.ind, m: r.marks, ...(r.e > r.b ? { e: r.e + 1 } : {}), ...(r.pe > r.b ? { pe: r.pe + 1 } : {}) };
     if (r.api.length) rowsOut[r.id].api = r.api.map((x) => [x.m, x.u, x.id]);
     if (r.kids.length) rowsOut[r.id].kids = r.kids;
     if (r.unc) rowsOut[r.id].unc = 1;

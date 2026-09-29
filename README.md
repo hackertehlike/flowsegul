@@ -118,7 +118,10 @@ wrappers like `api('/items')`. Vite's `server.proxy` rewrites, Next.js `rewrites
 
 - **Draggable node graph** per endpoint — opens fitted to the screen; drag to pan, pinch or
   Ctrl/⌘+scroll to zoom, and a Pan / Zoom switch (`W`) for what the mouse wheel does; minimap to jump around.
-  Code wraps instead of scrolling sideways.
+  Code wraps instead of scrolling sideways. Click a call in the code to fly to its box; `Alt+←` goes back.
+- **Resizable sidebar** — drag its right edge; double-click to reset.
+- **Find in map** (`Ctrl/⌘+F`) — finds function names and code lines in the boxes on screen;
+  `Enter` / `Shift+Enter` step through the matches.
 - **The code itself in each box**, folded to the lines that call something or raise, with the
   `if` / `for` / `with` / `try` lines around them; `⋯` stands for the lines in between, and arrows
   leave from the call's own line. `View code` (or `C` for all) unfolds the rest. Changed
