@@ -184,7 +184,7 @@ body.noside .side{margin-left:-252px}
 .m.GET{background:var(--m-get-bg);color:var(--m-get)}.m.POST{background:var(--m-post-bg);color:var(--m-post)}
 .m.PUT{background:var(--m-put-bg);color:var(--m-put)}.m.PATCH{background:var(--m-patch-bg);color:var(--m-patch)}
 .m.DELETE{background:var(--m-delete-bg);color:var(--m-delete)}
-.m.DEL{background:var(--m-delete-bg);color:var(--m-delete)}.m.MIG{background:color-mix(in srgb,#be185d 15%,var(--panel));color:color-mix(in srgb,#be185d 80%,var(--ink))}
+.m.DEL{background:var(--m-delete-bg);color:var(--m-delete)}.m.TOOL{background:var(--l-external-bg);color:var(--l-external)}.m.MIG{background:color-mix(in srgb,#be185d 15%,var(--panel));color:color-mix(in srgb,#be185d 80%,var(--ink))}
 .crumb .m{width:auto;padding:4px 6px}
 .nomatch{padding:18px 10px;color:var(--muted);font-size:12.5px;text-align:center}
 /* review mode: check off flows you've already looked at */
@@ -257,6 +257,8 @@ body.review .revbar{display:block}
 #world.asking .step.ask-hit:not(.raise) .sq{text-decoration-color:var(--del)}
 #world.asking .step.ask-hit:not(.raise) .sqok{text-decoration-color:var(--ok)}
 #edges .errlab{opacity:0;pointer-events:none;transition:opacity .12s}
+#edges.asking .errlab.ask-on{pointer-events:auto;cursor:pointer}
+.step.raise,.step .sq,.step .sqok,.stc[data-err]{cursor:pointer}
 #edges.errfocus .errlab.errhot,#edges.asking .errlab.ask-on{opacity:1}
 #edges.asking .errpath.ask-on{opacity:1}
 #edges .errpath{opacity:0;transition:opacity .12s}
@@ -311,7 +313,7 @@ body.review .revbar{display:block}
 .node.shut .ncaret{transform:rotate(-90deg)}
 .nbody{padding:0 10px 10px;display:flex;flex-direction:column;gap:5px}
 .node.shut .nbody{display:none}
-.step{font:11.5px/1.45 var(--mono);background:var(--panel2);border-radius:7px;padding:5px 8px;border-left:3px solid var(--line2);transition:background .12s,outline-color .12s;outline:1.5px solid transparent;outline-offset:0}
+.step{font:11.5px/1.45 var(--mono);background:var(--panel2);border-radius:7px;padding:5px 8px;overflow-wrap:anywhere;border-left:3px solid var(--line2);transition:background .12s,outline-color .12s;outline:1.5px solid transparent;outline-offset:0}
 .step.ret{background:transparent;border-left-color:var(--edge)}
 .step .kw{color:var(--kw)} .step .arw{color:var(--muted)}
 .step[data-callee]{cursor:pointer}
@@ -454,6 +456,9 @@ body.nomap .minimap{display:none}
 .tk{border-radius:3px;padding:0 1px;margin:0 -1px}
 .tk.on{background:var(--accent-tk);box-shadow:0 0 0 1px color-mix(in srgb,var(--accent) 45%,transparent)}
 .srow{cursor:pointer}
+.rrow.chg{border-left-color:var(--chg);background:color-mix(in srgb,var(--chg) 9%,var(--panel2))}
+.rrow.chgp{background:var(--panel2)}
+.ep.act.aff{opacity:.62}
 .srow:hover{background:color-mix(in srgb,var(--accent) 7%,var(--panel2))}
 .srow.pinned{box-shadow:inset 0 0 0 1.5px var(--accent)}
 .sets{font:500 10px/1 var(--sans);color:var(--muted);margin-left:8px;white-space:nowrap}
@@ -1018,11 +1023,11 @@ function build(ep){
    (n.notes||[]).forEach(t=>body.appendChild(el('div','step note',esc(t))));
    const nodeVars=nodeVarsFor(n);
    const ins=renderIns(n,nodeVars);if(ins)body.appendChild(ins);
-   (n.steps||[]).forEach(s=>{if(s.expr==='')return;const row=renderStep(s,nodeVars);if(s.target&&nameById[s.target])row.dataset.callee=nameById[s.target];body.appendChild(row);});
+   (n.steps||[]).forEach((s,i)=>{if(s.expr==='')return;const row=renderStep(s,nodeVars);row.dataset.row=i;if(s.target&&nameById[s.target])row.dataset.callee=nameById[s.target];body.appendChild(row);});
    // raise lines: red when nothing on the way to the route handles the error
-   (n.raises||[]).forEach(r=>{const m=/^raise\s+/.test(r.text)?r.text.replace(/^raise\s+/,''):r.text;
+   (n.raises||[]).forEach((r,ri)=>{const m=/^raise\s+/.test(r.text)?r.text.replace(/^raise\s+/,''):r.text;
      const row=el('div','step raise'+(r.esc?'':' handled'),'<span class="kw">raise</span> '+(r.esc?'<span class="sq" data-err="'+esc(r.t)+'" data-tip="'+esc(r.t)+'">'+esc(m)+'</span>':esc(m)));
-     row.dataset.err=r.t;body.appendChild(row);});
+     row.dataset.err=r.t;row.dataset.ri=ri;body.appendChild(row);});
    if(c.code||n.diff||n.base!=null){   // deleted nodes have no HEAD code but do have a removal diff
      const pre=el('pre','code');
      const flags=diffFlags(n.diff||'');
@@ -1060,7 +1065,7 @@ function build(ep){
  });
 
  // edges: every node's steps that target another node
- ep.nodes.forEach(n=>{(n.steps||[]).forEach(s=>{if(s.target&&nodes[s.target])edges.push({src:n.id,dst:s.target,color:(s.var&&s.var!=='return')?varColor[s.var]:'var(--edge)',rowVar:s.var,label:s.arg||'',ret:s.ret||'',bind:s.bind||[],keys:edgeKeys(n.id,s),esc:s.esc||[],caught:s.caught||[]});});});
+ ep.nodes.forEach(n=>{(n.steps||[]).forEach((s,si)=>{if(s.target&&nodes[s.target])edges.push({src:n.id,dst:s.target,color:(s.var&&s.var!=='return')?varColor[s.var]:'var(--edge)',rowVar:s.var,row:si,label:s.arg||'',ret:s.ret||'',bind:s.bind||[],keys:edgeKeys(n.id,s),esc:s.esc||[],caught:s.caught||[]});});});
  // schema edges: only the response shape (dashed). The request model is shown as a node but not
  // wired with an arrow — it's the input type, not a call, so an arrow would just be documentation.
  (ep.modelEdges||[]).forEach(m=>{if(m.kind==='resp'&&nodes[m.src]&&nodes[m.dst])
@@ -1176,13 +1181,12 @@ function renderStep(s,nv){
  while((m=re.exec(src))){
    const w=m[1];
    if(w&&nv[w]&&src[m.index-1]!=='.'){const t=fieldTail(src,re.lastIndex);re.lastIndex+=t.length;expr+=vchip(w,nv[w],t,w+t);}
-   else expr+=esc(m[0]);
+   else expr+=esc(m[0])+('.(,'.includes(m[0])?'<wbr>':'');
  }
  // an error this call can let through gets a red squiggle; one handled right here gets a green one
  if(s.esc&&s.esc.length)expr='<span class="sq" data-err="'+esc(s.esc.join(' '))+'">'+expr+'</span>';
  else if(s.caught&&s.caught.length)expr='<span class="sqok" data-err="'+esc(s.caught.map(c=>c[0]).join(' '))+'" data-st="'+esc(String(s.caught[0][1]||''))+'">'+expr+'</span>';
  row.innerHTML=label+expr;
- row.dataset.rowvar=s.var;
  return row;
 }
 
@@ -1208,7 +1212,7 @@ function layout(){
    // order the column by the mean height of the caller rows pointing into each box (the barycenter
    // step of layered layout), so arrows run roughly level and cross less. Stable for ties/roots.
    const bary={};
-   ids.forEach((id,i)=>{const ys=edges.filter(e=>e.dst===id&&!e.plain&&nodes[e.src]&&nodes[e.src].def.col<col).map(e=>anchorRow(nodes[e.src],e.rowVar));bary[id]=ys.length?ys.reduce((a,b)=>a+b,0)/ys.length:Infinity;});
+   ids.forEach((id,i)=>{const ys=edges.filter(e=>e.dst===id&&!e.plain&&nodes[e.src]&&nodes[e.src].def.col<col).map(e=>anchorRow(nodes[e.src],e.row));bary[id]=ys.length?ys.reduce((a,b)=>a+b,0)/ys.length:Infinity;});
    ids=ids.map((id,i)=>[id,i]).sort((a,b)=>(bary[a[0]]-bary[b[0]])||(a[1]-b[1])).map(p=>p[0]);
    let y=padTop, maxW=320;
    ids.forEach(id=>{const nd=nodes[id];nd.x=x;nd.y=y;place(nd);y+=nd.el.offsetHeight+gapY;maxW=Math.max(maxW,nd.el.offsetWidth);});
@@ -1218,7 +1222,7 @@ function layout(){
 }
 function relayout(){requestAnimationFrame(()=>{layout();});}
 function place(nd){nd.el.style.left=nd.x+'px';nd.el.style.top=nd.y+'px';}
-function anchorRow(nd,rowVar){const rows=nd.el.querySelectorAll('.step');if(!nd.el.classList.contains('shut'))for(const r of rows){if(r.dataset.rowvar===rowVar)return nd.y+r.offsetTop+r.offsetHeight/2;}return nd.y+Math.min(nd.el.offsetHeight/2,24);}
+function anchorRow(nd,row){const rows=nd.el.querySelectorAll('.step');if(!nd.el.classList.contains('shut'))for(const r of rows){if(r.dataset.row===String(row))return nd.y+r.offsetTop+r.offsetHeight/2;}return nd.y+Math.min(nd.el.offsetHeight/2,24);}
 function bez(x0,y0,cx0,cy0,cx1,cy1,x1,y1,t){const u=1-t;return[u*u*u*x0+3*u*u*t*cx0+3*u*t*t*cx1+t*t*t*x1, u*u*u*y0+3*u*u*t*cy0+3*u*t*t*cy1+t*t*t*y1];}
 function argTspans(text,base){return text.split(/,\s*/).map((piece,i)=>{const key=piece.split('=')[0].trim();const c=inputTokens[key];return '<tspan fill="'+(c||base)+'">'+esc((i?', ':'')+piece)+'</tspan>';}).join('');}
 // a value pill: the variable travelling along an arrow. Solid = produced here, dashed = consumed.
@@ -1241,22 +1245,25 @@ function groupEdges(){
  });
  return order;
 }
-let GORIG=[],GKEYS=[];            // GORIG[groupIndex] = ["<callerNodeId>|<rowVar>", …]  (for hover-linking)
+let GORIG=[],GKEYS=[],GRET=[];     // GORIG[groupIndex] = ["<callerNodeId>|<step index>", …]  (for hover-linking)
 function drawEdges(){
  if(RMODE){svg.innerHTML='';drawMinimap();return;}
  svg.setAttribute('width',8000);svg.setAttribute('height',5000);
- let defs='<defs>',stubs='',fwd='',ret='',labels='';GORIG=[];GKEYS=[];
+ let defs='<defs>',stubs='',fwd='',ret='',labels='';GORIG=[];GKEYS=[];GRET=[];
  groupEdges().forEach((g,i)=>{
    const a=nodes[g.src],b=nodes[g.dst];if(!a||!b)return;
    const gc='ge ge'+i;                       // linking hook: every part of this group carries ge<i>
-   GORIG[i]=g.items.map(e=>g.src+'|'+e.rowVar);
+   GORIG[i]=g.items.map(e=>g.src+'|'+e.row);
    // variable spotlight hook: which vars this bundle carries (produced results + argument tokens)
    const gkeys=new Set();
    g.items.forEach(e=>(e.keys||[]).forEach(k=>gkeys.add(k)));
    GKEYS[i]=[...gkeys];
+   // the return side carries only what the call produced, not the arguments that went in
+   GRET[i]=[...new Set([].concat(...g.items.filter(e=>e.rowVar&&e.rowVar!=='·'&&e.rowVar!=='return')
+     .map(e=>originsOf(g.src,e.rowVar).map(([o,p])=>o+'@'+p))))];
    const dv=gkeys.size?' data-keys="'+esc([...gkeys].join(' '))+'"':'';
    // each call's own origin row (var-coloured) so you see exactly which line(s) make the call
-   const origins=g.items.map(e=>({y:e.rowVar?anchorRow(a,e.rowVar):a.y+34,col:e.color||'var(--edge)'}));
+   const origins=g.items.map(e=>({y:e.row!=null?anchorRow(a,e.row):a.y+34,col:e.color||'var(--edge)'}));
    const rx=a.x+a.el.offsetWidth, ry=origins.reduce((s,o)=>s+o.y,0)/origins.length;
    const jx=origins.length>1?rx+26:rx;        // manifold junction: stubs fan in here, one arrow leaves
    // stubs: from each call line at the box edge, curving into the shared junction
@@ -1317,19 +1324,19 @@ function drawEdges(){
  drawMinimap();
 }
 // hover-linking: a call line ↔ its (possibly bundled) arrow. Delegated, so it survives every redraw.
-function setLink(gis){
- setSpotH([].concat(...(gis||[]).map(gi=>(GKEYS[gi]||[]).map(splitKey))));
+function setLink(gis,retOnly){
+ setSpotH([].concat(...(gis||[]).map(gi=>((retOnly?GRET:GKEYS)[gi]||[]).map(splitKey))));
  svg.classList.toggle('linking',gis&&gis.length>0);
  svg.querySelectorAll('.ge.on').forEach(el=>el.classList.remove('on'));
  world.querySelectorAll('.step.hl').forEach(el=>el.classList.remove('hl'));
  (gis||[]).forEach(gi=>{
    svg.querySelectorAll('.ge'+gi).forEach(el=>el.classList.add('on'));
-   (GORIG[gi]||[]).forEach(k=>{const[nid,rv]=k.split('|');const card=world.querySelector('.node[data-id="'+nid+'"]');if(card)card.querySelectorAll('.step').forEach(st=>{if(st.dataset.rowvar===rv)st.classList.add('hl');});});
+   (GORIG[gi]||[]).forEach(k=>{const[nid,rv]=k.split('|');const card=world.querySelector('.node[data-id="'+nid+'"]');if(card)card.querySelectorAll('.step').forEach(st=>{if(st.dataset.row===rv)st.classList.add('hl');});});
  });
 }
-world.addEventListener('mouseover',e=>{if(e.target.closest('[data-var]'))return;const st=e.target.closest('.step[data-rowvar]');if(!st)return;const card=st.closest('.node');if(!card)return;const key=card.dataset.id+'|'+st.dataset.rowvar;const gis=GORIG.map((o,i)=>o&&o.includes(key)?i:-1).filter(i=>i>=0);if(gis.length)setLink(gis);});
-world.addEventListener('mouseout',e=>{if(e.target.closest('.step[data-rowvar]'))setLink([]);});
-svg.addEventListener('mouseover',e=>{const t=e.target.closest('[data-g]');if(t)setLink([+t.dataset.g]);});
+world.addEventListener('mouseover',e=>{if(e.target.closest('[data-var]'))return;const st=e.target.closest('.step[data-row]');if(!st)return;const card=st.closest('.node');if(!card)return;const key=card.dataset.id+'|'+st.dataset.row;const gis=GORIG.map((o,i)=>o&&o.includes(key)?i:-1).filter(i=>i>=0);if(gis.length)setLink(gis);});
+world.addEventListener('mouseout',e=>{if(e.target.closest('.step[data-row]'))setLink([]);});
+svg.addEventListener('mouseover',e=>{const t=e.target.closest('[data-g]');if(t)setLink([+t.dataset.g],t.classList.contains('gr'));});
 svg.addEventListener('mouseout',e=>{if(e.target.closest('[data-g]'))setLink([]);});
 
 // error focus: hover a squiggle, an error label on an arrow or a status chip → everything that
@@ -1363,7 +1370,8 @@ const HAS_ASK=typeof startAsk==='function';
 if(HAS_ASK){const _start=startAsk;startAsk=function(nid,q){if(pinSt){pinSt=null;restorePin();}return _start(nid,q);};}
 document.addEventListener('click',e=>{const t=HAS_ASK&&e.target.closest&&e.target.closest('.node .ub');if(!t)return;e.stopPropagation();
  const nid=t.closest('.node').dataset.id;if(questionsFor(nid).some(q=>q.k==='routes'))startAsk(nid,{k:'routes'});},true);
-document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('#epinfo .stc');if(!b)return;pinSt=pinSt===b.dataset.st?null:b.dataset.st;if(pinSt&&typeof clearAsk==='function')clearAsk(true);restorePin();});
+document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('#epinfo .stc');if(!b)return;
+ if(b.dataset.err){const top=curEp.nodes.find(n=>n.entry);if(top)askErr(top.id,b.dataset.err.split(' ').filter(Boolean));return;}pinSt=pinSt===b.dataset.st?null:b.dataset.st;if(pinSt&&typeof clearAsk==='function')clearAsk(true);restorePin();});
 document.addEventListener('mouseover',e=>{const t=e.target.closest&&e.target.closest('.stc[data-err],.step.raise,.fx[data-err]');if(t){okFocus(false);setErr(t);}});
 document.addEventListener('mouseout',e=>{const t=e.target.closest&&e.target.closest('.stc[data-err],.step.raise,.fx[data-err]');if(t&&!(e.relatedTarget&&t.contains(e.relatedTarget))){if(pinSt)restorePin();else setErr(null);}});
 
@@ -1464,7 +1472,7 @@ $('#helppop').addEventListener('click',e=>{if(!e.target.closest('.sheet'))toggle
 // ── request/response models: chips in the header → a slide-out field drawer (no graph clutter) ──
 function modelChips(ep){
  const chip=(name,kind)=>{const m=(ep.models||{})[name]||{};return '<span class="mchip'+(m.changed?' chg':'')+'" data-model="'+esc(name)+'" title="'+esc(name)+'"><span class="k">'+kind+'</span><span class="mn">'+esc(name)+'</span></span>';};
- const h=(ep.reqModels||[]).map(n=>chip(n,'req')).join('')+(ep.respModels||[]).map(n=>chip(n,'resp')).join('');
+ const h=(ep.reqModels||[]).map(n=>chip(n,'req')).join('')+(ep.respModels||[]).map(n=>chip(n,'resp')).join('')+(ep.flowModels||[]).map(n=>chip(n,'uses')).join('');
  return h?'<div class="mchips">'+h+'</div>':'';
 }
 let mstack=[];
@@ -1714,7 +1722,7 @@ function rBox(U){
  const steps=inds.map(x=>x-base).filter(x=>x>0),unit=steps.length?Math.max(2,Math.min(4,Math.min(...steps))):2;
  ids.forEach(id=>{
    const r=RR[id],st=RSTATE_ROW[id];
-   const row=el('div','rrow'+(st?' srow':'')+(r.unc?' unc':''));row.id='rr-'+id;row.dataset.row=id;
+   const row=el('div','rrow'+(st?' srow':'')+(r.unc?' unc':'')+(r.chg?' chg':r.chgp?' chg chgp':''));row.id='rr-'+id;row.dataset.row=id;
    row.style.setProperty('--i',Math.min(6,Math.round((r.i-base)/unit)));
    let h=rCode(r.t,r.m,{state:st&&st.id});
    if(st){row.dataset.s=st.id;row.tabIndex=0;row.setAttribute('role','button');row.setAttribute('aria-pressed','false');
@@ -1727,7 +1735,8 @@ function rBox(U){
  if(U.code){
    const bar=el('div','codebar'),btn=el('button','codebtn'),pre=el('pre','code js');
    bar.appendChild(btn);body.appendChild(bar);body.appendChild(pre);
-   pre.innerHTML=codeLines(U.code,{},{},null,null,hlJs);
+   const chgL=new Set(U.chg||[]);   // a diff view: the lines this change touched, tinted as added
+   pre.innerHTML=codeLines(U.code,{},{},null,chgL.size?i=>chgL.has(U.codeLine+i)?'dadd':'':null,hlJs);
    btn.onclick=e=>{e.stopPropagation();const show=pre.hidden;show?rv.code.add(U.id):rv.code.delete(U.id);setNodeCode(card,show);relayout();};
    setNodeCode(card,codeShown||rv.code.has(U.id),pre,btn);
  }
@@ -2094,7 +2103,10 @@ if(RX&&RX.actions.length){
    const d=el('div','ep act');d.tabIndex=0;d.dataset.k='fe';d.dataset.anc=anc.join(' ');d.style.setProperty('--d',depth);
    const R=RR[A.row],U=R&&RU[R.u];
    if(U)d.dataset.tip=U.file+':'+R.a+'\n'+R.t;
-   d.innerHTML='<span class="eptext"><div class="t">'+esc(A.label)+'</div><div class="p">'+esc(A.sub)+'</div></span>';
+   // a diff view: changed on its own path (dot), or only through something it re-renders (faded)
+   const dm=(DATA.meta||{}).mode!=='all';if(dm&&A.affected)d.classList.add('aff');
+   d.innerHTML='<span class="eptext"><div class="t">'+esc(A.label)+'</div><div class="p">'+esc(A.sub)+(dm&&A.affected?' · affected':'')+'</div></span>'+(dm&&!A.affected?'<span class="chgdot"></span>':'');
+   if(dm)d.dataset.tip=(d.dataset.tip?d.dataset.tip+'\n\n':'')+(A.affected?'Not edited: it re-renders a component whose props changed':'Its path runs through changed code');
    d.onclick=()=>selectEp(item,d);
    d.onkeydown=e=>{if(e.key==='Enter')selectEp(item,d);};
    side.appendChild(d);epEls.push({ep:item,d});};
@@ -2303,14 +2315,14 @@ function traceFrom(nid,name,S){
  if(made){const t=made.target,tn=NB(t);
    const ids=retIdents(t),feed=sigParams(t).concat((tn.steps||[]).map(s=>s.var),Object.keys(tn.alias||{}),tn.locals||[]).filter(v=>ids.has(v));
    [...new Set(feed)].forEach(v=>traceFrom(t,v,S));
-   S.push({nid,t:'ret',v:name,g:[gIndex(nid,t,made.var),'r'],code:landLine(made,n),also:[[nid,made.var]]});
+   S.push({nid,t:'ret',v:name,g:[gIndex(nid,t,made.var),'r'],code:landLine(made,n),also:[[nid,n.steps.indexOf(made)]]});
    return;}
  const ins=[];callersOf(nid).forEach(({c,s})=>(s.bind||[]).forEach(b=>{if(b.p===name)ins.push({c,s,b});}));
  if(ins.length){ins.forEach(({c,s,b})=>{
    const gi=gIndex(c.id,nid,s.var),moved=b.text!==name;
    if(b.from)traceFrom(c.id,b.from,S);else (b.uses||[]).forEach(u=>traceFrom(c.id,u,S));
-   if(moved)S.push({nid:c.id,t:'row',rv:s.var,v:b.from,g:[gi,'f'],code:b.text});
-   S.push({nid,t:'ins',v:name,g:[gi,'f'],code:name,also:moved?[]:[[c.id,s.var]]});});
+   if(moved)S.push({nid:c.id,t:'row',rv:c.steps.indexOf(s),v:b.from,g:[gi,'f'],code:b.text});
+   S.push({nid,t:'ins',v:name,g:[gi,'f'],code:name,also:moved?[]:[[c.id,c.steps.indexOf(s)]]});});
    return;}
  if(n.entry&&sigParams(nid).includes(name)){const ty=sigType(nid,name);S.push({nid,t:'head',code:name+(ty?': '+ty:'')});return;}
  const a=assignLine(nid,name);
@@ -2328,8 +2340,8 @@ function usesOfVar(nid,v,path,S){
      const bp=b.path||'',pp=path||'',rest='';
      const hit=b.from===v?(bp===pp||(bp.startsWith(pp)&&'.['.includes(bp[pp.length]))):(!path&&(b.uses||[]).includes(v));if(!hit)return;
      const gi=gIndex(nid,t.target,t.var),moved=b.text!==b.p;
-     if(moved)S.push({nid,t:'row',rv:t.var,v,g:[gi,'f'],code:b.text});
-     S.push({nid:t.target,t:'ins',v:b.p,g:[gi,'f'],code:b.p,also:moved?[]:[[nid,t.var]]});
+     if(moved)S.push({nid,t:'row',rv:n.steps.indexOf(t),v,g:[gi,'f'],code:b.text});
+     S.push({nid:t.target,t:'ins',v:b.p,g:[gi,'f'],code:b.p,also:moved?[]:[[nid,n.steps.indexOf(t)]]});
      usesOfVar(t.target,b.p,rest,S);
      if(!rest&&retIdents(t.target).has(b.p))retUp(t.target,S);});});
  // a local that is just another name for it: `items = payload.items`, `for i in items`
@@ -2342,7 +2354,7 @@ function retUp(nid,S){
  const n=NB(nid);if(!n||S.seen.has('u'+nid))return;S.seen.add('u'+nid);
  if(n.entry){const r=(curEp.respModels||[])[0];S.push({nid,t:'head',code:'response'+(r?': '+r:'')});return;}
  callersOf(nid).forEach(({c,s})=>{if(s.var==='·')return;   // result thrown away
-   S.push({nid:c.id,t:'ret',v:s.var==='return'?'response':s.var,g:[gIndex(c.id,nid,s.var),'r'],code:landLine(s,c),also:[[c.id,s.var]]});
+   S.push({nid:c.id,t:'ret',v:s.var==='return'?'response':s.var,g:[gIndex(c.id,nid,s.var),'r'],code:landLine(s,c),also:[[c.id,c.steps.indexOf(s)]]});
    if(s.var==='return')retUp(c.id,S);else if(s.var&&s.var!=='·')usesOfVar(c.id,s.var,'',S);});
 }
 
@@ -2350,8 +2362,8 @@ function retUp(nid,S){
 function belowOf(nid){const out=new Set(),q=[nid];while(q.length){const x=q.shift();if(out.has(x))continue;out.add(x);(NB(x)?NB(x).steps||[]:[]).forEach(s=>{if(s.target&&NB(s.target))q.push(s.target);});}return out;}
 function raisesBelow(nid){const out=[];belowOf(nid).forEach(x=>((NB(x)||{}).raises||[]).forEach((r,i)=>{if(!r.here)out.push({nid:x,r,i});}));return out;}
 function routeStatus(r){if(r.st)return r.st;const s=(curEp.statuses||[]).find(s=>s.kind!=='ok'&&s.types.includes(r.t));return s?s.code:'500';}
-function traceFail(nid,S){const below=belowOf(nid);
- raisesBelow(nid).forEach(({nid:x,r,i})=>{const bad=!r.st;
+function traceFail(nid,S,types,ri){const below=belowOf(nid);
+ raisesBelow(nid).filter(({nid:x,r,i})=>ri!=null?x===nid&&i===ri:!types||types.includes(r.t)).forEach(({nid:x,r,i})=>{const bad=!r.st;
    S.push({nid:x,t:'raise',ri:i,err:bad,code:cut(r.text,40)});
    failUp(x,r,below,nid,S,new Set([x]));});}
 function failUp(x,r,below,asked,S,seen){
@@ -2361,9 +2373,9 @@ function failUp(x,r,below,asked,S,seen){
    if(x!==asked&&below.has(x)&&!below.has(c.id))return;
    if(seen.has(c.id))return;seen.add(c.id);
    const gi=gIndex(c.id,x,s.var),h=(s.caught||[]).find(k=>k[0]===r.t);
-   if(h){S.push({nid:c.id,t:'row',rv:s.var,g:[gi,'fr'],ok:1,tag:'except '+r.t+(h[1]?' → '+h[1]:''),errT:r.t,code:callShort(s,x)});
+   if(h){S.push({nid:c.id,t:'row',rv:c.steps.indexOf(s),g:[gi,'fr'],ok:1,tag:'except '+r.t+(h[1]?' → '+h[1]:''),errT:r.t,code:callShort(s,x)});
      const top=curEp.nodes.find(n=>n.entry);if(h[1]&&top)S.push({nid:top.id,t:'head',chip:String(h[1]),http:1,code:String(h[1]),box:curEp.method.toUpperCase()+' '+curEp.path});return;}
-   S.push({nid:c.id,t:'row',rv:s.var,g:[gi,'fr'],err:bad,tag:r.t,errT:r.t,code:callShort(s,x)});
+   S.push({nid:c.id,t:'row',rv:c.steps.indexOf(s),g:[gi,'fr'],err:bad,tag:r.t,errT:r.t,code:callShort(s,x)});
    if(c.entry){const st=routeStatus(r);S.push({nid:c.id,t:'head',err:bad,chip:st,http:!bad,code:st,box:curEp.method.toUpperCase()+' '+curEp.path});}
    else failUp(c.id,r,below,asked,S,seen);});
  if(NB(x)&&NB(x).entry&&x===asked&&!callersOf(x).length){const st=routeStatus(r);S.push({nid:x,t:'head',err:bad,chip:st,http:!bad,code:st,box:curEp.method.toUpperCase()+' '+curEp.path});}
@@ -2417,11 +2429,27 @@ world.addEventListener('click',e=>{
  startAsk(nid,{k:'value',p:v,path});
 });
 
+// click an error (a raise line, a squiggled call, an error label on an arrow, a route's error status):
+// step through its path, numbered: where it's raised, each call it goes up through, what catches it or
+// what the client gets. Clicking the same error again lets go.
+function askErr(nid,types,ri){
+ if(!types.length)return;
+ if(ASK&&ASK.q.k==='fail'&&ASK.nid===nid&&(ASK.q.t||[]).join()===types.join()&&ASK.q.ri===ri)return clearAsk();
+ setErr(null);startAsk(nid,{k:'fail',t:types,ri});}
+document.addEventListener('click',e=>{
+ const t=!RMODE&&!dragMoved&&e.target.closest&&!e.target.closest('#world [data-var]')&&e.target.closest('#world .step.raise,#world .sq[data-err],#world .sqok[data-err],#edges .errlab[data-err]');
+ if(!t)return;e.stopPropagation();
+ const types=(t.dataset.err||t.closest('[data-err]').dataset.err||'').split(' ').filter(Boolean);
+ if(t.dataset.eg!=null){const g=groupEdges()[+t.dataset.eg];if(g)askErr(g.dst,types);return;}
+ const card=t.closest('.node'),row=t.closest('.step[data-row]'),rr=t.closest('.step.raise');if(!card)return;
+ if(rr)return askErr(card.dataset.id,types,+rr.dataset.ri);   // this raise line only
+ const s=row&&(NB(card.dataset.id).steps||[])[+row.dataset.row];
+ askErr(s&&s.target&&NB(s.target)?s.target:card.dataset.id,types);},true);
 function startAsk(nid,q){
  clearAsk(true);setSpot(null);setLink([]);
  const S=stepSink(),t=short(NB(nid).title);let here=-1;
  if(q.k==='from')traceFrom(nid,q.p,S);
- else if(q.k==='fail')traceFail(nid,S);
+ else if(q.k==='fail')traceFail(nid,S,q.t,q.ri);
  else if(q.k==='routes')traceRoutes(nid,S);
  else{traceFrom(nid,q.p,S);
    // the clicked value is the last step of where it came from; mark it, then follow it onward
@@ -2432,7 +2460,7 @@ function startAsk(nid,q){
  const nm=esc(q.p+(q.path||''));
  const head={from:'<span class="hk">←</span> '+nm+' <span class="hk">'+esc(t)+'</span>',
    value:nm+' <span class="hk">'+esc(t)+'</span>',
-   fail:esc(t)+'() <span class="tag" style="color:var(--del)">raise</span>',routes:esc(t)+'() <span class="hk">also in</span>'}[q.k];
+   fail:(q.t?'<span style="color:var(--del)">'+esc(q.t.join(', '))+'</span> <span class="hk">from '+esc(t)+'()</span>':esc(t)+'() <span class="tag" style="color:var(--del)">raise</span>'),routes:esc(t)+'() <span class="hk">also in</span>'}[q.k];
  ASK={nid,q,steps:S.list,extra:S.extra,more:S.more,head,here,opened:[]};
  // everything the answer points at has to be visible: open collapsed boxes, and code for code lines
  S.list.forEach(st=>{const nd=nodes[st.nid];if(!nd)return;nd.el.classList.remove('shut');
@@ -2487,7 +2515,7 @@ $('#asklist').addEventListener('keydown',e=>{if(e.key!=='ArrowDown'&&e.key!=='Ar
  if(items.length)items[(i+(e.key==='ArrowDown'?1:-1)+items.length)%items.length].focus();});
 function markCur(i){$('#askmarks').querySelectorAll('.askn').forEach(m=>m.classList.toggle('cur',+m.dataset.i===i));}
 function pulseMark(i){markCur(i);setTimeout(()=>{const a=document.activeElement;if(!(a&&a.closest&&a.closest('#asklist')))markCur(-1);},1400);}
-const rowOf=(nid,rv)=>{const nd=nodes[nid];return nd?[...nd.el.querySelectorAll('.step')].find(r=>r.dataset.rowvar===rv):null;};
+const rowOf=(nid,i)=>{const nd=nodes[nid];return nd?[...nd.el.querySelectorAll('.step')].find(r=>r.dataset.row===String(i)):null;};
 function anchorOf(st){
  const nd=nodes[st.nid];if(!nd)return null;const card=nd.el;
  if(st.t==='row')return rowOf(st.nid,st.rv);
@@ -2611,7 +2639,10 @@ updateRevProgress();
 applyView();
 if(!epEls.length){
  $('#empty').hidden=false;$('#legend').hidden=true;
- if(META.mode!=='all'){$('#emptyh').textContent='No changes here';$('#emptyp').innerHTML='Nothing in <b>'+esc(META.head||'the working tree')+'</b> differs from <b>'+esc(META.base)+'</b>. Pick another range with the button at the top left.';}
+ if(META.mode!=='all'){const un=META.unread||[];$('#emptyh').textContent=un.length?'Nothing to draw here':'No changes here';
+   $('#emptyp').innerHTML=un.length
+     ?'<b>'+esc(META.head||'the working tree')+'</b> changes '+un.length+' file'+(un.length>1?'s':'')+' against <b>'+esc(META.base)+'</b>, but none that this view draws (Python routes and functions):<br>'+un.slice(0,12).map(f=>'<code>'+esc(f)+'</code>').join('<br>')+(un.length>12?'<br>and '+(un.length-12)+' more':'')
+     :'Nothing in <b>'+esc(META.head||'the working tree')+'</b> differs from <b>'+esc(META.base)+'</b>. Pick another range with the button at the top left.';}
 }
 else{
  const last=store.get('ep',null), start=epEls.find(x=>x.ep.id===last)||epEls.find(x=>!x.ep.__prob)||epEls[0];
