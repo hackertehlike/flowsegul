@@ -30,6 +30,10 @@ class MapNav(unittest.TestCase):
                        "(e.key==='f'||e.key==='F')"):
             self.assertIn(needle, self.t)
 
+    def test_sidebar_can_be_resized(self):
+        for needle in ('id="sgrip"', 'var(--sidew,252px)', "store.set('sidew'"):
+            self.assertIn(needle, self.t)
+
 
 if __name__ == '__main__':
     unittest.main()

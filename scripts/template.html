@@ -160,8 +160,8 @@ kbd{font:600 10.5px/1 var(--mono);padding:3px 5px;border-radius:5px;border:1px s
 .main{flex:1;display:flex;min-height:0}
 
 /* ── sidebar ────────────────────────────────────────────────────────────── */
-.side{width:252px;flex:none;border-right:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;min-height:0;transition:margin-left .22s var(--ease)}
-body.noside .side{margin-left:-252px}
+.side{width:var(--sidew,252px);flex:none;position:relative;border-right:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;min-height:0;transition:margin-left .22s var(--ease)}
+body.noside .side{margin-left:calc(-1*var(--sidew,252px))}
 .search{padding:10px 10px 6px;flex:none}
 .search label{display:flex;align-items:center;gap:7px;height:32px;padding:0 8px 0 9px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);color:var(--muted);transition:border-color .15s,box-shadow .15s}
 .search label:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
@@ -544,7 +544,7 @@ button.num{cursor:pointer}
 .brand h1{font-weight:500;letter-spacing:-.02em}
 .logo{background:#18181b;box-shadow:inset 0 0 0 1px #ffffff1f;border-radius:50%}
 .side{background:var(--panel);border-right:0;margin:0 0 14px 14px;border-radius:var(--r);box-shadow:var(--shadow)}
-body.noside .side{margin-left:-266px}
+body.noside .side{margin-left:calc(-14px - var(--sidew,252px))}
 .stage{background-image:radial-gradient(circle at 1px 1px,var(--grid) .9px,transparent 0);background-size:14px 14px}
 .node{border-color:transparent;background:var(--panel)}
 .nhead{padding:16px 16px 12px 18px}
@@ -784,6 +784,13 @@ pre.code{border-color:transparent;border-radius:16px;background:var(--panel2)}
 ::highlight(mfcur){background-color:var(--ink);color:var(--panel)}
 .node.fcurn{box-shadow:0 0 0 2px var(--lit-fill),var(--shadow)}
 ::highlight(mfind){background-color:var(--lit-fill);color:var(--lit-on)}
+/* sidebar width: drag its right edge, double-click to reset */
+.sgrip{position:absolute;top:14px;bottom:14px;right:-7px;width:10px;cursor:col-resize;z-index:5;touch-action:none}
+.sgrip::after{content:"";position:absolute;left:4px;top:50%;height:36px;margin-top:-18px;width:3px;border-radius:2px;background:var(--line2);opacity:0;transition:opacity .15s}
+.sgrip:hover::after,.sgrip.drag::after{opacity:1}
+body.sizing,body.sizing *{cursor:col-resize!important;user-select:none}
+body.sizing .side{transition:none}
+body.noside .sgrip{display:none}
 </style>
 </head>
 <body>
@@ -814,6 +821,7 @@ pre.code{border-color:transparent;border-radius:16px;background:var(--panel2)}
 </header>
 <div class="main">
  <nav class="side" id="sidebar">
+  <div class="sgrip" id="sgrip" role="separator" aria-orientation="vertical" aria-label="Resize sidebar" data-tip="Drag to resize · double-click to reset"></div>
   <div class="search"><label><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg><input id="q" type="search" placeholder="Filter endpoints" autocomplete="off" spellcheck="false"><kbd>/</kbd></label><div class="seg sidetabs" id="sidetabs" hidden><button class="segb" data-k="be">Backend <i id="nbe"></i></button><button class="segb" data-k="fe">Frontend <i id="nfe"></i></button></div></div>
   <div class="eplist" id="side"></div>
   <div class="revbar"><div class="lbl"><b id="revcount">0</b><span id="revof">of 0 reviewed</span></div><div class="track"><div class="fill" id="revfill"></div></div></div>
@@ -2710,6 +2718,17 @@ window.addEventListener('keydown',e=>{
 if(store.get('review',false))toggleReview();
 if(store.get('nomap',false))toggleMap();
 if(store.get('noside',false))document.body.classList.add('noside');
+// sidebar width: drag the right edge (200–520px), double-click resets; remembered per browser
+{const SW0=252,g=$('#sgrip'),root=document.documentElement,clamp=w=>Math.max(200,Math.min(520,Math.round(w)));
+ const setW=w=>{root.style.setProperty('--sidew',w+'px');};
+ const w0=store.get('sidew',null);if(w0)setW(clamp(w0));
+ g.addEventListener('pointerdown',e=>{if(e.button!==0)return;e.preventDefault();g.setPointerCapture(e.pointerId);
+  const sx=e.clientX,sw=$('#sidebar').offsetWidth;document.body.classList.add('sizing');g.classList.add('drag');
+  const mv=ev=>setW(clamp(sw+ev.clientX-sx));
+  const up=()=>{g.removeEventListener('pointermove',mv);g.removeEventListener('pointerup',up);g.removeEventListener('pointercancel',up);
+   document.body.classList.remove('sizing');g.classList.remove('drag');store.set('sidew',$('#sidebar').offsetWidth);drawMinimap();};
+  g.addEventListener('pointermove',mv);g.addEventListener('pointerup',up);g.addEventListener('pointercancel',up);});
+ g.addEventListener('dblclick',()=>{setW(SW0);store.set('sidew',null);drawMinimap();});}
 updateRevProgress();
 applyView();
 if(!epEls.length){
