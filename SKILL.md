@@ -12,9 +12,9 @@ self-contained viewer. **Do not rebuild the visualizer from scratch — run the 
 ## What it produces
 
 A single self-contained HTML file: a per-endpoint draggable node graph where each node is a
-function (controller / service / repository / helper layer, color-chipped). Per node it shows the
-data-flow steps (`var = call(args)`) and, on demand, the real source (syntax-highlighted; hidden by
-default for an overview, `C` shows all; changed functions always show their diff). Arrows: **solid** = arguments sent into a call; **dashed** = value returned (labeled
+function (controller / service / repository / helper layer, color-chipped). Per node it shows its real
+source, folded to the lines that call something or raise plus the `if`/`for`/`try` lines around them
+(`C` unfolds all; changed functions always show their whole diff). Arrows: **solid** = arguments sent into a call; **dashed** = value returned (labeled
 `type → variable`). Every produced variable gets one consistent color across its chip, its arrows,
 and every line of source that touches it; request inputs get fixed colors (with repo-layer aliases,
 e.g. `start_date`→`start`).
@@ -95,8 +95,6 @@ path` count and `.node` count are non-zero before reporting results.
   summaries) is optional polish, not required.
 - Input-param aliases across renames (`start_date`→`start`) are inferred only when names match; if a
   value is renamed to something unrelated the color won't follow it.
-- Side-effect calls (no assignment, e.g. `await db.commit()` that resolves in-scope) show as a `·`
-  row.
 - The template is generic: `graph.endpoints[].nodes[].steps[]` drives everything. You can also
   hand-write that JSON and inject it into `template.html` (replace `__DATA__`) if you want full
   control instead of the generator.
