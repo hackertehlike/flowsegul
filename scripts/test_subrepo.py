@@ -35,7 +35,7 @@ def test():
         # 2. `git show base:<rel>` resolves, so the old body is found and `handler` reads as
         #    CHANGED rather than new — a broken read returns '' and calls everything new.
         idx = Index(sub, [f])
-        quals, models, info, deleted = changed_defs(idx, sub, base, 'HEAD', cf, merge_base=False)
+        quals, models, info, deleted, _ = changed_defs(idx, sub, base, 'HEAD', cf, merge_base=False)
         assert quals == {'src/api.py::handler', 'src/api.py::added'}, quals
         assert info['src/api.py::handler']['new'] is False, info['src/api.py::handler']
         assert info['src/api.py::added']['new'] is True, info['src/api.py::added']
