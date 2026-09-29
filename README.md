@@ -75,7 +75,7 @@ flowsegul --react frontend   # only this folder of the repo
 ```
 
 The sidebar lists what a user can do, grouped by folder: `click Apply`, `type in coupon`,
-`submit Log in`, `page load`. Pick one and the map numbers the real code lines it runs through, in
+`submit Log in`, and what a screen loads by itself as it opens (`load /orders`). Pick one and the map numbers the real code lines it runs through, in
 order: the handler, the callback props it goes up through, the `useState` setter, the components
 that rerun (a `reruns` chip; hover it for the line responsible), effects that depend on the state,
 and the requests they make (`GET /orders/preview`). Step through with `N` / `Shift+N`; `Esc`
@@ -86,6 +86,16 @@ It needs Node.js and the `typescript` package: the app's own, one installed glob
 named by `FLOWSEGUL_TS`. Labels and paths come from the code by fixed rules. Anything that can't be
 followed for sure (props passed on with `{...props}`, values from a context) is drawn faded as
 uncertain.
+
+When a click saves something and then refreshes a list (`queryClient.invalidateQueries(...)`), the
+path goes on to the component showing that list and the request it sends again (`GET /comments`).
+With an action picked, its boxes line up left to right in the order the steps reach them.
+
+**State a diff erases.** With `--changed` / `--from`, a `useState` whose component the change
+puts under a new condition (`{showPromo && <CouponField />}`), after an early return, or behind a
+new key gets a red mark on its line, `draft erased when showPromo is false`: whatever the user
+typed there now starts over each time the condition flips. Hover for the line responsible; a
+`Problems` list at the top of the sidebar collects them.
 
 ### Frontend requests linked to their routes
 
@@ -165,7 +175,9 @@ python3 -m unittest discover -s tests -v
 
 A smoke test builds a tiny FastAPI repo, runs the generator in normal and `--changed` modes, and
 checks the HTML it writes. CI runs it on Linux and macOS. `tests/test_react.py` checks React mode
-on a small checkout app (`tests/react_fixture.py`); it skips when Node or `typescript` isn't found.
+on a small checkout app (`tests/react_fixture.py`), and `tests/test_react_review.py` the erased-state
+mark on a two-commit orders app (`tests/react_review_fixture.py`); both skip when Node or
+`typescript` isn't found.
 
 ## Claude Code skill
 

@@ -73,11 +73,11 @@ class ReactAnalyzerTest(unittest.TestCase):
 
     def test_labels(self):
         labels = [a['label'] for a in self.d['actions']]
-        for want in ('click Apply', 'type in coupon', 'click Remove', 'page load', 'type in Note',
+        for want in ('click Apply', 'type in coupon', 'click Remove', 'load /cart', 'type in Note',
                      'click Clear note', 'click Clear cart', 'click Dark'):
             self.assertIn(want, labels)
         self.assertEqual(self.action('click Apply')['sub'], 'CouponField')
-        self.assertEqual(self.action('page load')['sub'], 'CheckoutPage')
+        self.assertEqual(self.action('load /cart')['sub'], 'CheckoutPage')
         self.assertEqual(self.action('click Apply')['group'], 'checkout')
         self.assertEqual(self.action('click Dark')['group'], 'settings')
 
@@ -133,7 +133,7 @@ class ReactAnalyzerTest(unittest.TestCase):
         steps = self.action('click Apply')['steps']
         apis = [a[:2] for s in steps for r in s['r'] for a in self.rows[r].get('api', [])]
         self.assertEqual(apis, [['GET', '/orders/preview']])
-        load = self.action('page load')['steps']
+        load = self.action('load /cart')['steps']
         self.assertIn(['GET', '/cart'], [a[:2] for s in load for r in s['r'] for a in self.rows[r].get('api', [])])
 
     def test_spread_is_uncertain(self):
