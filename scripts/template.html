@@ -208,6 +208,7 @@ body.review .revbar{display:block}
 #edges{position:absolute;top:0;left:0;overflow:visible;pointer-events:none;z-index:1}
 .elab{font:600 10.5px var(--mono);paint-order:stroke;stroke:var(--bg);stroke-width:4px;stroke-linejoin:round}
 .elab.ret{font-weight:500;font-size:10px;font-style:italic}
+.elab.kindlab{font-weight:500;font-size:10px;font-style:italic;cursor:help}
 .pilltext{font:700 10.5px var(--mono)}
 .pillg rect{filter:drop-shadow(0 1px 2px rgba(20,30,50,.22))}
 #edges text{pointer-events:auto;cursor:default}
@@ -1099,7 +1100,7 @@ function build(ep){
  });
 
  // edges: every node's steps that target another node
- ep.nodes.forEach(n=>{(n.steps||[]).forEach((s,si)=>{if(s.target&&nodes[s.target])edges.push({src:n.id,dst:s.target,color:(s.var&&s.var!=='return')?varColor[s.var]:'var(--edge)',rowVar:s.var,row:si,label:s.arg||'',ret:s.ret||'',bind:s.bind||[],keys:edgeKeys(n.id,s),esc:s.esc||[],caught:s.caught||[]});});});
+ ep.nodes.forEach(n=>{(n.steps||[]).forEach((s,si)=>{if(s.target&&nodes[s.target])edges.push({src:n.id,dst:s.target,color:(s.var&&s.var!=='return')?varColor[s.var]:'var(--edge)',rowVar:s.var,row:si,label:s.arg||'',ret:s.ret||'',bind:s.bind||[],keys:edgeKeys(n.id,s),esc:s.esc||[],caught:s.caught||[],kind:s.disp?'disp':(s.defer||''),disp:s.disp});});});
  // schema edges: only the response shape (dashed). The request model is shown as a node but not
  // wired with an arrow — it's the input type, not a call, so an arrow would just be documentation.
  (ep.modelEdges||[]).forEach(m=>{if(m.kind==='resp'&&nodes[m.src]&&nodes[m.dst])
@@ -1320,9 +1321,9 @@ function pill(cx,cy,text,color,dashed,gi,dv,part){
 function groupEdges(){
  const map=new Map(), order=[];
  edges.forEach(e=>{
-   const key=e.src+''+e.dst+''+(e.plain?'~':'')+''+(e.label||'');
+   const key=e.src+''+e.dst+''+(e.plain?'~':'')+''+(e.label||'')+''+(e.kind||'');
    let g=map.get(key);
-   if(!g){g={src:e.src,dst:e.dst,label:e.label||'',plain:!!e.plain,items:[]};map.set(key,g);order.push(g);}
+   if(!g){g={src:e.src,dst:e.dst,label:e.label||'',plain:!!e.plain,kind:e.kind||'',disp:e.disp,items:[]};map.set(key,g);order.push(g);}
    g.items.push(e);
  });
  return order;
@@ -1357,11 +1358,15 @@ function drawEdges(){
    const col=g.plain?'var(--model)':(n===1?(g.items[0].color||'var(--edge)'):'var(--edge)');
    const fx=b.x, fy=b.y+22, fdx=Math.max(30,(fx-jx)*0.36), fc1=jx+fdx, fc2=fx-fdx;
    defs+='<marker id="mf'+i+'" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 z" fill="'+col+'"/></marker>';
-   fwd+='<path class="'+gc+' gf"'+dv+' d="M'+jx+','+ry+' C'+fc1+','+ry+' '+fc2+','+fy+' '+fx+','+fy+'" fill="none" stroke="'+col+'" stroke-width="'+(g.plain?1.5:2.2)+'" '+(g.plain?'stroke-dasharray="4 4"':'')+' marker-end="url(#mf'+i+')" opacity="0.92" stroke-linecap="round"/>';
+   // a call through a stored function is one of several (dotted); work handed to a task or thread runs apart (dashed)
+   const dash=g.plain?'4 4':g.kind==='disp'?'0.1 5':(g.kind==='later'||g.kind==='task'||g.kind==='thread')?'8 5':'';
+   fwd+='<path class="'+gc+' gf'+(g.kind?' k'+g.kind:'')+'"'+dv+' d="M'+jx+','+ry+' C'+fc1+','+ry+' '+fc2+','+fy+' '+fx+','+fy+'" fill="none" stroke="'+col+'" stroke-width="'+(g.plain?1.5:g.kind==='disp'?2.6:2.2)+'" '+(dash?'stroke-dasharray="'+dash+'"':'')+' marker-end="url(#mf'+i+')" opacity="0.92" stroke-linecap="round"/>';
    // produced variables passed as arguments → dashed "slot" pills docking into the callee
    const argToks=(g.label.match(/[A-Za-z_][A-Za-z0-9_]*/g)||[]);
    const consumed=[...new Set(argToks.filter(t=>pvcolor[t]))];
    const allConsumed=argToks.length>0 && argToks.every(t=>pvcolor[t]);
+   const kindTxt=g.kind==='disp'?'dispatch: one of '+g.disp[0]+(g.disp[1]?' or more':''):g.kind==='later'?'later':g.kind==='task'?'as a task':g.kind==='thread'?'in a thread':'';
+   if(kindTxt){const m=bez(jx,ry,fc1,ry,fc2,fy,fx,fy,0.5);labels+='<text data-g="'+i+'"'+dv+' x="'+m[0]+'" y="'+(m[1]+14)+'" class="'+gc+' gf elab kindlab" text-anchor="middle" fill="var(--muted)" data-tip="'+esc(g.kind==='disp'?'The code picks one of these functions while it runs':g.kind==='later'?'Runs after the response is sent':g.kind==='task'?'Runs alongside the caller':'Runs in another thread')+'">'+esc(kindTxt)+'</text>';}
    if(g.label && !allConsumed){const m=bez(jx,ry,fc1,ry,fc2,fy,fx,fy,0.5);const badge=n>1?' <tspan fill="var(--muted)" font-weight="700">×'+n+'</tspan>':'';labels+='<text data-g="'+i+'"'+dv+' x="'+m[0]+'" y="'+(m[1]-5)+'" class="'+gc+' gf elab arglab" text-anchor="middle" fill="'+col+'">'+argTspans(g.label,col)+badge+'</text>';}
    // a value that lands under another name says so: subtotal → total
    const renamed=v=>{for(const e of g.items)for(const b of e.bind||[])if(b.from===v&&!b.path&&b.p!==v)return v+' → '+b.p;return v;};
@@ -1376,7 +1381,7 @@ function drawEdges(){
      cgt.forEach(c=>{labels+='<text class="errlab elab" data-eg="'+i+'" data-err="'+esc(c[0])+'" data-st="'+esc(String(c[1]||''))+'" x="'+x+'" y="'+(y+14*k++)+'" text-anchor="middle" fill="var(--ok)">'+esc(c[0]+' → '+(c[1]||'handled'))+'</text>';});
    };
    // return arrow: callee (lower-left) -> back to the caller row, listing every distinct result var.
-   if(!g.plain){
+   if(!g.plain&&g.kind!=='later'&&g.kind!=='task'){
      const seen=new Set();
      const rvars=g.items.filter(e=>e.rowVar && e.rowVar!=='·' && !seen.has(e.rowVar) && seen.add(e.rowVar));
      if(rvars.length){
@@ -1396,7 +1401,7 @@ function drawEdges(){
      }
    }
    if(escT.length||cgt.length){
-     if(!errAt){const m=bez(jx,ry,fc1,ry,fc2,fy,fx,fy,0.5);errAt=[m[0],m[1]+12];
+     if(!errAt){const m=bez(jx,ry,fc1,ry,fc2,fy,fx,fy,0.5);errAt=[m[0],m[1]+(kindTxt?28:12)];
        ret+='<path class="errpath" data-eg="'+i+'" data-err="'+esc(escT.concat(cgt.map(c=>c[0])).join(' '))+'" d="M'+jx+','+ry+' C'+fc1+','+ry+' '+fc2+','+fy+' '+fx+','+fy+'" fill="none" stroke="'+(escT.length?'var(--del)':'var(--ok)')+'" stroke-width="2.4"/>';}
      errLabels(errAt[0],errAt[1]);
    }

@@ -295,6 +295,9 @@ class Index:
         self.module_values = {}  # rel -> {NAME: value node}, e.g. `CurrentUser = Annotated[User, Depends(…)]`
         self.skipped = []      # (rel, reason) for files that could not be parsed
         self.attr_strs = {}    # attr -> {"text", …} string class attributes, e.g. Settings.API_V1_STR
+        self.ctor_calls = {}   # class name -> [(rel, Cls(...) call, local names around it or None)]
+        self.class_nodes = {}  # class name -> (rel, ClassDef), for field order and defaults
+        self.stored_cache = {} # (class, attr) -> stored_callables result
         for f in files:
             self._index_file(f)
         self._mount_routes()
@@ -399,6 +402,7 @@ class Index:
                     self.tools.append((qual, t))
 
         self._exception_handlers(tree)
+        self._ctor_sites(rel, tree)
         for n in tree.body:
             if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 add(n, None)
@@ -411,6 +415,7 @@ class Index:
                     if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef)):
                         add(m, n.name)
                 self.attr_types.setdefault(n.name, []).append((rel, _attr_types(n)))
+                self.class_nodes.setdefault(n.name, (rel, n))
 
     def _exception_handlers(self, tree):
         """`@app.exception_handler(ValueError)` and `app.add_exception_handler(ValueError, fn)`: the
@@ -575,6 +580,8 @@ class Index:
         return '' if names and all(t in _BUILTIN_TYPES for t in names) else None
 
     def _types_in(self, qual):
+        if qual not in self.funcs:
+            return {}
         if qual not in self.local_types:
             self.local_types[qual] = _local_types(self.funcs[qual]['node'])
         return self.local_types[qual]
@@ -686,6 +693,238 @@ class Index:
             cands = [c for c in cands if c != caller_qual] or cands
         return cands[0] if cands else None
 
+    # ── functions stored as values and called later ──
+    def _ctor_sites(self, rel, tree):
+        """Every `Cls(...)` call with keyword or positional arguments, so `x.attr(...)` on an
+        instance can be followed to the functions stored in `attr`. A call inside a function keeps
+        that function's own names: a value from there can't be known without running it."""
+        def visit(node, names):
+            for ch in ast.iter_child_nodes(node):
+                if isinstance(ch, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+                    visit(ch, set(local_names(ch)) | set(param_names(ch)) if not isinstance(ch, ast.Lambda)
+                          else (names or set()) | {a.arg for a in ch.args.args})
+                    continue
+                if isinstance(ch, ast.Call) and (ch.args or ch.keywords):
+                    cls = unparse(ch.func).split('.')[-1]
+                    if cls[:1].isupper():
+                        self.ctor_calls.setdefault(cls, []).append((rel, ch, names))
+                visit(ch, names)
+        visit(tree, None)
+
+    def _field_order(self, cls):
+        """Field names in positional order for a dataclass / NamedTuple / attrs class, else None
+        (a pydantic model takes keywords only)."""
+        rel, node = self.class_nodes.get(cls, (None, None))
+        if node is None:
+            return None
+        decs = {unparse(d.func if isinstance(d, ast.Call) else d).split('.')[-1] for d in node.decorator_list}
+        if not (decs & {'dataclass', 'define', 'frozen', 'attrs', 's'} or 'NamedTuple' in self.bases.get(cls, [])):
+            return None
+        return [m.target.id for m in node.body if isinstance(m, ast.AnnAssign) and isinstance(m.target, ast.Name)
+                and 'ClassVar' not in unparse(m.annotation)]
+
+    def _function_value(self, rel, value):
+        """The qual of the repo function a stored value names (`svc.run`, `run`, `partial(run, …)`),
+        'other' for a value that is clearly not one of ours (a lambda, a library function), or None
+        when it can't be known here."""
+        if (isinstance(value, ast.Call) and unparse(value.func).split('.')[-1] == 'partial'
+                and value.args):
+            value = value.args[0]
+        if isinstance(value, ast.Lambda):
+            return 'other'
+        if not isinstance(value, (ast.Name, ast.Attribute)):
+            return 'other' if isinstance(value, ast.Constant) else None
+        q = self.resolve(ast.Call(func=value, args=[], keywords=[]), None, f'{rel}::')
+        return q or 'other'
+
+    def stored_callables(self, cls, attr):
+        """(quals, n, more) for the functions instances of `cls` hold in `attr`, from every
+        `Cls(attr=fn)` the repo writes out. n counts every value seen, ours or not; `more` says some
+        value can't be known without running the code (built from a variable, or **kwargs)."""
+        key = (cls, attr)
+        if key in self.stored_cache:
+            return self.stored_cache[key]
+        quals, vals, more = [], [], False
+        order = self._field_order(cls)
+        rel_c, node = self.class_nodes.get(cls, (None, None))
+        default = next((m.value for m in (node.body if node else []) if isinstance(m, ast.AnnAssign)
+                        and isinstance(m.target, ast.Name) and m.target.id == attr), None)
+        for rel, call, names in self.ctor_calls.get(cls, []):
+            v = next((k.value for k in call.keywords if k.arg == attr), None)
+            if v is None and order and attr in order and order.index(attr) < len(call.args):
+                v = call.args[order.index(attr)]
+                if any(isinstance(a, ast.Starred) for a in call.args[:order.index(attr) + 1]):
+                    v, more = None, True
+            if v is None:
+                if any(k.arg is None for k in call.keywords) or (call.args and not order):
+                    more = True       # Cls(**opts), or positional on a class we can't line up
+                elif default is not None:
+                    v, rel = default, rel_c
+                else:
+                    continue
+                if v is None:
+                    continue
+            if names and any(isinstance(x, ast.Name) and x.id in names for x in ast.walk(v)):
+                more = True           # Cls(run=handler) inside a function: handler is only known at run time
+                continue
+            q = self._function_value(rel, v)
+            if q is None:
+                more = True
+                continue
+            k = q if q != 'other' else unparse(v)
+            if k not in vals:
+                vals.append(k)
+                if q != 'other':
+                    quals.append(q)
+        out = (quals, len(vals), more) if vals or more else None
+        self.stored_cache[key] = out
+        return out
+
+    def _seq_classes(self, rel, expr, depth=0):
+        """Classes of the elements of a module-level tuple/list/set (`_FAMILIES`, `registry._FAMILIES`,
+        `[*A, *B]`), or None when `expr` isn't one we can read."""
+        if depth > 4:
+            return None
+        if isinstance(expr, ast.Attribute) and isinstance(expr.value, ast.Name):
+            imp = self.imports.get(rel, {}).get(expr.value.id)
+            f = self.module_file(rel, '.'.join(x for x in imp[:2] if x), imp[2]) if imp else None
+            return self._seq_classes(f, ast.Name(id=expr.attr), depth + 1) if f else None
+        if isinstance(expr, ast.Name):
+            val = self.module_values.get(rel, {}).get(expr.id)
+            if val is None:
+                imp = self.imports.get(rel, {}).get(expr.id)
+                f = self.module_file(rel, imp[0], imp[2]) if imp and imp[1] else None
+                return self._seq_classes(f, ast.Name(id=imp[1]), depth + 1) if f else None
+            expr = val
+        if isinstance(expr, ast.Call) and unparse(expr.func) in ('tuple', 'list', 'frozenset', 'set') and expr.args:
+            return self._seq_classes(rel, expr.args[0], depth + 1)
+        if isinstance(expr, ast.Dict):        # `for x in REGISTRY.values()` is handled by the caller
+            return None
+        if not isinstance(expr, (ast.Tuple, ast.List, ast.Set)):
+            return None
+        out = []
+        for el in expr.elts:
+            if isinstance(el, ast.Starred):
+                sub = self._seq_classes(rel, el.value, depth + 1)
+            elif isinstance(el, ast.Call):
+                c = self._type_class(unparse(el.func))
+                sub = [c] if c else None
+            elif isinstance(el, ast.Name):
+                c = self._type_class(self.module_types.get(rel, {}).get(el.id))
+                sub = [c] if c else None
+            else:
+                sub = None
+            if sub is None:
+                return None
+            out += [c for c in sub if c not in out]
+        return out
+
+    def value_classes(self, recv, caller_cls, caller_qual):
+        """Classes the receiver of `recv.attr(...)` can be: its annotation or constructor, what a
+        function of ours that it came from returns (`fam = registry.family_for(name)`), or the
+        elements of the module-level sequence it loops over (`for fam in _FAMILIES`)."""
+        rc = self.receiver_class(recv, caller_cls, caller_qual)
+        if rc:
+            return [rc]
+        if not (isinstance(recv, ast.Name) and caller_qual in self.funcs):
+            return None
+        rel = caller_qual.split('::', 1)[0]
+        info = self.funcs[caller_qual]
+        found, unknown = [], False
+        for n in ast.walk(info['node']):
+            src = None
+            if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == recv.id for t in n.targets):
+                src = ('val', n.value)
+            elif isinstance(n, (ast.AnnAssign, ast.NamedExpr)) and getattr(n.target, 'id', None) == recv.id:
+                src = ('val', n.value)
+            elif (isinstance(n, (ast.For, ast.AsyncFor, ast.comprehension))
+                  and isinstance(n.target, ast.Name) and n.target.id == recv.id):
+                src = ('iter', n.iter)
+            if src is None:
+                continue
+            kind, v = src
+            cs = None
+            if kind == 'iter':
+                cs = self._seq_classes(rel, v)
+            elif v is not None:
+                v = v.value if isinstance(v, ast.Await) else v
+                if isinstance(v, ast.Call):
+                    q = self.resolve(v, caller_cls, caller_qual)
+                    c = self._type_class(self.funcs[q]['returns']) if q else None
+                    cs = [c] if c else None
+            if cs is None:
+                unknown = True
+            else:
+                found += [c for c in cs if c not in found]
+        return found if found and not unknown else None
+
+    def dispatch_targets(self, call, caller_cls, caller_qual):
+        """`x.attr(...)` where `x` holds one of several stored functions: (quals, n, more), or None."""
+        fn = call.func
+        if not isinstance(fn, ast.Attribute):
+            return None
+        if fn.attr not in self._ctor_attrs():
+            return None
+        classes = self.value_classes(fn.value, caller_cls, caller_qual)
+        if not classes:
+            return None
+        quals, n, more = [], 0, False
+        for c in classes:
+            if self.method_of(c, fn.attr):
+                return None   # a real method: a normal call
+            got = self.stored_callables(c, fn.attr)
+            if not got:
+                return None   # a class in the mix that holds nothing we can see in this attr
+            quals += [q for q in got[0] if q not in quals and q != caller_qual]
+            n += got[1]; more = more or got[2]
+        return (quals, n, more) if quals else None
+
+    def _ctor_attrs(self):
+        """Attribute names any constructor call sets, worked out once: a quick no for most calls."""
+        if '_ctor_names' not in self.__dict__:
+            names = set()
+            for cls, sites in self.ctor_calls.items():
+                if cls in self.bases:
+                    names.update(self._field_order(cls) or [])
+                    for _, call, _ in sites:
+                        names.update(k.arg for k in call.keywords if k.arg)
+            self._ctor_names = names
+        return self._ctor_names
+
+    def deferred_target(self, call, caller_cls, caller_qual):
+        """A function of ours handed over to run later or elsewhere:
+        `background_tasks.add_task(fn, …)`, `asyncio.create_task(fn(…))`, `asyncio.to_thread(fn, …)`,
+        `loop.run_in_executor(None, fn, …)`. Returns (qual, how, the call as fn sees it) or None.
+        `how` is 'later' (runs after the response), 'task' (runs alongside the caller) or 'thread'."""
+        fn = call.func
+        name = fn.attr if isinstance(fn, ast.Attribute) else getattr(fn, 'id', '')
+        if name not in _DEFER or self.resolve(call, caller_cls, caller_qual):
+            return None
+        how, pos = _DEFER[name]
+        if len(call.args) <= pos:
+            return None
+        target, rest, kws = call.args[pos], call.args[pos + 1:], call.keywords
+        if isinstance(target, ast.Call) and unparse(target.func).split('.')[-1] == 'partial' and target.args:
+            target, rest, kws = target.args[0], target.args[1:] + rest, target.keywords + kws
+        if isinstance(target, ast.Call):     # create_task(fn(…)): the coroutine's own call
+            inner = target
+        else:
+            inner = ast.Call(func=target, args=rest, keywords=kws)
+        if not isinstance(inner.func, (ast.Name, ast.Attribute)):
+            return None
+        q = self.resolve(inner, caller_cls, caller_qual)
+        if not q or q == caller_qual:
+            return None
+        return q, how, inner
+
+
+# wrappers that run a function of ours later, as a task, or in another thread: name -> (how, which
+# argument is the function). create_task / ensure_future take the coroutine call itself. Only
+# add_task is surely 'later' (after the response): a task is often awaited again (gather, TaskGroup),
+# so its errors may still reach the caller.
+_DEFER = {'add_task': ('later', 0), 'create_task': ('task', 0), 'ensure_future': ('task', 0),
+          'start_soon': ('task', 0), 'to_thread': ('thread', 0), 'run_in_threadpool': ('thread', 0),
+          'run_sync': ('thread', 0), 'run_in_executor': ('thread', 1)}
 
 _BUILTIN_TYPES = {'dict', 'Dict', 'list', 'List', 'set', 'Set', 'tuple', 'Tuple', 'str', 'int',
                   'float', 'bool', 'bytes', 'Optional', 'Any', 'Mapping', 'Sequence', 'Iterable',
@@ -1218,6 +1457,11 @@ def steps_for(info, idx):
     def span(a, b):
         return [cl(a), cl(b)]
 
+    def arg_text(call):
+        return one_line(', '.join(unparse(a) for a in call.args)
+                        + (', ' if call.args and call.keywords else '')
+                        + ', '.join(f'{k.arg}={unparse(k.value)}' for k in call.keywords), 60)
+
     def kw_line(after, before, word):
         """The `else:` / `finally:` line between two statements (the AST has no node for it)."""
         for k in range(after + 1, before):
@@ -1226,8 +1470,15 @@ def steps_for(info, idx):
         return None
 
     def emit(var, expr_nodes, disp):
-        calls = [c for en in expr_nodes for c in ast.walk(en)
-                 if isinstance(c, ast.Call) and idx.resolve(c, caller_cls, caller_qual)]
+        found = [c for en in expr_nodes for c in ast.walk(en) if isinstance(c, ast.Call)]
+        # a function handed to add_task / create_task / to_thread: an edge to it, marked as such
+        deferred = [d for d in (idx.deferred_target(c, caller_cls, caller_qual) for c in found) if d]
+        handed = {id(d[2]) for d in deferred}
+        # `family.execute_tool(…)` where family holds one of several stored functions
+        dispatch = [(c, d) for c, d in ((c, idx.dispatch_targets(c, caller_cls, caller_qual))
+                                        for c in found if id(c) not in handed) if d]
+        handed |= {id(c) for c, _ in dispatch}
+        calls = [c for c in found if id(c) not in handed and idx.resolve(c, caller_cls, caller_qual)]
         # indirect invocation: a function passed BY NAME as an argument, e.g.
         # `asyncio.to_thread(_build_feedback_workbook, records)` — a real call the resolver would miss
         refs = []
@@ -1240,9 +1491,9 @@ def steps_for(info, idx):
                             q = idx.resolve(ast.Call(func=a, args=[], keywords=[]), caller_cls, caller_qual)
                             if q and q != caller_qual:
                                 refs.append(q)
-        direct_quals = {idx.resolve(c, caller_cls, caller_qual) for c in calls}
+        direct_quals = {idx.resolve(c, caller_cls, caller_qual) for c in calls} | {d[0] for d in deferred}
         refs = [q for q in dict.fromkeys(refs) if q not in direct_quals]
-        if not calls and not refs:
+        if not calls and not refs and not deferred and not dispatch:
             return
         try:
             seg = ast.get_source_segment(src, disp)
@@ -1255,12 +1506,33 @@ def steps_for(info, idx):
             qual = idx.resolve(call, caller_cls, caller_qual)
             out.append({
                 'var': var, 'expr': expr if first else '', 'target': nid_for(qual),
-                'arg': one_line(', '.join(unparse(a) for a in call.args)
-                                + (', ' if call.args and call.keywords else '')
-                                + ', '.join(f'{k.arg}={unparse(k.value)}' for k in call.keywords), 60),
+                'arg': arg_text(call),
                 'ret': one_line(idx.funcs[qual]['returns'], 46), 'uses': uses, '_qual': qual,
                 'bind': bindings_for(call, idx.funcs[qual]),
                 '_catch': [h for blk in catching for h in blk],
+                'ln': at[0], 'ctx': [list(c) for c in ctx],
+            })
+            first = False
+        for call, (quals, n, more) in dispatch:
+            for qual in quals:
+                out.append({
+                    'var': var, 'expr': expr if first else '', 'target': nid_for(qual),
+                    'arg': arg_text(call), 'ret': one_line(idx.funcs[qual]['returns'], 46), 'uses': uses,
+                    '_qual': qual, 'bind': bindings_for(call, idx.funcs[qual]), 'disp': [n, more],
+                    '_catch': [h for blk in catching for h in blk],
+                    'ln': at[0], 'ctx': [list(c) for c in ctx],
+                })
+                first = False
+        for qual, how, call in deferred:
+            later = how == 'later'
+            out.append({
+                'var': var, 'expr': expr if first else '', 'target': nid_for(qual), 'arg': arg_text(call),
+                # `task = create_task(fn())` holds a task, not what fn returns
+                'ret': one_line(idx.funcs[qual]['returns'], 46) if how == 'thread' else '', 'uses': uses,
+                '_qual': qual,
+                'bind': bindings_for(call, idx.funcs[qual]), 'defer': how,
+                # what goes wrong in a task the caller doesn't wait for never reaches the caller
+                '_catch': [] if later else [h for blk in catching for h in blk],
                 'ln': at[0], 'ctx': [list(c) for c in ctx],
             })
             first = False
@@ -1586,7 +1858,7 @@ def escapes(qual, idx, _stack=None):
             out.append((r['t'], r['status'], qual, r['text']))
     for st in steps:
         cq = st.get('_qual')
-        if not cq or cq not in idx.funcs:
+        if not cq or cq not in idx.funcs or st.get('defer') == 'later':
             continue
         for e in escapes(cq, idx, stack):
             if not caught_by(e[0], st.get('_catch', []), idx):
@@ -1804,7 +2076,7 @@ def build_endpoint(entry_qual, idx, meta, depth, tag, changed_q=frozenset(), cha
             s['target'] = f"{tag}__{s['target']}"
             # errors the callee lets out: stopped by an `except` around this call, or passing through
             esc, caught = [], []
-            for t, st, origin, text in escapes(s0['_qual'], idx):
+            for t, st, origin, text in ([] if s0.get('defer') == 'later' else escapes(s0['_qual'], idx)):
                 h = caught_by(t, s0.get('_catch', []), idx)
                 if h:
                     caught.append([t, h[1] or ''])
