@@ -27,6 +27,7 @@ PALETTE = ['#3b82f6','#0ea5a4','#d97706','#db2777','#16a34a','#7c3aed','#ea580c'
 INPUT_PALETTE = ['#e8590c','#1098ad','#9c36b5','#2f9e44','#c2255c','#1971c2']
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from flowsegul_effects import timeline as effect_timeline  # noqa: E402
+import flowsegul_hints  # noqa: E402
 SKIP_PARAMS = {'self', 'cls', 'db', 'body', 'request', 'session'}
 
 
@@ -52,6 +53,9 @@ def parse_py(src):
         except SyntaxError:
             pass
         raise
+
+
+flowsegul_hints.parse = parse_py
 
 def _excluded(rel_dir):
     """Skip hidden folders, virtualenvs, tests and migrations. Only folders *inside* the scanned
@@ -1845,6 +1849,10 @@ def build_endpoint(entry_qual, idx, meta, depth, tag, changed_q=frozenset(), cha
             rs.append(x)
         if rs:
             n['raises'] = rs
+        if info['file'] in idx.file_src:
+            hs = flowsegul_hints.hints_for(info, idx, code_lines_of(info, idx.file_src[info['file']]))
+            if hs:
+                n['hints'] = hs
         ub = (used_by or {}).get(q, [])
         if len(ub) > 1:
             n['usedBy'] = ub
