@@ -269,6 +269,12 @@ body.review .revbar{display:block}
    come after it: red squiggle on its own line in the code, and what can follow it */
 pre.code .fxsq{text-decoration:underline wavy var(--del);text-decoration-thickness:1px;text-underline-offset:3px;text-decoration-skip-ink:none}
 pre.code .fxtag{font:600 10px/1 var(--mono);color:var(--del);margin-left:8px;white-space:nowrap}
+/* review hints read from the code (query per iteration, keyword the model drops, a field probably
+   forgotten): a squiggle on the line and a short tag; an unsure one is dotted and grey */
+pre.code .hsq{text-decoration:underline wavy var(--del);text-decoration-thickness:1px;text-underline-offset:3px;text-decoration-skip-ink:none}
+pre.code .hsq.unsure{text-decoration-style:dotted;text-decoration-color:var(--faint);text-decoration-thickness:1.5px}
+pre.code .htag{display:inline-block;text-indent:0;cursor:default;font:600 10px/1 var(--mono);color:var(--del);margin-left:8px;white-space:nowrap}
+pre.code .htag.unsure{color:var(--muted);font-weight:500;font-style:italic}
 
 .node{position:absolute;width:320px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);z-index:2;transition:box-shadow .18s,border-color .18s}
 .node:hover{box-shadow:var(--shadow-lg)}
@@ -1145,6 +1151,7 @@ function foldCode(pre,n,nv,nameById,src){
  const fx=FXL[n.id]||[];
  const raw=String(src||'').split('\n');
  fx.forEach(f=>{for(let i=f.ln[0];i<=f.ln[1];i++)keep.add(i);blockHeads(raw,f.ln[0]).forEach(i=>keep.add(i));});
+ (n.hints||[]).forEach(h=>{keep.add(h[0]);blockHeads(raw,h[0]).forEach(i=>keep.add(i));});
  let cur=null,curIt=null,gap=false;
  [...pre.children].forEach(dl=>{
    if(!dl.classList.contains('dl'))return;
@@ -1161,6 +1168,15 @@ function foldCode(pre,n,nv,nameById,src){
    const errs=f.risk.filter(r=>r!=='commit');
    dls.forEach(d=>{d.classList.add('fxsq');d.dataset.tip=f.risk.join(' · ');if(errs.length)d.dataset.err=errs.join(' ');});
    dls[dls.length-1].insertAdjacentHTML('beforeend','<span class="fxtag">before '+esc(f.risk.includes('commit')?'commit':errs[0])+'</span>');});
+ // review hints: one squiggle per line, every hint on it in the hover; unsure ones only if nothing sure is there
+ const hl=new Map();(n.hints||[]).forEach(h=>{if(!hl.has(h[0]))hl.set(h[0],[]);hl.get(h[0]).push(h);});
+ hl.forEach((hs,ln)=>{const d=pre.querySelector('.dl[data-ln="'+ln+'"]');if(!d)return;
+   const sure=hs.some(h=>h[4]);hs=sure?hs.filter(h=>h[4]).concat(hs.filter(h=>!h[4])):hs;
+   // the squiggle goes under the code itself, not the indent before it
+   const w=el('span','hsq'+(sure?'':' unsure'));w.append(...d.childNodes);d.appendChild(w);
+   const t=w.firstChild;if(t&&t.nodeType===3){const m=t.data.match(/^\s*/)[0];if(m){t.data=t.data.slice(m.length);w.before(m);}}
+   const tip=h=>h[3].replace(/; /g,'\n');w.dataset.tip=hs.map(tip).join('\n\n');
+   d.insertAdjacentHTML('beforeend',hs.map(h=>'<span class="htag'+(h[4]?'':' unsure')+'" data-tip="'+esc(tip(h))+'">'+esc(h[2])+'</span>').join(''));});
  // squiggles go on the call's own name (or the whole raise) once its lines are in place
  pre.querySelectorAll('.step').forEach(st=>{const it=st._it;
    if(it.r){if(it.r.esc)st.querySelectorAll('.dl').forEach(d=>{d.classList.add('sq');d.dataset.err=it.r.t;});return;}
