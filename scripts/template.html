@@ -347,6 +347,15 @@ pre.code.diff .dfile{color:var(--muted)}
 .node.viewed .chgbadge{background:var(--faint)}
 .node.viewed .ntitle{color:var(--muted)}
 .chgdot.allviewed{background:none;box-shadow:inset 0 0 0 1.5px var(--faint)}
+.tb.vwall.on{color:var(--ok)}
+.tb.vwall .vwi{width:12px;height:12px;border-radius:3px;border:1.5px solid currentColor;display:grid;place-items:center;font:700 8px/1 var(--sans)}
+.tb.vwall.on .vwi{background:var(--ok);border-color:var(--ok);color:#fff}
+/* a module-level constant in code: hover (or focus) shows where it is set and its value */
+.cst{text-decoration:underline dotted;text-decoration-color:color-mix(in srgb,currentColor 55%,transparent);text-underline-offset:3px;cursor:help;border-radius:3px}
+.cst:hover,.cst:focus{background:var(--chip);outline:none}
+#tip.code{font:500 11.5px/1.45 var(--mono);max-width:min(720px,92vw);max-height:60vh;overflow:auto}
+#tip.code b{display:block;font:600 11px/1.3 var(--sans);opacity:.7;margin-bottom:6px}
+#tip.code .kw{color:#c792ea}#tip.code .str{color:#c3e88d}#tip.code .num{color:#f78c6c}#tip.code .com{color:#8a93a8;font-style:italic}
 .seg{display:inline-flex;padding:2px;gap:2px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;align-self:flex-start;margin-top:3px}
 .segb{font:600 11px/1 var(--sans);border:0;background:none;color:var(--muted);border-radius:6px;padding:5px 10px;cursor:pointer}
 .segb:hover{color:var(--ink)}
@@ -815,6 +824,7 @@ body.noside .sgrip{display:none}
  <div class="tools">
   <button class="tb" id="codeAll" data-tip="Show / hide all code  (C)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 4.5 2 8l3.5 3.5M10.5 4.5 14 8l-3.5 3.5"/></svg><span class="lbl">Code</span></button>
   <button class="tb chgon" id="chgtoggle" data-tip="Step through changed functions  (N)" hidden><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2.5"/><path d="M8 1.5v4M8 10.5v4"/></svg><span class="lbl">Changes</span><span class="cnt" id="chgcount"></span></button>
+  <button class="tb vwall" id="vwall" data-tip="Mark every changed function in this endpoint viewed  (⇧V)" hidden><span class="vwi">✓</span><span class="lbl" id="vwlabel">Mark all viewed</span></button>
   <button class="tb" id="revtoggle" data-tip="Check off flows as you review them  (R)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="m5.5 8.2 1.7 1.7 3.3-3.6"/></svg><span class="lbl" id="revlabel">Review</span></button>
   <span class="tsep"></span>
   <span class="thwrap"><button class="tb icon" id="theme" data-tip="Colours  (T switches light / dark)" aria-haspopup="dialog"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor" stroke="none"/></svg></button><div class="thpop" id="thpop" hidden role="dialog" aria-label="Colours"><div class="seg" id="thmode"><button class="segb" data-t="light">Light</button><button class="segb" data-t="dark">Dark</button></div><div class="thsw" id="thsw"><button data-p="mist"><i style="background:#e4e4e2"><b style="background:#d7f542"></b></i>Mist</button><button data-p="sand"><i style="background:#ebe6dd"><b style="background:#5ed4c4"></b></i>Sand</button><button data-p="sage"><i style="background:#e3e9e3"><b style="background:#7aa7ff"></b></i>Sage</button><button data-p="lilac"><i style="background:#e9e6f1"><b style="background:#a78bfa"></b></i>Lilac</button></div></div></span>
@@ -871,6 +881,7 @@ body.noside .sgrip{display:none}
   <div class="kr"><span>Show / hide all code</span><span><kbd>C</kbd></span></div>
   <div class="kr"><span>Next changed function</span><span><kbd>N</kbd><kbd>⇧N</kbd></span></div>
   <div class="kr"><span>Mark changed function viewed</span><span><kbd>V</kbd></span></div>
+  <div class="kr"><span>Mark all changed in this endpoint viewed</span><span><kbd>⇧V</kbd></span></div>
   <div class="kr"><span>Next / previous step of an action</span><span><kbd>N</kbd><kbd>⇧N</kbd></span></div>
   <div class="kr"><span>Back to where you jumped from</span><span><kbd>Alt</kbd><kbd>←</kbd></span></div>
   <div class="kr"><span>Review mode</span><span><kbd>R</kbd></span></div>
@@ -977,6 +988,19 @@ function codeLines(src,vars,calls,locals,clsOf,hlf,noLn){
  out.push(cur);
  return out.map((l,i)=>lineBlock(l||' ',clsOf?clsOf(i):'',raw[i]||'',0,noLn?null:i)).join('');
 }
+// module-level constants the function reads (`ONEDRIVE_TOOL_NAMES`, `config.MAX_RETRIES`): wrap each use so
+// hovering it shows the line that sets it. Only plain code text is touched, never strings or comments.
+function markConsts(pre,consts){
+ const keys=Object.keys(consts||{});if(!keys.length)return;
+ const re=new RegExp('(?<![\\w.])('+keys.sort((a,b)=>b.length-a.length).map(k=>k.replace(/[.]/g,'\\.')).join('|')+')(?!\\w)','g');
+ const walk=document.createTreeWalker(pre,NodeFilter.SHOW_TEXT,{acceptNode:t=>t.parentElement.closest('.str,.com,.dfile,.dhunk,.cst')?NodeFilter.FILTER_REJECT:NodeFilter.FILTER_ACCEPT});
+ const hits=[];while(walk.nextNode())if(re.test(walk.currentNode.data))hits.push(walk.currentNode);
+ hits.forEach(t=>{const f=document.createDocumentFragment();let last=0;t.data.replace(re,(m,k,i)=>{
+   if(i>last)f.appendChild(document.createTextNode(t.data.slice(last,i)));
+   const d=consts[k],sp=el('span','cst',esc(m));sp.tabIndex=0;sp.dataset.cst=k;
+   sp.dataset.tip=d.file+':'+d.line+'\n'+d.src;f.appendChild(sp);last=i+m.length;return m;});
+   if(last<t.data.length)f.appendChild(document.createTextNode(t.data.slice(last)));t.replaceWith(f);});
+}
 function lineBlock(inner,cls,rawLine,extra,ln){const ind=rawLine.match(/^\s*/)[0].replace(/\t/g,'    ').length+(extra||0);return '<span class="dl'+(cls?' '+cls:'')+'"'+(ln!=null?' data-ln="'+ln+'"':'')+' style="--ind:'+ind+'ch">'+inner+'</span>';}
 
 const stage=$('#stage'), world=$('#world'), svg=$('#edges');
@@ -997,10 +1021,19 @@ const VWKEY='flowsegul_viewed';
 const viewed=(()=>{try{return new Set(JSON.parse(localStorage.getItem(VWKEY)||'[]'));}catch(e){return new Set();}})();
 const vwKey=n=>(n.fnKey||n.title)+'@'+(n.vsig||'');
 const isViewed=n=>!!(n&&n.changed&&viewed.has(vwKey(n)));
-function setViewed(n,on){on?viewed.add(vwKey(n)):viewed.delete(vwKey(n));try{localStorage.setItem(VWKEY,JSON.stringify([...viewed]));}catch(e){}
- const card=nodes[n.id]&&nodes[n.id].el;
- if(card){card.classList.toggle('viewed',on);card.classList.toggle('shut',on);relayout();}
- updateViewedCounts();}
+function setViewed(n,on){setViewedMany([n],on);}
+function setViewedMany(ns,on){
+ ns.forEach(n=>{on?viewed.add(vwKey(n)):viewed.delete(vwKey(n));
+   const card=nodes[n.id]&&nodes[n.id].el;if(card){card.classList.toggle('viewed',on);card.classList.toggle('shut',on);}});
+ try{localStorage.setItem(VWKEY,JSON.stringify([...viewed]));}catch(e){}
+ relayout();updateViewedCounts();}
+// "Mark all viewed" for the endpoint on screen: every changed function in it, or clears them once all are
+const epChanged=()=>((curEp&&curEp.nodes)||[]).filter(n=>n.changed&&nodes[n.id]);
+function markAllViewed(){const ch=epChanged();if(!ch.length)return;setViewedMany(ch,!ch.every(isViewed));}
+function updateVwAll(){const b=$('#vwall');if(!b)return;const ch=epChanged(),all=ch.length&&ch.every(isViewed);
+ b.hidden=!ch.length;b.classList.toggle('on',!!all);
+ $('#vwlabel').textContent=all?'All viewed':'Mark all viewed';
+ b.dataset.tip=all?'Unmark every changed function in this endpoint  (⇧V)':'Mark every changed function in this endpoint viewed  (⇧V)';}
 
 // "Class.method" → dim class, bold method, and let long names break after the dot rather than mid-word
 function titleHtml(t){const i=(t||'').lastIndexOf('.');return i>0?'<span class="cls">'+esc(t.slice(0,i+1))+'</span><wbr>'+esc(t.slice(i+1)):esc(t||'');}
@@ -1072,6 +1105,7 @@ function build(ep){
        else if(n.deleted)pre.innerHTML='(deleted — no current version)';
        else pre.innerHTML=hlSide(c.code,nodeVars,flags.newAdded,'dadd',callMarks,lset);}
        pre.classList.toggle('full',full||mode!=='Plain');
+       markConsts(pre,c.consts);
        foldCode(pre,n,nodeVars,nameById,c.code);
      };
      if(n.changed&&(n.diff||n.base!=null)){
@@ -1107,7 +1141,7 @@ function build(ep){
 
  layout();
  closeDrawer();
- $('#epinfo').innerHTML='<span class="m '+esc(ep.method.toUpperCase())+'">'+esc(ep.method)+'</span><span class="path" title="'+esc(ep.path)+'">'+esc(ep.path)+'</span><span class="sum" title="'+esc(ep.summary||'')+'">'+esc(ep.summary||'')+'</span>'+modelChips(ep)+statusChips(ep)+callerChips(ep);pinSt=null;okFocus(false);setErr(null);
+ $('#epinfo').innerHTML='<span class="m '+esc(ep.method.toUpperCase())+'">'+esc(ep.method)+'</span><span class="path" title="'+esc(ep.path)+'">'+esc(ep.path)+'</span><span class="sum" title="'+esc(ep.summary||'')+'">'+esc(ep.summary||'')+'</span>'+modelChips(ep)+statusChips(ep)+callerChips(ep);pinSt=null;okFocus(false);setErr(null);updateVwAll();
  renderLegend(varColor);
  fit(false);
  setupChgNav();
@@ -1525,6 +1559,7 @@ function gotoChg(delta){
 }
 $('#chgnext').onclick=()=>gotoChg(1);
 $('#chgprev').onclick=()=>gotoChg(-1);
+$('#vwall').onclick=()=>markAllViewed();
 $('#chgtoggle').onclick=()=>{chgNavOn=!chgNavOn;$('#chgtoggle').classList.toggle('on',chgNavOn);setupChgNav();};
 
 // review mode: manually check flows off as reviewed (persisted; never auto-marked on visit)
@@ -2069,7 +2104,7 @@ function openCaller(row){
 function rUnitView(row){
  const R=RR[row],U=R&&RU[R.u];if(!U)return;
  side.querySelectorAll('.ep').forEach(x=>x.classList.remove('on'));
- if(!RMODE){RMODE=true;svg.innerHTML='';$('#chgnav').hidden=true;closeDrawer();}
+ if(!RMODE){RMODE=true;svg.innerHTML='';$('#chgnav').hidden=true;$('#vwall').hidden=true;closeDrawer();}
  curEp={id:'unit:'+row,nodes:[],react:true};
  Object.assign(rv,{base:null,act:null,step:1,hover:null,pin:null,sstep:1,extra:new Set([U.id]),shownKey:'',unitRow:row});rhist=[];
  rBuild(true);fit(false);
@@ -2108,7 +2143,7 @@ function rLegend(){
 function rLeave(){if(!RMODE)return;RMODE=false;world.classList.remove('rdim');$('#stepbar').hidden=true;rv.pin=null;rv.hover=null;}
 function selectAction(A){
  RMODE=true;curEp={id:A.id,nodes:[],react:true};
- svg.innerHTML='';$('#chgnav').hidden=true;closeDrawer();
+ svg.innerHTML='';$('#chgnav').hidden=true;$('#vwall').hidden=true;closeDrawer();
  Object.assign(rv,{base:A,act:A,step:1,hover:null,pin:null,sstep:1,extra:new Set(),shownKey:''});rhist=[];
  rBuild(true);fit(false);
  const R=RR[A.row],U=R&&RU[R.u];
@@ -2242,6 +2277,7 @@ function updateViewedCounts(){
  const nv=[...all.values()].filter(isViewed).length;
  $('#chgcount').textContent=nv?nv+'/'+all.size+' viewed':all.size;
  if(chgNavOn&&chgList.length)updateChgLabel();
+ updateVwAll();
 }
 if(anyChg){$('#chgtoggle').hidden=false;updateViewedCounts();}
 
@@ -2338,6 +2374,8 @@ window.addEventListener('pageshow',()=>{$('#loading').hidden=true;});
 {
  const tip=$('#tip');let owner=null,hideT=0;
  const show=t=>{clearTimeout(hideT);owner=t;tip.textContent=t.dataset.tip;t.setAttribute('aria-label',t.dataset.tip);
+   const isC=t.classList.contains('cst');tip.classList.toggle('code',isC);
+   if(isC){const i=t.dataset.tip.indexOf('\n');tip.innerHTML='<b>'+esc(t.dataset.tip.slice(0,i))+'</b>'+hl(t.dataset.tip.slice(i+1));}
    // "N routes": each route in this map is a link that opens it
    if(t.classList.contains('ub')&&typeof startAsk!=='function'){tip.innerHTML=t.dataset.tip.split('\n').map(l=>{const E=graph.endpoints.find(ep=>(ep.method.toUpperCase()+' '+ep.path)===l);
      return E?'<a class="tiprt" data-ep="'+esc(E.id)+'">'+esc(l)+'</a>':'<span class="tiprt off">'+esc(l)+'</span>';}).join('');}
@@ -2777,6 +2815,7 @@ window.addEventListener('keydown',e=>{
  else if(k==='k'||k==='ArrowUp'&&!e.target.closest('pre')){e.preventDefault();stepEp(-1);}
  else if(k==='r'||k==='R'){toggleReview();}
  else if(k==='x'||k==='X'){const c=epEls.find(x=>x.ep===curEp);if(c){if(!document.body.classList.contains('review'))toggleReview();markReviewed(c.ep,c.d);}}
+ else if(k==='V'&&e.shiftKey){markAllViewed();}
  else if(k==='v'||k==='V'){const t=vwTarget();if(t){const on=!isViewed(t);setViewed(t,on);if(on&&chgNavOn)gotoChg(1);}}
  else if(k==='m'||k==='M'){toggleMap();}
  else if(k==='g'||k==='G'){e.preventDefault();openRange();}

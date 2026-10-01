@@ -292,6 +292,7 @@ class Index:
         self.module_types = {} # rel -> {module-level name: type text}, e.g. `order_service = OrderService()`
         self._pending = []     # (qual, method, path, rel, router var) until every file's routers are known
         self.str_consts = {}   # rel -> {NAME: "text"} module-level string constants
+        self.module_lines = {}   # rel -> {NAME: (first line, last line)} of each module-level `NAME = …`
         self.module_values = {}  # rel -> {NAME: value node}, e.g. `CurrentUser = Annotated[User, Depends(…)]`
         self.skipped = []      # (rel, reason) for files that could not be parsed
         self.attr_strs = {}    # attr -> {"text", …} string class attributes, e.g. Settings.API_V1_STR
@@ -358,6 +359,10 @@ class Index:
                         strs[t.id] = n.value.value
                     else:   # a class attribute such as `API_V1_STR: str = "/api/v1"`
                         self.attr_strs.setdefault(t.id, set()).add(n.value.value)
+        self.module_lines[rel] = {t.id: (n.lineno, getattr(n, 'end_lineno', None) or n.lineno)
+                                  for n in tree.body if isinstance(n, (ast.Assign, ast.AnnAssign)) and n.value
+                                  for t in (n.targets if isinstance(n, ast.Assign) else [n.target])
+                                  if isinstance(t, ast.Name)}
         self.module_values[rel] = {t.id: n.value for n in tree.body if isinstance(n, ast.Assign)
                                    for t in n.targets if isinstance(t, ast.Name)}
         self.module_types[rel] = {t.id: _ctor_type(n.value) for n in tree.body if isinstance(n, ast.Assign)
@@ -843,6 +848,61 @@ def nid_for(qual):
 def models_in(annotation, idx):
     """Class names in an annotation string that are indexed models, e.g. 'list[UsersAnalytics]'."""
     return [t for t in re.findall(r'[A-Za-z_][A-Za-z0-9_]*', annotation or '') if t in idx.models]
+
+
+CONST_NAME = re.compile(r'^_*[A-Z][A-Z0-9_]*$')
+CONST_MAX_LINES = 40
+
+
+def const_defs(info, idx):
+    """{NAME: {file, line, src}} for the module-level constants a function reads (`ONEDRIVE_TOOL_NAMES`,
+    `config.MAX_RETRIES`), found in its own file or through its imports, so the page can show a
+    constant's value where it is used. Only ALL_CAPS names count; the function's own variables don't."""
+    own, rel, out = set(local_names(info['node'])), info['file'], {}
+
+    def find(frm, name, hops=4):
+        # `NAME = …` in that file, else follow `from x import NAME` (a re-export) a few files further
+        while frm and hops:
+            span = idx.module_lines.get(frm, {}).get(name)
+            if span:
+                return frm, span
+            imp = idx.imports.get(frm, {}).get(name)
+            if not (imp and imp[1]):
+                return None
+            frm, name, hops = idx.module_file(frm, imp[0], imp[2]), imp[1], hops - 1
+        return None
+
+    def module_of(name):
+        # the indexed file a module-valued name stands for: `import app.config as config`,
+        # `from app import config`
+        imp = idx.imports.get(rel, {}).get(name)
+        if not imp:
+            return None
+        if imp[1] is None:
+            return idx.module_file(rel, imp[0], imp[2])
+        return idx.module_file(rel, '.'.join(x for x in (imp[0], imp[1]) if x), imp[2])
+
+    for n in ast.walk(info['node']):
+        hit = None
+        if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load) and n.id not in own \
+                and CONST_NAME.match(n.id) and n.id not in out:
+            key, hit = n.id, find(rel, n.id)
+        elif isinstance(n, ast.Attribute) and isinstance(n.value, ast.Name) and CONST_NAME.match(n.attr) \
+                and n.value.id not in own:
+            key = n.value.id + '.' + n.attr
+            if key in out:
+                continue
+            f = module_of(n.value.id)
+            hit = find(f, n.attr) if f else None
+        if not hit:
+            continue
+        f, (a, b) = hit
+        lines = idx.file_src.get(f, '').split('\n')[a - 1:b]
+        if len(lines) > CONST_MAX_LINES:
+            more = len(lines) - CONST_MAX_LINES
+            lines = lines[:CONST_MAX_LINES] + [f'… {more} more line{"s" if more > 1 else ""}']
+        out[key] = {'file': f, 'line': a, 'src': '\n'.join(lines)}
+    return out
 
 
 def local_names(node):
@@ -2144,6 +2204,9 @@ def process_repo(repo, args):
                 info = idx.funcs[q]
                 code[n['fnKey']] = {'file': info['file'], 'lineno': info['lineno'],
                                     'name': info['name'], 'cls': info['cls'], 'code': info['code']}
+                consts = const_defs(info, idx)
+                if consts:
+                    code[n['fnKey']]['consts'] = consts
     for e in endpoints:   # fingerprint of the code a review of this route covers
         h = hashlib.sha1(tag.encode())
         for n in e['nodes']:
