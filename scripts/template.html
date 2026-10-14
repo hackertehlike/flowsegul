@@ -82,12 +82,11 @@ button{font:inherit;color:inherit}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 kbd{font:600 10.5px/1 var(--mono);padding:3px 5px;border-radius:5px;border:1px solid var(--line2);border-bottom-width:2px;background:var(--panel2);color:var(--ink2);min-width:18px;display:inline-block;text-align:center}
 
-.top{display:flex;align-items:center;gap:14px;height:54px;padding:0 12px 0 14px;border-bottom:1px solid var(--line);background:var(--panel);flex:none;z-index:6;position:relative}
+.top{display:flex;align-items:center;gap:14px;min-height:54px;padding:0 12px 0 14px;border-bottom:1px solid var(--line);background:var(--panel);flex:none;z-index:6;position:relative}
 .brand{display:flex;align-items:center;gap:9px;flex:none;width:224px;min-width:0}
-@media (max-width:1180px){.brand{width:auto}.brand h1 small{display:none}}
+@media (max-width:1180px){.brand{width:auto}.brand h1{display:none}.rangebtn{max-width:220px}}
 @media (max-width:1320px){.tb .lbl{display:none}.tb:not(.icon){padding:0 8px}}
 @media (max-width:1120px){.crumb .sum{display:none}}
-@media (max-width:980px){.mchips{display:none}}
 .logo{width:26px;height:26px;flex:none;border-radius:8px;background:linear-gradient(135deg,var(--accent),#b05bf0);display:grid;place-items:center;box-shadow:0 2px 8px -2px var(--accent)}
 .brand h1{margin:0;font-size:14px;font-weight:650;letter-spacing:-.015em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .brand h1 small{display:block;font-size:10.5px;font-weight:500;color:var(--muted);letter-spacing:0}
@@ -133,10 +132,13 @@ kbd{font:600 10.5px/1 var(--mono);padding:3px 5px;border-radius:5px;border:1px s
 .loading div{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 16px;box-shadow:var(--shadow);font-weight:600}
 .loading i{width:16px;height:16px;border-radius:50%;border:2px solid var(--accent-soft);border-top-color:var(--accent);animation:spin .7s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
-.crumb{flex:1;min-width:0;overflow:hidden;display:flex;align-items:center;gap:10px;padding-left:14px;border-left:1px solid var(--line);height:30px}
-.crumb .path{font:600 13px/1.2 var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;min-width:40px}
+.crumb{flex:1;min-width:0;display:flex;flex-wrap:wrap;align-items:center;gap:5px 10px;padding-left:14px;border-left:1px solid var(--line);min-height:30px}
+/* the title takes the first line; the endpoint's pills (models, responses, callers) flow on the line under it and wrap rather than get cut off */
+.crumb .pills{display:flex;flex-wrap:wrap;align-items:center;gap:5px 8px;flex:1 0 100%;min-width:0}
+.pills .mchips{display:contents}
+.crumb .path{font:600 13px/1.2 var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;min-width:0;max-width:calc(100% - 70px)}
 .crumb .sum{color:var(--muted);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1 1 0;min-width:0}
-.mchips{display:flex;gap:5px;flex:0 1 auto;min-width:0}
+.mchips{display:flex;flex-wrap:wrap;gap:5px;min-width:0}
 .mchip{flex:0 1 auto;min-width:0;max-width:220px;display:inline-flex;align-items:center;gap:5px;font:600 11px/1 var(--mono);background:var(--panel2);color:var(--ink2);border:1px solid var(--line);border-radius:7px;padding:4px 7px;cursor:pointer;transition:border-color .15s,color .15s}
 .mchip:hover{border-color:var(--accent);color:var(--accent)}
 .mchip .mn{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
@@ -240,7 +242,7 @@ body.review .revbar{display:block}
 .step.raise.handled{border-left-color:var(--line2)}
 .ub:hover{border-color:var(--accent);color:var(--accent)}
 .ub{flex:none;font:600 10px/1 var(--mono);color:var(--muted);background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:3px 5px;margin-left:6px;vertical-align:1px;cursor:pointer;white-space:nowrap}
-.stchips{display:flex;gap:4px;flex:none}
+.stchips{display:flex;flex-wrap:wrap;gap:4px}
 .stc{position:relative;font:700 11px/1 var(--mono);border-radius:6px;padding:4px 6px;border:1px solid var(--line);color:var(--ink2);background:var(--panel2);cursor:default}
 .stc.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 40%,var(--line))}
 .stc.bad{color:#fff;background:var(--del);border-color:var(--del)}
@@ -357,6 +359,7 @@ pre.code.diff .dfile{color:var(--muted)}
 .dock{left:14px;bottom:14px;display:flex;align-items:center;gap:2px;padding:3px}
 .dock button{width:30px;height:30px;border-radius:8px;border:0;background:none;color:var(--ink2);cursor:pointer;display:grid;place-items:center;padding:0}
 .dock button:hover{background:var(--panel2)}
+.dock button.on{background:var(--lit-fill);color:var(--lit-on)}
 .dock button svg{width:16px;height:16px}
 .dock .wheelseg{margin:0;padding:2px;border:0;background:var(--panel2)}
 .dock .wheelseg .segb{display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 9px;width:auto}
@@ -471,11 +474,11 @@ a.rc.api:hover{border-color:var(--m-get)}
 a.rc.bad{text-decoration:none;cursor:pointer}
 a.rc.bad:hover{border-color:var(--del)}
 .rc.quiet{color:var(--ink2);border-style:dashed;margin-left:4px;cursor:default}
-.callers{display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap;font:600 11px/1 var(--ui,inherit);color:var(--ink2);margin-left:8px}
+.callers{display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap;font:600 11px/1 var(--ui,inherit);color:var(--ink2)}
 .callers .rc{font-size:11px;padding:4px 7px;text-decoration:none;cursor:pointer;color:var(--def,var(--accent))}
 .callers .rc:hover{border-color:var(--accent)}
 .callers button.rc{font-family:var(--mono)}
-.rc.nocall{font-size:11px;padding:4px 7px;margin-left:8px;border-style:dashed;cursor:default}
+.rc.nocall{font-size:11px;padding:4px 7px;border-style:dashed;cursor:default}
 .rc.rerun{position:absolute;top:-10px;right:10px;z-index:4;color:var(--chg);border-color:color-mix(in srgb,var(--chg) 50%,var(--line));background:var(--panel);box-shadow:inset 0 0 0 20px var(--chg-soft);cursor:help;padding:2px 6px 2px 3px}
 .rc.rerun[hidden]{display:none}
 .rc.rerun.unc{border-style:dashed;opacity:.75}
@@ -532,7 +535,7 @@ button.num{cursor:pointer}
  --line:#26262a; --line2:#34343a; --ink:#f4f4f5; --ink2:#d4d4d8; --muted:#a1a1aa; --faint:#63636b;
  --accent:#d4d4d8; --accent-ink:#f4f4f5; --accent-soft:#ffffff12; --lit:#d7f542; --lit-fill:#d7f542; --lit-on:#18181b; --accent-tk:#d7f54240}
 /* canvas and cards */
-.top{background:var(--bg);border-bottom:0;height:66px;padding:0 16px 0 18px}
+.top{background:var(--bg);border-bottom:0;min-height:66px;padding:8px 16px 8px 18px}
 .crumb{border-left:0}
 .brand h1{font-weight:500;letter-spacing:-.02em}
 .logo{background:#18181b;box-shadow:inset 0 0 0 1px #ffffff1f;border-radius:50%}
@@ -813,7 +816,6 @@ body.noside .sgrip{display:none}
   </div></div>
  <div class="crumb" id="epinfo"></div>
  <div class="tools">
-  <button class="tb" id="codeAll" data-tip="Show / hide all code  (C)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 4.5 2 8l3.5 3.5M10.5 4.5 14 8l-3.5 3.5"/></svg><span class="lbl">Code</span></button>
   <button class="tb chgon" id="chgtoggle" data-tip="Step through changed functions  (N)" hidden><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2.5"/><path d="M8 1.5v4M8 10.5v4"/></svg><span class="lbl">Changes</span><span class="cnt" id="chgcount"></span></button>
   <button class="tb" id="revtoggle" data-tip="Check off flows as you review them  (R)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="m5.5 8.2 1.7 1.7 3.3-3.6"/></svg><span class="lbl" id="revlabel">Review</span></button>
   <span class="tsep"></span>
@@ -843,6 +845,7 @@ body.noside .sgrip{display:none}
     <button class="pct" id="zpct" data-tip="Reset to 100%  (0)">100%</button>
     <button id="zin" data-tip="Zoom in  (+)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3.5 8h9M8 3.5v9"/></svg></button>
     <button id="zfit" data-tip="Fit to screen  (F)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 6V3.5a1 1 0 0 1 1-1H6M10 2.5h2.5a1 1 0 0 1 1 1V6M13.5 10v2.5a1 1 0 0 1-1 1H10M6 13.5H3.5a1 1 0 0 1-1-1V10"/></svg></button>
+    <button id="codeAll" data-tip="Show / hide all code  (C)" aria-label="Show or hide all code"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 4.5 2 8l3.5 3.5M10.5 4.5 14 8l-3.5 3.5"/></svg></button>
     <button id="mapbtn" data-tip="Minimap  (M)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="2" y="3" width="12" height="10" rx="1.5"/><rect x="7.5" y="7.5" width="4.5" height="3.5" rx=".6" fill="currentColor" stroke="none"/></svg></button>
     <button id="sidebtn" data-tip="Toggle sidebar  ([)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M6 3v10"/></svg></button>
    </div>
@@ -1107,7 +1110,7 @@ function build(ep){
 
  layout();
  closeDrawer();
- $('#epinfo').innerHTML='<span class="m '+esc(ep.method.toUpperCase())+'">'+esc(ep.method)+'</span><span class="path" title="'+esc(ep.path)+'">'+esc(ep.path)+'</span><span class="sum" title="'+esc(ep.summary||'')+'">'+esc(ep.summary||'')+'</span>'+modelChips(ep)+statusChips(ep)+callerChips(ep);pinSt=null;okFocus(false);setErr(null);
+ $('#epinfo').innerHTML='<span class="m '+esc(ep.method.toUpperCase())+'">'+esc(ep.method)+'</span><span class="path" title="'+esc(ep.path)+'">'+esc(ep.path)+'</span><span class="sum" title="'+esc(ep.summary||'')+'">'+esc(ep.summary||'')+'</span>'+pillsHtml(modelChips(ep)+statusChips(ep)+callerChips(ep));pinSt=null;okFocus(false);setErr(null);
  renderLegend(varColor);
  fit(false);
  setupChgNav();
@@ -1546,6 +1549,7 @@ $('#help').onclick=(e)=>{e.stopPropagation();toggleHelp();};
 $('#helppop').addEventListener('click',e=>{if(!e.target.closest('.sheet'))toggleHelp(false);});
 
 // ── request/response models: chips in the header → a slide-out field drawer (no graph clutter) ──
+function pillsHtml(h){return h?'<span class="pills">'+h+'</span>':'';}
 function modelChips(ep){
  const chip=(name,kind)=>{const m=(ep.models||{})[name]||{};return '<span class="mchip'+(m.changed?' chg':'')+'" data-model="'+esc(name)+'" title="'+esc(name)+'"><span class="k">'+kind+'</span><span class="mn">'+esc(name)+'</span></span>';};
  const h=(ep.reqModels||[]).map(n=>chip(n,'req')).join('')+(ep.respModels||[]).map(n=>chip(n,'resp')).join('')+(ep.flowModels||[]).map(n=>chip(n,'uses')).join('');
