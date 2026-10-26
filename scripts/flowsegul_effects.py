@@ -140,9 +140,10 @@ class _Walk:
             return (p + ('.' + rest if rest else '')) if p else w
         return None
 
-    def returned_type(self, func_expr, F):
+    def returned_type(self, func_expr, F, dep=None):
         """What an in-repo function (a Depends provider, a factory) is annotated to return."""
-        q = self.idx.resolve(ast.Call(func=func_expr, args=[], keywords=[]), F['cls'], F['qual'])
+        scope = self.G.dep_scope(dep, F['info']) if dep is not None else (F['cls'], F['qual'])
+        q = self.idx.resolve(ast.Call(func=func_expr, args=[], keywords=[]), *scope)
         info = self.idx.funcs.get(q)
         return self.type_path(info['returns'], info['file']) if info and info['returns'] else None
 
@@ -156,7 +157,7 @@ class _Walk:
             return self.type_path(t, F['rel'])
         for pname, dep in self.G.dependencies(F['info'], self.idx):
             if pname == name:
-                return self.returned_type(dep.args[0], F)
+                return self.returned_type(dep.args[0], F, dep)
         imp = self.idx.imports.get(F['rel'], {}).get(name)
         if imp and imp[1]:
             f = self.idx.module_file(F['rel'], imp[0], imp[2])
@@ -480,7 +481,7 @@ class _Walk:
         G, idx = self.G, self.idx
         info = idx.funcs[qual]
         for _p, dep in G.dependencies(info, idx):
-            q = idx.resolve(ast.Call(func=dep.args[0], args=[], keywords=[]), info.get('cls'), qual)
+            q = idx.resolve(ast.Call(func=dep.args[0], args=[], keywords=[]), *G.dep_scope(dep, info))
             if not q or q not in idx.funcs or q in seen or q == qual:
                 continue
             seen.add(q)

@@ -21,7 +21,7 @@ Examples:
   # explicit entry functions:
   flowsegul_gen.py --repo ~/proj/be --files src/services/foo.py --entries do_thing --out cf.html
 """
-import argparse, ast, copy, fnmatch, hashlib, html, io, json, os, re, shutil, subprocess, sys, tarfile, tempfile
+import argparse, ast, builtins, copy, fnmatch, hashlib, html, io, json, os, re, shutil, subprocess, sys, tarfile, tempfile
 
 PALETTE = ['#3b82f6','#0ea5a4','#d97706','#db2777','#16a34a','#7c3aed','#ea580c','#0891b2','#4f46e5','#059669']
 INPUT_PALETTE = ['#e8590c','#1098ad','#9c36b5','#2f9e44','#c2255c','#1971c2']
@@ -264,6 +264,21 @@ def collect_models(names, idx, diffs=None, changed_m=frozenset()):
     return reg
 
 
+def _module_stmts(body):
+    """A module's own statements, including those under a top-level `if` / `try` / `with`
+    (`try: import x … except ImportError: def f(): …`), which bind module names just the same."""
+    for n in body:
+        yield n
+        if isinstance(n, (ast.If, ast.Try, ast.With, ast.AsyncWith)) or type(n).__name__ == 'TryStar':
+            for part in ('body', 'orelse', 'finalbody'):
+                yield from _module_stmts(getattr(n, part, []) or [])
+            for h in getattr(n, 'handlers', []) or []:
+                yield from _module_stmts(h.body)
+
+
+_BUILTIN_NAMES = set(dir(builtins))
+
+
 class Index:
     """All functions/methods across the given files, with resolution helpers.
 
@@ -294,7 +309,6 @@ class Index:
         self.attr_types = {}   # class -> [(rel, {attr: type text})] for `self.attr`
         self.local_types = {}  # qual -> {local name: type text, or '' for a builtin value}
         self.local_refs = {}   # qual -> ids of the Name nodes in its body that read a local value
-        self.star_imports = {} # rel -> [(module, level)] from `from m import *`
         self.written_in = {}   # id(expr) -> rel, for code read from another file (a Depends in an alias)
         self.module_types = {} # rel -> {module-level name: type text}, e.g. `order_service = OrderService()`
         self._pending = []     # (qual, method, path, rel, router var) until every file's routers are known
@@ -303,6 +317,10 @@ class Index:
         self.module_values = {}  # rel -> {NAME: value node}, e.g. `CurrentUser = Annotated[User, Depends(…)]`
         self.skipped = []      # (rel, reason) for files that could not be parsed
         self.attr_strs = {}    # attr -> {"text", …} string class attributes, e.g. Settings.API_V1_STR
+        self.stars = {}        # rel -> [(module, level)] from `from m import *`
+        self.import_cache = {} # (importing folder, module) -> file, see import_file
+        self.scope_cache = {}  # (rel, name) -> scope_lookup result
+        self.module_names = {} # rel -> names the module binds itself that aren't functions (vars, classes)
         for f in files:
             self._index_file(f)
         self._mount_routes()
@@ -375,18 +393,23 @@ class Index:
         self.module_types[rel] = {t.id: _ctor_type(n.value) for n in tree.body if isinstance(n, ast.Assign)
                                   for t in n.targets if isinstance(t, ast.Name) and _ctor_type(n.value)}
         imps = self.imports.setdefault(rel, {})
-        for n in ast.walk(tree):
+        # the module's own imports win; one inside a function only fills a name the module doesn't import
+        top_imports = {id(n) for n in _module_stmts(tree.body) if isinstance(n, (ast.Import, ast.ImportFrom))}
+        for n in sorted((n for n in ast.walk(tree) if isinstance(n, (ast.Import, ast.ImportFrom))),
+                        key=lambda n: id(n) not in top_imports):
+            put = imps.__setitem__ if id(n) in top_imports else imps.setdefault
             if isinstance(n, ast.ImportFrom):
                 for a in n.names:
                     if a.name == '*':
-                        self.star_imports.setdefault(rel, []).append((n.module or '', n.level))
-                    else:
-                        imps[a.asname or a.name] = (n.module or '', a.name, n.level)
-            elif isinstance(n, ast.Import):
+                        self.stars.setdefault(rel, []).append((n.module or '', n.level))
+                        continue
+                    put(a.asname or a.name, (n.module or '', a.name, n.level))
+            else:
                 for a in n.names:
-                    imps[a.asname or a.name.split('.')[0]] = (a.name if a.asname else a.name.split('.')[0],
-                                                              None, 0)
-            elif (isinstance(n, ast.Call) and getattr(n.func, 'attr', '') == 'include_router'
+                    put(a.asname or a.name.split('.')[0], (a.name if a.asname else a.name.split('.')[0],
+                                                           None, 0))
+        for n in ast.walk(tree):
+            if (isinstance(n, ast.Call) and getattr(n.func, 'attr', '') == 'include_router'
                     and n.args):
                 pfx = next((k.value for k in n.keywords if k.arg == 'prefix'), None)
                 self.includes.append((rel, n.func.value, n.args[0], pfx))
@@ -414,10 +437,15 @@ class Index:
                     self.tools.append((qual, t))
 
         self._exception_handlers(tree)
-        for n in tree.body:
+        names = self.module_names.setdefault(rel, set())
+        for n in _module_stmts(tree.body):
+            if isinstance(n, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+                for t in (n.targets if isinstance(n, ast.Assign) else [n.target]):
+                    names.update(x.id for x in ast.walk(t) if isinstance(x, ast.Name))
             if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 add(n, None)
             elif isinstance(n, ast.ClassDef):
+                names.add(n.name)
                 self.bases[n.name] = [unparse(b).split('.')[-1] for b in n.bases]
                 self.models[n.name] = {'name': n.name, 'file': rel, 'lineno': n.lineno,
                                        'code': def_source(src, n),
@@ -609,6 +637,11 @@ class Index:
             if local is None and imp and imp[1]:    # from m import order_service
                 f = self.module_file(caller_rel, imp[0], imp[2])
                 local = self.module_types.get(f, {}).get(imp[1])
+            if (local is None and not imp and recv.id in _BUILTIN_NAMES
+                    and recv.id not in self.module_names.get(caller_rel, ())
+                    and not (caller_qual in self.funcs and recv.id in self._types_in(caller_qual))
+                    and not (caller_qual in self.funcs and recv.id in local_names(self.funcs[caller_qual]['node']))):
+                return ''                           # `str.__str__(self)`, `dict.fromkeys(…)`
             return self._type_class(local)
         if (isinstance(recv, ast.Attribute) and isinstance(recv.value, ast.Name)
                 and recv.value.id == 'self' and caller_cls):
@@ -633,9 +666,8 @@ class Index:
         when that's a builtin (a dict's `.get`) it is not one of ours. For `module.x()`, a candidate
         defined in a file named after the module (`usage_service.x` → usage_service.py) wins. Unknown
         receivers fall back to a name match (`order_repo.get` → OrderRepository.get), then to the
-        only candidate. A bare `x()` goes to a module function in the same file or one it imports
-        (`from m import x`, or `from m import *` when m is indexed); a local of the caller (a
-        parameter, variable, loop target, nested def…) is a value, not a function: None.
+        only candidate. A bare `x()` is looked up the way Python does (see bare_targets); a local
+        of the caller (a parameter, variable, loop target, nested def…) is a value, not a function: None.
         """
         fn = call.func
         caller_rel = caller_qual.split('::', 1)[0] if caller_qual else ''
@@ -688,32 +720,149 @@ class Index:
                     for q in cands):
                 return None   # `.get()`, `.items()`, `.append()` on something we can't place
         elif isinstance(fn, ast.Name):
-            name = fn.id
             # `await write(event_id)` where `write` is a parameter, a variable or a nested def: a
             # value of the caller, not whichever module function happens to share its name
-            if caller_qual in self.funcs:
-                if caller_qual not in self.local_refs:
-                    self.local_refs[caller_qual] = _local_refs(self.funcs[caller_qual]['node'])
-                if id(fn) in self.local_refs[caller_qual]:
-                    return None
-            cands = list(self.by_simple.get(name, []))
-            imp = self.imports.get(caller_rel, {}).get(name)
-            if imp and imp[1]:                    # from m import real_name as name
-                f = self.module_file(caller_rel, imp[0], imp[2])
-                cands = [q for q in self.by_simple.get(imp[1], []) if self.funcs[q]['file'] == f] or \
-                    self.by_simple.get(imp[1], []) or cands
-            else:
-                # a bare name only reaches a def in its own file or one it imports: another
-                # module's function is out of reach without an import
-                cands = [q for q in cands if self.funcs[q]['file'] == caller_rel] or [
-                    q for q in cands if not imp and self.funcs[q]['file'] in {
-                        self.module_file(caller_rel, m, lvl)
-                        for m, lvl in self.star_imports.get(caller_rel, [])}]
+            if self.reads_local(fn, caller_qual):
+                return None
+            cands, sure = self.bare_targets(fn.id, caller_qual)
+            # a match by name alone is drawn only when it's the one function of that name
+            return cands[0] if cands and (sure or len(cands) == 1) else None
         else:
             return None
         if caller_qual and len(cands) > 1:  # don't resolve to yourself if there's an alternative
             cands = [c for c in cands if c != caller_qual] or cands
         return cands[0] if cands else None
+
+    def scope_lookup(self, rel, name, depth=0):
+        """What `name` is at the top of module `rel`: ('def', qual) for the module's own function,
+        ('import', qual) for a repo function it imports (through re-exports and `import *`),
+        ('other', None) for anything that is not a repo function (a variable, a class, a library,
+        a builtin), ('name', real name) when it's imported from a repo file that doesn't show where
+        the name comes from, or None when nothing in the module binds it."""
+        if depth == 0:
+            if (rel, name) not in self.scope_cache:
+                self.scope_cache[(rel, name)] = self._scope_lookup(rel, name, 0)
+            return self.scope_cache[(rel, name)]
+        return self._scope_lookup(rel, name, depth)
+
+    def _scope_lookup(self, rel, name, depth):
+        own = [q for q in self.by_simple.get(name, []) if self.funcs[q]['file'] == rel]
+        if own:
+            return 'def', own[0]
+        if name in self.module_names.get(rel, ()):
+            return 'other', None
+        imp = self.imports.get(rel, {}).get(name)
+        if imp:
+            return self.import_lookup(rel, imp, depth)
+        for mod, level in self.stars.get(rel, []):
+            f = self.import_file(rel, mod, level)
+            r = self.scope_lookup(f, name, depth + 1) if f and depth < 8 else None
+            if r and r[0] in ('def', 'import'):
+                return 'import', r[1]
+        if depth == 0 and name in _BUILTIN_NAMES:
+            return 'other', None
+        return None
+
+    def import_lookup(self, rel, imp, depth=0):
+        """scope_lookup for a name bound by an import (module, imported name, level) in `rel`."""
+        mod, real, level = imp
+        if not real:                              # `import x`: calling a module
+            return 'other', None
+        f = self.import_file(rel, mod, level)
+        if f and depth < 8:
+            r = self.scope_lookup(f, real, depth + 1)
+            if r and r[0] in ('def', 'import'):
+                return 'import', r[1]
+            # the file is ours but doesn't show a function by that name (set at run time, say)
+            return r if r and r[0] == 'name' else ('other', None)
+        # `from .missing import f` or a package of ours whose file didn't parse: ours, but we can't see
+        # which one. `from sqlalchemy import update`: a library
+        return ('name', real) if level or mod.split('.')[0] in self._repo_dirs() else ('other', None)
+
+    def _repo_dirs(self):
+        if '_dirs' not in self.__dict__:
+            self._dirs = {d for f in list(self.file_src) + [r for r, _ in self.skipped]
+                          for d in f.split('/')[:-1]}
+        return self._dirs
+
+    def import_file(self, rel, module, level=0):
+        """module_file, stricter for absolute imports: `from sqlalchemy import update` is the library,
+        not some package's own `kit/sqlalchemy.py`, and with two `polar/base.py` the one nearest the
+        importing file wins."""
+        if level:
+            return self.module_file(rel, module, level)
+        key = (os.path.dirname(rel), module)
+        if key not in self.import_cache:
+            self.import_cache[key] = self._import_file(rel, module)
+        return self.import_cache[key]
+
+    def _import_file(self, rel, module):
+        tail = module.replace('.', '/')
+        found = []
+        for f in self.file_src:
+            for end in ('.py', '/__init__.py'):
+                if ('/' + f).endswith('/' + tail + end):
+                    top = f[:len(f) - len(tail + end)].rstrip('/')
+                    # the module's first part must be a top-level package, not a folder inside one
+                    if (top + '/__init__.py').lstrip('/') not in self.file_src:
+                        found.append(f)
+        near = lambda f: len(os.path.commonprefix([f.split('/'), rel.split('/')]))
+        return max(found, key=near) if found else None
+
+    def bare_targets(self, name, caller_qual):
+        """([qual], sure) for a bare `name(...)` called in `caller_qual`, scoped like Python: the
+        caller's own variables and nested defs, then the module's own def, then its imports. Only when
+        it's imported from a repo file that doesn't show the def, the repo's functions of that name:
+        `sure` is False then, and there may be several. A name nothing binds reaches nothing."""
+        rel = caller_qual.split('::', 1)[0] if caller_qual else ''
+        r = None
+        if caller_qual in self.funcs:
+            local_imp = self._own_imports(caller_qual).get(name)
+            if local_imp:                         # `from x import f` inside the function itself
+                r = self.import_lookup(rel, local_imp)
+            elif name in self._own_names(caller_qual):
+                return [], True                   # a parameter, a local, or a def nested in the caller
+        r = r or self.scope_lookup(rel, name)
+        if r and r[0] in ('def', 'import'):
+            return [r[1]], True
+        if not r or r[0] == 'other':
+            return [], True                       # nothing binds it: Python couldn't reach a def by name either
+        return [q for q in self.by_simple.get(r[1], []) if q != caller_qual], False
+
+    def _own_names(self, qual):
+        key = ('own', qual)
+        if key not in self.local_types:
+            fn = self.funcs[qual]['node']
+            self.local_types[key] = _scope_names(fn.body, fn.args)
+        return self.local_types[key]
+
+    def _own_imports(self, qual):
+        key = ('imports', qual)
+        if key not in self.local_types:
+            out = {}
+            for n in ast.walk(self.funcs[qual]['node']):
+                if isinstance(n, ast.ImportFrom):
+                    out.update({a.asname or a.name: (n.module or '', a.name, n.level)
+                                for a in n.names if a.name != '*'})
+                elif isinstance(n, ast.Import):
+                    out.update({a.asname or a.name.split('.')[0]: (a.name, None, 0) for a in n.names})
+            self.local_types[key] = out
+        return self.local_types[key]
+
+    def reads_local(self, name_node, caller_qual):
+        """Whether this Name reads a local of the caller (or of a function it is nested in)."""
+        if caller_qual not in self.funcs:
+            return False
+        if caller_qual not in self.local_refs:
+            self.local_refs[caller_qual] = _local_refs(self.funcs[caller_qual]['node'])
+        return id(name_node) in self.local_refs[caller_qual]
+
+    def name_guess(self, call, caller_qual):
+        """The candidates of a bare call that only a repo-wide name match can place, else None."""
+        if not isinstance(call.func, ast.Name) or self.reads_local(call.func, caller_qual):
+            return None
+        cands, sure = self.bare_targets(call.func.id, caller_qual)
+        return None if sure or not cands else cands
 
 
 _BUILTIN_TYPES = {'dict', 'Dict', 'list', 'List', 'set', 'Set', 'tuple', 'Tuple', 'str', 'int',
@@ -1396,9 +1545,14 @@ def steps_for(info, idx):
                             q = idx.resolve(ast.Call(func=a, args=[], keywords=[]), caller_cls, caller_qual)
                             if q and q != caller_qual:
                                 refs.append(q)
+        # a bare name no def or import in this module binds, found in several files: each one is
+        # drawn as a maybe, never one picked for it
+        guesses = [(c, g) for en in expr_nodes for c in ast.walk(en) if isinstance(c, ast.Call)
+                   and isinstance(c.func, ast.Name) and c not in calls
+                   for g in [idx.name_guess(c, caller_qual)] if g]
         direct_quals = {idx.resolve(c, caller_cls, caller_qual) for c in calls}
         refs = [q for q in dict.fromkeys(refs) if q not in direct_quals]
-        if not calls and not refs:
+        if not calls and not refs and not guesses:
             return
         try:
             seg = ast.get_source_segment(src, disp)
@@ -1407,8 +1561,9 @@ def steps_for(info, idx):
         expr = one_line(seg or unparse(disp))
         uses = [v for v in assigned if re.search(r'\b' + re.escape(v) + r'\b', expr)]
         first = True
-        for call in calls:
-            qual = idx.resolve(call, caller_cls, caller_qual)
+        for call, qual in [(c, idx.resolve(c, caller_cls, caller_qual)) for c in calls] + \
+                [(c, q) for c, g in guesses for q in g]:
+            guess = idx.name_guess(call, caller_qual)
             out.append({
                 'var': var, 'expr': expr if first else '', 'target': nid_for(qual),
                 'arg': one_line(', '.join(unparse(a) for a in call.args)
@@ -1418,6 +1573,7 @@ def steps_for(info, idx):
                 'bind': bindings_for(call, idx.funcs[qual]),
                 '_catch': [h for blk in catching for h in blk],
                 'ln': at[0], 'ctx': [list(c) for c in ctx],
+                **({'guess': len(guess)} if guess else {}),
             })
             first = False
         for qual in refs:
@@ -1511,7 +1667,7 @@ def steps_for(info, idx):
     # FastAPI dependencies run before the body: `user: CurrentUser`, `db = Depends(get_db)`,
     # `@router.get(…, dependencies=[Depends(auth)])`. Each is a call into our code.
     for pname, dep in dependencies(info, idx):
-        q = idx.resolve(ast.Call(func=dep.args[0], args=[], keywords=[]), caller_cls, caller_qual)
+        q = idx.resolve(ast.Call(func=dep.args[0], args=[], keywords=[]), *dep_scope(dep, info))
         if q and q != caller_qual:
             out.append({'var': pname or '·', 'expr': one_line(unparse(dep), 60), 'target': nid_for(q),
                         'arg': '', 'ret': one_line(idx.funcs[q]['returns'], 46), 'uses': [],
@@ -1525,7 +1681,7 @@ def steps_for(info, idx):
             continue
         for v in _depends_in(arg.annotation, idx, info['file'], kinds=_VALIDATORS, bare=True):
             fn = v.args[0] if unparse(v.func).split('.')[-1] in _VALIDATORS else v.func
-            q = idx.resolve(ast.Call(func=fn, args=[], keywords=[]), caller_cls, caller_qual)
+            q = idx.resolve(ast.Call(func=fn, args=[], keywords=[]), *dep_scope(v, info))
             if q and q != caller_qual and not any(o['_qual'] == q for o in out):
                 out.append({'var': '·', 'expr': one_line(f'{arg.arg}: {unparse(v)}', 60),
                             'target': nid_for(q), 'arg': '', 'ret': '', 'uses': [],
@@ -1572,9 +1728,11 @@ def _depends_in(node, idx, rel, seen=(), kinds=('Depends', 'Security'), bare=Fal
     out = []
     for n in ast.walk(node):
         if isinstance(n, ast.Call) and unparse(n.func).split('.')[-1] in kinds and n.args:
+            n.flow_rel = rel      # names in it are looked up in the file the alias is written in
             out.append(n)
             idx.written_in[id(n.args[0])] = rel   # `Depends(get_user)` names deps.py's get_user
         elif bare and isinstance(n, ast.Call) and isinstance(n.func, ast.Name):
+            n.flow_rel = rel
             out.append(n)
             idx.written_in[id(n.func)] = rel
         elif isinstance(n, ast.Name) and n.id not in seen:
@@ -1587,6 +1745,13 @@ def _depends_in(node, idx, rel, seen=(), kinds=('Depends', 'Security'), bare=Fal
             if val is not None:
                 out += _depends_in(val, idx, src_rel, seen + (n.id,), kinds, bare)
     return out
+
+
+def dep_scope(dep, info):
+    """(class, qual) to resolve the names of a Depends / validator call with: the function's own, or
+    the module of the alias it came through (`CurrentUser` from deps.py names deps.py's functions)."""
+    rel = getattr(dep, 'flow_rel', info['file'])
+    return (info.get('cls'), info['qual']) if rel == info['file'] else (None, f'{rel}::')
 
 
 def dependencies(info, idx):
@@ -1646,7 +1811,7 @@ def query_params(info, idx, path, depth=0):
     deps = dependencies(info, idx)
     dep_names = {n for n, _ in deps if n}
     for _, d in deps:
-        q = idx.resolve(ast.Call(func=d.args[0], args=[], keywords=[]), info['cls'], info['qual'])
+        q = idx.resolve(ast.Call(func=d.args[0], args=[], keywords=[]), *dep_scope(d, info))
         if q and depth < 3 and q in idx.funcs:
             sub, o = query_params(idx.funcs[q], idx, path, depth + 1)
             for k, req in sub.items():
@@ -1744,7 +1909,7 @@ def escapes(qual, idx, _stack=None):
             out.append((r['t'], r['status'], qual, r['text']))
     for st in steps:
         cq = st.get('_qual')
-        if not cq or cq not in idx.funcs:
+        if not cq or cq not in idx.funcs or st.get('guess', 0) > 1:
             continue
         for e in escapes(cq, idx, stack):
             if not caught_by(e[0], st.get('_catch', []), idx):
@@ -1769,7 +1934,10 @@ def callers_of(idx, entry_qual, limit=8):
         direct = next((s for s in steps_for(info, idx) if s['_qual'] == entry_qual), None)
         ref = False
         if not direct and not is_method:   # bare Name passed around (to_thread, callbacks, …)
-            ref = any(isinstance(nd, ast.Name) and nd.id == name for nd in ast.walk(info['node']))
+            # only where that name means this function in the caller's module, not a namesake
+            ref = any(isinstance(nd, ast.Name) and nd.id == name
+                      and idx.resolve(ast.Call(func=nd, args=[], keywords=[]), None, q) == entry_qual
+                      for nd in ast.walk(info['node']))
         if not (direct or ref):
             continue
         out.append({'qual': q, 'info': info, 'step': direct})
@@ -2026,6 +2194,8 @@ def build_endpoint(entry_qual, idx, meta, depth, tag, changed_q=frozenset(), cha
             step = {'var': src['var'] if src else '', 'expr': (src['expr'] if src else '') or '',
                     'target': nid(entry_qual), 'arg': src['arg'] if src else '',
                     'ret': src['ret'] if src else '', 'uses': []}
+            if src and src.get('guess'):
+                step['guess'] = src['guess']
             nodes.append({
                 'id': gid, 'fnKey': fk(cq), 'col': -1, 'entry': False, 'ghost': True,
                 'layer': idx.layer(cq), 'changed': False,
