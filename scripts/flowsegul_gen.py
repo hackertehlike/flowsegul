@@ -289,6 +289,9 @@ class Index:
         self.includes = []     # (rel, parent expr, child expr, prefix) from `x.include_router(y, prefix=…)`
         self.attr_types = {}   # class -> [(rel, {attr: type text})] for `self.attr`
         self.local_types = {}  # qual -> {local name: type text, or '' for a builtin value}
+        self.local_refs = {}   # qual -> ids of the Name nodes in its body that read a local value
+        self.star_imports = {} # rel -> [(module, level)] from `from m import *`
+        self.written_in = {}   # id(expr) -> rel, for code read from another file (a Depends in an alias)
         self.module_types = {} # rel -> {module-level name: type text}, e.g. `order_service = OrderService()`
         self._pending = []     # (qual, method, path, rel, router var) until every file's routers are known
         self.str_consts = {}   # rel -> {NAME: "text"} module-level string constants
@@ -366,7 +369,10 @@ class Index:
         for n in ast.walk(tree):
             if isinstance(n, ast.ImportFrom):
                 for a in n.names:
-                    imps[a.asname or a.name] = (n.module or '', a.name, n.level)
+                    if a.name == '*':
+                        self.star_imports.setdefault(rel, []).append((n.module or '', n.level))
+                    else:
+                        imps[a.asname or a.name] = (n.module or '', a.name, n.level)
             elif isinstance(n, ast.Import):
                 for a in n.names:
                     imps[a.asname or a.name.split('.')[0]] = (a.name if a.asname else a.name.split('.')[0],
@@ -618,10 +624,13 @@ class Index:
         when that's a builtin (a dict's `.get`) it is not one of ours. For `module.x()`, a candidate
         defined in a file named after the module (`usage_service.x` → usage_service.py) wins. Unknown
         receivers fall back to a name match (`order_repo.get` → OrderRepository.get), then to the
-        only candidate. A bare `x()` goes to a module function: same file first, then the import.
+        only candidate. A bare `x()` goes to a module function in the same file or one it imports
+        (`from m import x`, or `from m import *` when m is indexed); a local of the caller (a
+        parameter, variable, loop target, nested def…) is a value, not a function: None.
         """
         fn = call.func
         caller_rel = caller_qual.split('::', 1)[0] if caller_qual else ''
+        caller_rel = self.written_in.get(id(fn), caller_rel)
         if isinstance(fn, ast.Attribute):
             recv, name = fn.value, fn.attr
             if isinstance(recv, ast.Name) and recv.id in ('self', 'cls'):
@@ -671,6 +680,13 @@ class Index:
                 return None   # `.get()`, `.items()`, `.append()` on something we can't place
         elif isinstance(fn, ast.Name):
             name = fn.id
+            # `await write(event_id)` where `write` is a parameter, a variable or a nested def: a
+            # value of the caller, not whichever module function happens to share its name
+            if caller_qual in self.funcs:
+                if caller_qual not in self.local_refs:
+                    self.local_refs[caller_qual] = _local_refs(self.funcs[caller_qual]['node'])
+                if id(fn) in self.local_refs[caller_qual]:
+                    return None
             cands = list(self.by_simple.get(name, []))
             imp = self.imports.get(caller_rel, {}).get(name)
             if imp and imp[1]:                    # from m import real_name as name
@@ -678,8 +694,12 @@ class Index:
                 cands = [q for q in self.by_simple.get(imp[1], []) if self.funcs[q]['file'] == f] or \
                     self.by_simple.get(imp[1], []) or cands
             else:
-                same = [q for q in cands if self.funcs[q]['file'] == caller_rel]
-                cands = same or cands
+                # a bare name only reaches a def in its own file or one it imports: another
+                # module's function is out of reach without an import
+                cands = [q for q in cands if self.funcs[q]['file'] == caller_rel] or [
+                    q for q in cands if not imp and self.funcs[q]['file'] in {
+                        self.module_file(caller_rel, m, lvl)
+                        for m, lvl in self.star_imports.get(caller_rel, [])}]
         else:
             return None
         if caller_qual and len(cands) > 1:  # don't resolve to yourself if there's an alternative
@@ -714,6 +734,78 @@ def _ctor_type(value):
     if isinstance(value, ast.Constant) and value.value is not None:
         return type(value.value).__name__
     return None
+
+
+_SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)
+_COMPS = (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
+
+
+def _scope_names(body, args):
+    """Names a function scope binds: its parameters, assignment/for/with/except/walrus/match
+    targets, nested def and class names, minus `global`/`nonlocal` ones. Imports are left out:
+    `from m import x` inside a function still names m's `x`, and the resolver follows the import."""
+    names = {a.arg for a in [*getattr(args, 'posonlyargs', []), *args.args, *args.kwonlyargs,
+                             args.vararg, args.kwarg] if a is not None}
+    outer, todo = set(), list(body)
+    while todo:
+        n = todo.pop()
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            names.add(n.name)     # its body is its own scope; decorators and defaults run here
+            todo += n.decorator_list + (getattr(n, 'bases', []) +
+                                        [k.value for k in getattr(n, 'keywords', [])])
+            if not isinstance(n, ast.ClassDef):
+                todo += [d for d in n.args.defaults + n.args.kw_defaults if d is not None]
+            continue
+        if isinstance(n, ast.Lambda):
+            todo += [d for d in n.args.defaults + n.args.kw_defaults if d is not None]
+            continue
+        if isinstance(n, _COMPS):  # its targets are its own; a walrus inside binds out here
+            names.update(m.target.id for m in ast.walk(n) if isinstance(m, ast.NamedExpr))
+            continue
+        if isinstance(n, (ast.Global, ast.Nonlocal)):
+            outer.update(n.names)
+        elif isinstance(n, ast.Name) and not isinstance(n.ctx, ast.Load):
+            names.add(n.id)
+        elif isinstance(n, ast.ExceptHandler) and n.name:
+            names.add(n.name)
+        elif getattr(n, 'name', None) and type(n).__name__ in ('MatchAs', 'MatchStar'):
+            names.add(n.name)
+        elif type(n).__name__ == 'MatchMapping' and n.rest:
+            names.add(n.rest)
+        todo += ast.iter_child_nodes(n)
+    return names - outer
+
+
+def _local_refs(fn):
+    """ids of the Name nodes in `fn`'s body that read one of its locals (or, in a nested def or
+    lambda, a local of that one or of an enclosing function). The function's own decorators,
+    defaults and annotations run in the module, so they are not looked at."""
+    out = set()
+
+    def visit(n, env):
+        if isinstance(n, _SCOPES):
+            for d in getattr(n, 'decorator_list', []) + n.args.defaults + n.args.kw_defaults:
+                if d is not None:
+                    visit(d, env)
+            body = n.body if isinstance(n.body, list) else [n.body]
+            inner = env | _scope_names(body, n.args)
+            for b in body:
+                visit(b, inner)
+            return
+        if isinstance(n, _COMPS):
+            inner = env | {m.id for g in n.generators for m in ast.walk(g.target) if isinstance(m, ast.Name)}
+            for c in ast.iter_child_nodes(n):
+                visit(c, inner)
+            return
+        if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load) and n.id in env:
+            out.add(id(n))
+        for c in ast.iter_child_nodes(n):
+            visit(c, env)
+
+    env = _scope_names(fn.body, fn.args)
+    for s in fn.body:
+        visit(s, env)
+    return out
 
 
 def _local_types(fn):
@@ -1417,8 +1509,10 @@ def _depends_in(node, idx, rel, seen=(), kinds=('Depends', 'Security'), bare=Fal
     for n in ast.walk(node):
         if isinstance(n, ast.Call) and unparse(n.func).split('.')[-1] in kinds and n.args:
             out.append(n)
+            idx.written_in[id(n.args[0])] = rel   # `Depends(get_user)` names deps.py's get_user
         elif bare and isinstance(n, ast.Call) and isinstance(n.func, ast.Name):
             out.append(n)
+            idx.written_in[id(n.func)] = rel
         elif isinstance(n, ast.Name) and n.id not in seen:
             val = idx.module_values.get(rel, {}).get(n.id)
             src_rel = rel
