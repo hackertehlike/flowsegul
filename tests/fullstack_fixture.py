@@ -13,6 +13,10 @@ client functions), and some calls are wrong on purpose:
   - ReceiptLink asks for /order/{id}/receipt, which doesn't exist
   - OrderList asks for /orders without the trailing slash
   - Avatar fetches a URL it gets as a prop, which can't be read before run time
+  - PriceLine reads the preview as a number, but the route answers with a PreviewOut object
+  - Reorder sends `qty` where OrderIn has `quantity`, and QuickAdd posts no body at all
+  - UserCount reads `count` as a number; Stats sends it as a string
+  - OrderSummary expects `id` as a string, `note` never null, and `items[].quantity` that isn't there
 """
 import os, subprocess, sys, textwrap
 
@@ -37,6 +41,22 @@ FILES = {
             quantity: int
 
 
+        class LineOut(BaseModel):
+            sku: str
+            qty: int
+
+
+        class OrderOut(BaseModel):
+            id: int
+            total: float
+            note: str | None = None
+            items: list[LineOut] = []
+
+
+        class PreviewOut(BaseModel):
+            total: float
+
+
         @router.get("/")
         def list_orders(page: int = 1, size: int = Query(20)):
             return []
@@ -47,14 +67,14 @@ FILES = {
             return {"id": 1}
 
 
-        @router.get("/{order_id}")
+        @router.get("/{order_id}", response_model=OrderOut)
         def get_order(order_id: int):
-            return {"id": order_id}
+            return {"id": order_id, "total": 0}
 
 
         @router.get("/preview")
-        def preview_order(code: str, item_count: int):
-            return 9.5
+        def preview_order(code: str, item_count: int) -> PreviewOut:
+            return PreviewOut(total=9.5)
 
 
         @router.post("/{order_id}/refund")
@@ -63,8 +83,18 @@ FILES = {
     ''',
     'backend/app/routes/users.py': '''
         from fastapi import APIRouter, Request
+        from pydantic import BaseModel
 
         router = APIRouter()
+
+
+        class Stats(BaseModel):
+            count: str
+
+
+        @router.get("/stats")
+        def user_stats() -> Stats:
+            return Stats(count="3")
 
 
         @router.get("/me")
@@ -124,7 +154,7 @@ FILES = {
     'frontend/src/App.tsx': '''
         import { PriceLine } from "./checkout/PriceLine";
         import { OrderPanel } from "./orders/OrderPanel";
-        import { Avatar } from "./users/Avatar";
+        import { Avatar, UserCount } from "./users/Avatar";
 
         export default function App() {
           return (
@@ -132,6 +162,7 @@ FILES = {
               <PriceLine couponCode="WELCOME10" />
               <OrderPanel />
               <Avatar src="/img/ada.png" />
+              <UserCount />
             </main>
           );
         }
@@ -145,7 +176,7 @@ FILES = {
           useEffect(() => {
             fetch(`/api/orders/preview?code=${couponCode}&n=${items.length}`)
               .then((r) => r.json())
-              .then(setTotal);
+              .then((t: number) => setTotal(t));
           }, [couponCode, items]);
           return <span>{total}</span>;
         }
@@ -165,6 +196,9 @@ FILES = {
             <section>
               <button onClick={() => open(1)}>Open order</button>
               <button onClick={place}>Place order</button>
+              <button onClick={() => api("/orders/", { method: "POST", body: JSON.stringify({ sku: "A1", qty: 2 }) })}>Reorder</button>
+              <button onClick={() => http.post("/orders/")}>Quick add</button>
+              <OrderSummary id={order?.id ?? 0} />
               <button onClick={async () => setOrders((await http.get("/orders", { params: { page: 2 } })).data)}>Load orders</button>
               <RefundButton id={order?.id ?? 0} />
               <ReceiptLink id={order?.id ?? 0} />
@@ -173,6 +207,13 @@ FILES = {
               <span>{orders.length}</span>
             </section>
           );
+        }
+
+        type Order = { id: string; total: number; note: string; items: { sku: string; quantity: number }[] };
+
+        function OrderSummary({ id }: { id: number }) {
+          const [o, setO] = useState<Order>();
+          return <button onClick={async () => setO(await api<Order>(`/orders/${id}`))}>{o?.note}</button>;
         }
 
         function RefundButton({ id }: { id: number }) {
@@ -194,6 +235,16 @@ FILES = {
             usersApi.me();
           }, [src]);
           return <img alt="" src={blob ? URL.createObjectURL(blob) : ""} />;
+        }
+
+        export function UserCount() {
+          const [n, setN] = useState(0);
+          const load = async () => {
+            const res = await fetch("/api/users/stats");
+            const data: { count: number } = await res.json();
+            setN(data.count);
+          };
+          return <button onClick={load}>{n} users</button>;
         }
     ''',
 }
