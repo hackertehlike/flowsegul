@@ -12,9 +12,9 @@ self-contained viewer. **Do not rebuild the visualizer from scratch — run the 
 ## What it produces
 
 A single self-contained HTML file: a per-endpoint draggable node graph where each node is a
-function (controller / service / repository / helper layer, color-chipped). Per node it shows the
-data-flow steps (`var = call(args)`) and, on demand, the real source (syntax-highlighted; hidden by
-default for an overview, `C` shows all; changed functions always show their diff). Arrows: **solid** = arguments sent into a call; **dashed** = value returned (labeled
+function (controller / service / repository / helper layer, color-chipped). Per node it shows its real
+source, folded to the lines that call something or raise plus the `if`/`for`/`try` lines around them
+(`C` unfolds all; changed functions always show their whole diff). Arrows: **solid** = arguments sent into a call; **dashed** = value returned (labeled
 `type → variable`). Every produced variable gets one consistent color across its chip, its arrows,
 and every line of source that touches it; request inputs get fixed colors (with repo-layer aliases,
 e.g. `start_date`→`start`).
@@ -59,15 +59,18 @@ python3 scripts/flowsegul_gen.py --changed --out /tmp/flowsegul.html   # then op
   hashes, but they diff via the *merge-base* — branch semantics.)
 - **`--depth`** (default 6), **`--title`**, **`--out`** (default a temp file).
 - **`--react [DIR]`** — map a React + TypeScript app (or only the folder `DIR` in the repo): each
-  user action (click, typing, submit, page load) and the ordered path it sets off — handler,
+  user action (click, typing, submit, what a screen loads as it opens: `load /orders`) and the ordered path it sets off — handler,
   callback props up the tree, the `useState` setter, the components that rerun, effects on that
   state and the requests they make. On by default for a repo with `.tsx` files. With a FastAPI
   backend too, each request links to the route it reaches, the route lists its callers, and red
   marks flag `no route`, `GET ≠ POST`, a route declared earlier that catches it, and query keys
   the route ignores or requires.
   Needs `node` and the `typescript` package (the app's own, a global one, or `FLOWSEGUL_TS=DIR`).
-  Reads the working tree; `--changed` etc. apply to routes only. Anything it can't pin down is
-  marked uncertain (faded), never claimed.
+  A click that refreshes a list (`invalidateQueries`) leads on to that list and its request.
+  Reads the working tree; with `--changed` etc. it also compares with the base and marks state
+  the change now erases (`draft erased when showPromo is false`: a new condition, early return or
+  key above its component). Anything it can't pin
+  down is marked uncertain (faded), never claimed.
 
 **Coverage guarantee (`--changed` / `--from`):** every changed *function* is drawn as a node in
 some endpoint's flow, or as its own root chart if no endpoint reaches it; every changed *class*
@@ -92,8 +95,6 @@ path` count and `.node` count are non-zero before reporting results.
   summaries) is optional polish, not required.
 - Input-param aliases across renames (`start_date`→`start`) are inferred only when names match; if a
   value is renamed to something unrelated the color won't follow it.
-- Side-effect calls (no assignment, e.g. `await db.commit()` that resolves in-scope) show as a `·`
-  row.
 - The template is generic: `graph.endpoints[].nodes[].steps[]` drives everything. You can also
   hand-write that JSON and inject it into `template.html` (replace `__DATA__`) if you want full
   control instead of the generator.

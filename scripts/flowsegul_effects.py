@@ -373,6 +373,9 @@ class _Walk:
         ev = {'k': kind, 'label': label, 'cond': ctx['cond'], 'loops': ctx['loops'],
               'fn': F['title'], 'file': F['rel'], 'line': getattr(node, 'lineno', 0),
               'code': self.G.one_line(seg or self.G.unparse(node), 90), 'node': self.nid(F['qual'])}
+        if getattr(node, 'lineno', None):     # the line in that function's box, to mark it there
+            cl = self.G.code_lines_of(F['info'], self.idx.file_src.get(F['rel'], ''))
+            ev['ln'] = [cl(node.lineno), cl(getattr(node, 'end_lineno', None) or node.lineno)]
         ev.update(extra)
         if kind == 'later':
             self.later.append(ev)
@@ -495,7 +498,7 @@ class _Walk:
 
 
 def timeline(entry_qual, idx, G, nid, cfg=None):
-    """The route's side effects in order, for the strip under its header. {} when it has none.
+    """The route's side effects in order; the red ones get a squiggle on their line in the map. {} when it has none.
 
     {'items': [{k, label, cond, via, fn, file, line, code, node, risk?, n?}],
      'commit': 'found' | 'unknown' | 'none'}"""

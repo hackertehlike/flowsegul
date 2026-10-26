@@ -1,4 +1,4 @@
-"""The side-effect strip under each route header (idea 5), checked on tests/effects_fixture.py.
+"""Side effects in order (idea 5): which steps can't be undone before the commit, checked on tests/effects_fixture.py.
 
 Run: python3 -m unittest discover tests
 """
