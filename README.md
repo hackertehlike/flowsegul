@@ -75,7 +75,7 @@ flowsegul --react frontend   # only this folder of the repo
 ```
 
 The sidebar lists what a user can do, grouped by folder: `click Apply`, `type in coupon`,
-`submit Log in`, `page load`. Pick one and the map numbers the real code lines it runs through, in
+`submit Log in`, and what a screen loads by itself as it opens (`load /orders`). Pick one and the map numbers the real code lines it runs through, in
 order: the handler, the callback props it goes up through, the `useState` setter, the components
 that rerun (a `reruns` chip; hover it for the line responsible), effects that depend on the state,
 and the requests they make (`GET /orders/preview`). Step through with `N` / `Shift+N`; `Esc`
@@ -86,6 +86,16 @@ It needs Node.js and the `typescript` package: the app's own, one installed glob
 named by `FLOWSEGUL_TS`. Labels and paths come from the code by fixed rules. Anything that can't be
 followed for sure (props passed on with `{...props}`, values from a context) is drawn faded as
 uncertain.
+
+When a click saves something and then refreshes a list (`queryClient.invalidateQueries(...)`), the
+path goes on to the component showing that list and the request it sends again (`GET /comments`).
+With an action picked, its boxes line up left to right in the order the steps reach them.
+
+**State a diff erases.** With `--changed` / `--from`, a `useState` whose component the change
+puts under a new condition (`{showPromo && <CouponField />}`), after an early return, or behind a
+new key gets a red mark on its line, `draft erased when showPromo is false`: whatever the user
+typed there now starts over each time the condition flips. Hover for the line responsible; a
+`Problems` list at the top of the sidebar collects them.
 
 ### Frontend requests linked to their routes
 
@@ -113,9 +123,14 @@ wrappers like `api('/items')`. Vite's `server.proxy` rewrites, Next.js `rewrites
 
 - **Draggable node graph** per endpoint — opens fitted to the screen; drag to pan, pinch or
   Ctrl/⌘+scroll to zoom, and a Pan / Zoom switch (`W`) for what the mouse wheel does; minimap to jump around.
-  Code wraps instead of scrolling sideways.
-- **Inline source** per node, syntax-highlighted, one click (or `C` for all) away. Changed
-  functions always show their diff.
+  Code wraps instead of scrolling sideways. Click a call in the code to fly to its box; `Alt+←` goes back.
+- **Resizable sidebar** — drag its right edge; double-click to reset.
+- **Find in map** (`Ctrl/⌘+F`) — finds function names and code lines in the boxes on screen;
+  `Enter` / `Shift+Enter` step through the matches.
+- **The code itself in each box**, folded to the lines that call something or raise, with the
+  `if` / `for` / `with` / `try` lines around them; `⋯` stands for the lines in between, and arrows
+  leave from the call's own line. `View code` (or `C` for all) unfolds the rest. Changed
+  functions always show their whole diff.
 - **Color-coded data flow** — each produced variable gets one consistent color across its chip, its
   arrows, and every line of source that touches it. Solid arrows = arguments in; dashed = value
   returned (labeled `type → variable`).
@@ -136,16 +151,15 @@ wrappers like `api('/items')`. Vite's `server.proxy` rewrites, Next.js `rewrites
 - **Full route paths** — prefixes from `APIRouter(prefix=…)` and `include_router(…, prefix=…)`
   (also a constant or `settings.API_V1_STR`) are joined into the path. FastAPI dependencies
   (`Depends(get_current_user)`, `Annotated[…, Depends(…)]`) are drawn as calls.
-- **Side effects in order** — a strip under the route header lists what the request does to the
-  world, in the order it runs: `add Order` → `email` → `commit`. It covers database writes
-  (`session.add`, `delete`, `execute(update(…))`), the commit (`session.commit()`, the end of
-  `with session.begin():`, or a commit after `yield` in a Depends generator, drawn dashed and
-  labelled `get_db`), and steps that can't be undone: email, HTTP POST/PUT/PATCH/DELETE, stripe,
-  boto3 writes, files, queued tasks. A step that can't be undone gets a red squiggle when an error
-  or the commit can still come after it; hover it to see which, and click any chip to go to its box.
-  Steps on only some paths are faded, with their `if`. With writes but no commit in sight the strip
-  ends in `commit ?` and marks nothing red. Name your own wrappers in `.flowsegul.json`:
+- **Steps that can't be undone, before the commit** — a line that sends an email, makes an HTTP
+  POST/PUT/PATCH/DELETE, calls stripe, writes with boto3 or a file, or queues a task gets a red
+  squiggle and `before commit` when the commit (or an error, `before ValueError`) can still come
+  after it on the way through the route. The commit is found as `session.commit()`, the end of
+  `with session.begin():`, or a commit after `yield` in a Depends generator; with no commit in
+  sight nothing is marked. Name your own wrappers in `.flowsegul.json`:
   `{"irreversible": ["mailer.send_*", "*.instance.send*"]}`.
+- **Responses** — the route header lists the statuses it can answer with. Hover one to light the
+  `raise` lines that give it; click it to keep that path lit.
 - **Change detection** (`--changed`) — per-node Diff / New / Old toggle, a **Changes** navigator
   (`N` / `Shift+N`), and deleted defs shown as removal diffs. Decorator edits count, and so do
   edits to a module-level name a function reads (`LIMIT = 500`): that function's diff opens with
@@ -170,7 +184,9 @@ python3 -m unittest discover -s tests -v
 
 A smoke test builds a tiny FastAPI repo, runs the generator in normal and `--changed` modes, and
 checks the HTML it writes. CI runs it on Linux and macOS. `tests/test_react.py` checks React mode
-on a small checkout app (`tests/react_fixture.py`); it skips when Node or `typescript` isn't found.
+on a small checkout app (`tests/react_fixture.py`), and `tests/test_react_review.py` the erased-state
+mark on a two-commit orders app (`tests/react_review_fixture.py`); both skip when Node or
+`typescript` isn't found.
 
 ## Claude Code skill
 

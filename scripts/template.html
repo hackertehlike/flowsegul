@@ -160,8 +160,8 @@ kbd{font:600 10.5px/1 var(--mono);padding:3px 5px;border-radius:5px;border:1px s
 .main{flex:1;display:flex;min-height:0}
 
 /* ── sidebar ────────────────────────────────────────────────────────────── */
-.side{width:252px;flex:none;border-right:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;min-height:0;transition:margin-left .22s var(--ease)}
-body.noside .side{margin-left:-252px}
+.side{width:var(--sidew,252px);flex:none;position:relative;border-right:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;min-height:0;transition:margin-left .22s var(--ease)}
+body.noside .side{margin-left:calc(-1*var(--sidew,252px))}
 .search{padding:10px 10px 6px;flex:none}
 .search label{display:flex;align-items:center;gap:7px;height:32px;padding:0 8px 0 9px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);color:var(--muted);transition:border-color .15s,box-shadow .15s}
 .search label:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
@@ -184,7 +184,7 @@ body.noside .side{margin-left:-252px}
 .m.GET{background:var(--m-get-bg);color:var(--m-get)}.m.POST{background:var(--m-post-bg);color:var(--m-post)}
 .m.PUT{background:var(--m-put-bg);color:var(--m-put)}.m.PATCH{background:var(--m-patch-bg);color:var(--m-patch)}
 .m.DELETE{background:var(--m-delete-bg);color:var(--m-delete)}
-.m.DEL{background:var(--m-delete-bg);color:var(--m-delete)}.m.MIG{background:color-mix(in srgb,#be185d 15%,var(--panel));color:color-mix(in srgb,#be185d 80%,var(--ink))}
+.m.DEL{background:var(--m-delete-bg);color:var(--m-delete)}.m.TOOL{background:var(--l-external-bg);color:var(--l-external)}.m.MIG{background:color-mix(in srgb,#be185d 15%,var(--panel));color:color-mix(in srgb,#be185d 80%,var(--ink))}
 .crumb .m{width:auto;padding:4px 6px}
 .nomatch{padding:18px 10px;color:var(--muted);font-size:12.5px;text-align:center}
 /* review mode: check off flows you've already looked at */
@@ -246,7 +246,8 @@ body.review .revbar{display:block}
 .stc.bad{color:#fff;background:var(--del);border-color:var(--del)}
 .stc.new::after{content:'';position:absolute;top:-3px;right:-3px;width:7px;height:7px;border-radius:50%;background:var(--chg);border:1.5px solid var(--panel)}
 #world.errfocus .node:not(.errhot){opacity:.35;transition:opacity .12s}
-#world.errfocus .errhot .step:not(.errhot){opacity:.45}
+#world.errfocus .errhot .step:not(.errhot),#world.errfocus .errhot pre.code>.dl{opacity:.45}
+#world.errfocus pre.code .step.raise.errhot{background:color-mix(in srgb,var(--del) 12%,transparent)}
 .errhot.sq,.errhot.sqok,.step.errhot{text-decoration-thickness:2px}
 #edges.errfocus .ge{opacity:.08}
 /* at rest only where an error starts (the raise line) and ends (the route's status chip) are red;
@@ -257,28 +258,23 @@ body.review .revbar{display:block}
 #world.asking .step.ask-hit:not(.raise) .sq{text-decoration-color:var(--del)}
 #world.asking .step.ask-hit:not(.raise) .sqok{text-decoration-color:var(--ok)}
 #edges .errlab{opacity:0;pointer-events:none;transition:opacity .12s}
+#edges.asking .errlab.ask-on{pointer-events:auto;cursor:pointer}
+.step.raise,.step .sq,.step .sqok,.stc[data-err]{cursor:pointer}
 #edges.errfocus .errlab.errhot,#edges.asking .errlab.ask-on{opacity:1}
 #edges.asking .errpath.ask-on{opacity:1}
 #edges .errpath{opacity:0;transition:opacity .12s}
 #edges.errfocus .errpath.errhot{opacity:1;stroke-dasharray:6 4;animation:flow .6s linear infinite}
 
-/* side effects, in the order the route runs them: a strip under the route header. Red squiggle:
-   can't be undone, and an error or the commit can still come after it. Faded: only on some paths. */
-.fxstrip[hidden]{display:none}
-.fxstrip{left:14px;top:14px;display:flex;flex-wrap:wrap;align-items:flex-start;gap:5px 3px;padding:6px 8px;max-width:calc(100% - 262px);max-height:118px;overflow-y:auto}
-.fxw{display:inline-flex;flex-direction:column;align-items:center;gap:3px;min-width:0}
-.fxw i{font:10px/1 var(--mono);font-style:normal;color:var(--muted);max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.fx{font:500 11px/1 var(--mono);color:var(--ink2);background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:4px 8px;white-space:nowrap;cursor:pointer}
-.fx:hover{border-color:var(--line2)}
-.fx b{font-weight:600;color:var(--muted)}
-.fx.commit{color:var(--ok);background:color-mix(in srgb,var(--ok) 11%,var(--panel));border-color:color-mix(in srgb,var(--ok) 35%,var(--line))}
-.fx.via{border-style:dashed;border-color:var(--muted)}
-.fx.unk{color:var(--muted);background:none;border-style:dashed;border-color:var(--muted);cursor:default}
-.fx.risk{color:var(--del);background:color-mix(in srgb,var(--del) 10%,var(--panel));border-color:color-mix(in srgb,var(--del) 35%,var(--line));text-decoration:underline wavy var(--del);text-decoration-thickness:1px;text-underline-offset:3px;text-decoration-skip-ink:none}
-.fxw.cond{opacity:.5}
-.fxa{color:var(--faint);font:11px/1 var(--mono);padding-top:5px}
-.stage.hasfx .chgnav{top:auto;bottom:14px}
-.node.fxhot{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft),var(--shadow-lg)}
+/* a step that can't be undone (email, HTTP call, file, queue) while an error or the commit can still
+   come after it: red squiggle on its own line in the code, and what can follow it */
+pre.code .fxsq{text-decoration:underline wavy var(--del);text-decoration-thickness:1px;text-underline-offset:3px;text-decoration-skip-ink:none}
+pre.code .fxtag{font:600 10px/1 var(--mono);color:var(--del);margin-left:8px;white-space:nowrap}
+/* review hints read from the code (query per iteration, keyword the model drops, a field probably
+   forgotten): a squiggle on the line and a short tag; an unsure one is dotted and grey */
+pre.code .hsq{text-decoration:underline wavy var(--del);text-decoration-thickness:1px;text-underline-offset:3px;text-decoration-skip-ink:none}
+pre.code .hsq.unsure{text-decoration-style:dotted;text-decoration-color:var(--faint);text-decoration-thickness:1.5px}
+pre.code .htag{display:inline-block;text-indent:0;cursor:default;font:600 10px/1 var(--mono);color:var(--del);margin-left:8px;white-space:nowrap}
+pre.code .htag.unsure{color:var(--muted);font-weight:500;font-style:italic}
 
 .node{position:absolute;width:320px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);z-index:2;transition:box-shadow .18s,border-color .18s}
 .node:hover{box-shadow:var(--shadow-lg)}
@@ -311,7 +307,7 @@ body.review .revbar{display:block}
 .node.shut .ncaret{transform:rotate(-90deg)}
 .nbody{padding:0 10px 10px;display:flex;flex-direction:column;gap:5px}
 .node.shut .nbody{display:none}
-.step{font:11.5px/1.45 var(--mono);background:var(--panel2);border-radius:7px;padding:5px 8px;border-left:3px solid var(--line2);transition:background .12s,outline-color .12s;outline:1.5px solid transparent;outline-offset:0}
+.step{font:11.5px/1.45 var(--mono);background:var(--panel2);border-radius:7px;padding:5px 8px;overflow-wrap:anywhere;border-left:3px solid var(--line2);transition:background .12s,outline-color .12s;outline:1.5px solid transparent;outline-offset:0}
 .step.ret{background:transparent;border-left-color:var(--edge)}
 .step .kw{color:var(--kw)} .step .arw{color:var(--muted)}
 .step[data-callee]{cursor:pointer}
@@ -454,6 +450,9 @@ body.nomap .minimap{display:none}
 .tk{border-radius:3px;padding:0 1px;margin:0 -1px}
 .tk.on{background:var(--accent-tk);box-shadow:0 0 0 1px color-mix(in srgb,var(--accent) 45%,transparent)}
 .srow{cursor:pointer}
+.rrow.chg{border-left-color:var(--chg);background:color-mix(in srgb,var(--chg) 9%,var(--panel2))}
+.rrow.chgp{background:var(--panel2)}
+.ep.act.aff{opacity:.62}
 .srow:hover{background:color-mix(in srgb,var(--accent) 7%,var(--panel2))}
 .srow.pinned{box-shadow:inset 0 0 0 1.5px var(--accent)}
 .sets{font:500 10px/1 var(--sans);color:var(--muted);margin-left:8px;white-space:nowrap}
@@ -500,6 +499,9 @@ button.num{cursor:pointer}
 .num.o{background:var(--panel);color:var(--accent);box-shadow:inset 0 0 0 1.5px var(--accent)}
 .rrow>.num.dyn{position:absolute;left:-10px;top:3px;z-index:4;box-shadow:0 0 0 2px var(--panel)}
 .rrow>.num.dyn.o{box-shadow:inset 0 0 0 1.5px var(--accent),0 0 0 2px var(--panel)}
+/* a state the diff starts throwing away: a red chip on its useState line */
+.rc.chk{margin-left:6px;cursor:help}
+.ep.prob .t{font:600 12px/1.3 var(--mono);color:var(--del);white-space:normal}
 .rc.rerun .num{min-width:15px;height:15px;font-size:9px}
 .go{color:inherit;text-decoration:none;cursor:pointer;border-radius:3px}
 .go.tag{color:var(--def)}
@@ -550,7 +552,7 @@ button.num{cursor:pointer}
 .brand h1{font-weight:500;letter-spacing:-.02em}
 .logo{background:#18181b;box-shadow:inset 0 0 0 1px #ffffff1f;border-radius:50%}
 .side{background:var(--panel);border-right:0;margin:0 0 14px 14px;border-radius:var(--r);box-shadow:var(--shadow)}
-body.noside .side{margin-left:-266px}
+body.noside .side{margin-left:calc(-14px - var(--sidew,252px))}
 .stage{background-image:radial-gradient(circle at 1px 1px,var(--grid) .9px,transparent 0);background-size:14px 14px}
 .node{border-color:transparent;background:var(--panel)}
 .nhead{padding:16px 16px 12px 18px}
@@ -563,7 +565,7 @@ pre.code{border-color:transparent;border-radius:16px;background:var(--panel2)}
 .rangebtn,.rangepop,.search label,.combo input,.thpop{border-color:transparent}
 .rangepop{border-radius:22px}
 /* pills and round buttons */
-.tb,.mchip,.m,.lay,.stc,.fx,.ub,.vwbtn,.codebtn,.chgbadge,.rc,.seg,.segb,.dock button,.dock .pct,.ep,.rp-go,.rp-cmdline button{border-radius:999px}
+.tb,.mchip,.m,.lay,.stc,.ub,.vwbtn,.codebtn,.chgbadge,.rc,.seg,.segb,.dock button,.dock .pct,.ep,.rp-go,.rp-cmdline button{border-radius:999px}
 .tb{background:var(--raise);box-shadow:var(--shadow-sm),0 4px 12px -6px rgba(0,0,0,.12);height:36px;padding:0 14px;font-weight:500}
 .tb.icon{width:36px}
 .tb:hover{background:var(--raise);border-color:var(--line2)}
@@ -586,11 +588,6 @@ pre.code{border-color:transparent;border-radius:16px;background:var(--panel2)}
 .stc.ok{background:color-mix(in srgb,var(--ok) 14%,var(--panel));border-color:transparent}
 .stc.bad{background:var(--del)}
 .mchip{border-color:transparent;background:var(--chip);padding:5px 10px}
-.fx{border-color:transparent;background:var(--chip);padding:6px 11px}
-.fx.commit{border-color:transparent}
-.fx.via,.fx.unk{border-color:var(--muted)}
-.fx.risk{border-color:transparent}
-.fxstrip{padding:8px 10px;border-radius:22px}
 .vwbtn,.codebtn{border-color:transparent;background:var(--chip)}
 .seg{border-color:transparent;background:var(--chip)}
 .segb.on{background:var(--raise)}
@@ -646,7 +643,7 @@ pre.code{border-color:transparent;border-radius:16px;background:var(--panel2)}
 .chgbadge{background:var(--chg)}
 .node.svc{box-shadow:0 0 0 2px var(--lit-fill)}
 .node.svc.changed{box-shadow:none}
-.float,.legend,.minimap,.fxstrip{box-shadow:none}
+.float,.legend,.minimap{box-shadow:none}
 /* hover still lifts a box a little */
 .node:hover{box-shadow:0 14px 34px -14px rgba(0,0,0,.22)}
 :root[data-theme=dark] .node:hover{box-shadow:0 14px 34px -14px rgba(0,0,0,.7)}
@@ -736,7 +733,7 @@ pre.code{border-color:transparent;border-radius:16px;background:var(--panel2)}
 .aq code{font:600 11.5px var(--mono);color:var(--ink);background:var(--chip);border-radius:4px;padding:0 4px}
 #world.asking .node{transition:opacity .15s}
 #world.asking .node:not(.ask-on){opacity:.25}
-#world.asking .node.ask-on :is(.step,.ins .in,.codebar,.seg):not(.ask-hit),#world.asking .node.ask-on pre.code .dl:not(.ask-hit){opacity:.3}
+#world.asking .node.ask-on :is(.nbody>.step,.ins .in,.codebar,.seg):not(.ask-hit),#world.asking .node.ask-on pre.code .dl:not(.ask-hit):not(.ask-hit .dl){opacity:.3}
 #world.asking .ins{border-color:var(--line)}
 #edges.asking .ge:not(.ask-on),#edges.asking .errpath:not(.ask-on),#edges.asking .errlab:not(.ask-on){opacity:.15}
 #edges .askerr{fill:var(--del);font-weight:700}
@@ -767,6 +764,50 @@ pre.code{border-color:transparent;border-radius:16px;background:var(--panel2)}
 .ast .schip.http{background:var(--chip);color:var(--ink2)}
 .ast .more{background:var(--chip);color:var(--muted)}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+/* folded code: a box shows the lines that call something or raise, plus the if/for/try/with lines
+   around them; ⋯ stands for the lines in between. Each call's lines are one .step the arrows leave from */
+pre.code .step{display:block;font:inherit;background:none;padding:0 0 0 7px;margin:0 0 0 -9px;border-radius:3px;border:0;border-left:2px solid transparent;outline:none;cursor:auto}
+pre.code .step.hl{background:var(--accent-tk,rgba(0,0,0,.06));outline:none}
+pre.code .step.raise{border-left-color:var(--del)}
+pre.code .step.raise.handled{border-left-color:var(--line2)}
+.node.pyc:not(.wide){width:max-content;min-width:320px;max-width:560px}
+pre.code .dl.f{display:none}
+pre.code.full .dl.f{display:block}
+pre.code .fmk{display:block;color:var(--muted);line-height:1.1;letter-spacing:2px;cursor:pointer;user-select:none}
+pre.code .fmk:hover{color:var(--ink2)}
+pre.code.full .fmk{display:none}
+pre.code.none:not(.full){display:none}
+.codebar .codebtn[hidden]{display:none}
+/* find in this map: a pill at the start of the zoom bar */
+.mfind{display:flex;align-items:center;gap:4px;height:30px;padding:0 4px 0 10px;border-radius:999px;background:var(--panel2);color:var(--muted);cursor:text;transition:box-shadow .15s}
+.mfind:focus-within{box-shadow:0 0 0 2px var(--lit-fill)}
+.mfind>svg{width:14px;height:14px;flex:none}
+.mfind input{width:96px;border:0;background:none;outline:none;font:12px var(--sans);color:var(--ink);transition:width .2s var(--ease)}
+.mfind input::-webkit-search-cancel-button{display:none}
+.mfind input::placeholder{color:var(--faint)}
+.mfind:focus-within input,.mfind.has input{width:150px}
+#mqn{font:600 11px var(--mono);color:var(--muted);white-space:nowrap}
+.mfind.none #mqn{color:var(--del)}
+.mfind:not(.has) #mqn,.mfind:not(.has) button{display:none}
+.dock .mfind button{width:24px;height:24px}
+.dock .mfind button svg{width:13px;height:13px}
+#world.finding .node:not(.fnode){opacity:.3}
+#world.finding .node,#world #edges{transition:opacity .15s}
+#world.finding #edges{opacity:.4}
+.mfind.none button{display:none}
+/* like a browser's find: every match marked, the current one inverted */
+.nohl .fline{background:color-mix(in srgb,var(--lit-fill) 30%,transparent)!important}
+.nohl .fline.fcur{box-shadow:0 0 0 2px var(--lit)}
+::highlight(mfcur){background-color:var(--ink);color:var(--panel)}
+.node.fcurn{box-shadow:0 0 0 2px var(--lit-fill),var(--shadow)}
+::highlight(mfind){background-color:var(--lit-fill);color:var(--lit-on)}
+/* sidebar width: drag its right edge, double-click to reset */
+.sgrip{position:absolute;top:14px;bottom:14px;right:-7px;width:10px;cursor:col-resize;z-index:5;touch-action:none}
+.sgrip::after{content:"";position:absolute;left:4px;top:50%;height:36px;margin-top:-18px;width:3px;border-radius:2px;background:var(--line2);opacity:0;transition:opacity .15s}
+.sgrip:hover::after,.sgrip.drag::after{opacity:1}
+body.sizing,body.sizing *{cursor:col-resize!important;user-select:none}
+body.sizing .side{transition:none}
+body.noside .sgrip{display:none}
 </style>
 </head>
 <body>
@@ -797,6 +838,7 @@ pre.code{border-color:transparent;border-radius:16px;background:var(--panel2)}
 </header>
 <div class="main">
  <nav class="side" id="sidebar">
+  <div class="sgrip" id="sgrip" role="separator" aria-orientation="vertical" aria-label="Resize sidebar" data-tip="Drag to resize · double-click to reset"></div>
   <div class="search"><label><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg><input id="q" type="search" placeholder="Filter endpoints" autocomplete="off" spellcheck="false"><kbd>/</kbd></label><div class="seg sidetabs" id="sidetabs" hidden><button class="segb" data-k="be">Backend <i id="nbe"></i></button><button class="segb" data-k="fe">Frontend <i id="nfe"></i></button></div></div>
   <div class="eplist" id="side"></div>
   <div class="revbar"><div class="lbl"><b id="revcount">0</b><span id="revof">of 0 reviewed</span></div><div class="track"><div class="fill" id="revfill"></div></div></div>
@@ -806,9 +848,10 @@ pre.code{border-color:transparent;border-radius:16px;background:var(--panel2)}
    <div class="empty" id="empty" hidden><div><svg width="64" height="48" viewBox="0 0 64 48" fill="none"><rect x="2" y="6" width="22" height="14" rx="4" stroke="currentColor" stroke-width="1.5"/><rect x="40" y="28" width="22" height="14" rx="4" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 3"/><path d="M24 13c10 0 6 22 16 22" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 3"/></svg><b id="emptyh">Nothing to draw</b><span id="emptyp">No endpoints were found for this run.</span></div></div>
    <div class="float chgnav" id="chgnav" hidden><button id="chgprev" data-tip="Previous  (⇧N)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 10 4-4 4 4"/></svg></button><span id="chglabel"></span><button id="chgnext" data-tip="Next  (N)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 6 4 4 4-4"/></svg></button></div>
    <div class="float stepbar" id="stepbar" hidden role="toolbar" aria-label="Steps"><button class="sbback" id="sbback" aria-label="Back (Alt+Left)" data-tip="Back  (Alt+←)" aria-disabled="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 4 3 7.5 6.5 11"/><path d="M3.5 7.5H10a3 3 0 0 1 0 6H8"/></svg></button><span class="sbsep"></span><span class="sbname" id="sbname"></span><button id="sbprev" aria-label="Previous step (Shift+N)" data-tip="Previous  (⇧N)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 10 4-4 4 4"/></svg></button><span id="sbcount" aria-live="polite"></span><button id="sbnext" aria-label="Next step (N)" data-tip="Next  (N)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 6 4 4 4-4"/></svg></button></div>
-   <div class="float fxstrip" id="fxstrip" hidden></div>
    <details class="float legend" id="legend"></details>
    <div class="float dock">
+    <label class="mfind" id="mfind"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg><input id="mq" type="search" placeholder="Find in map" autocomplete="off" spellcheck="false" aria-label="Find in this map" aria-keyshortcuts="Control+F"><span id="mqn" aria-live="polite"></span><button id="mqprev" type="button" aria-label="Previous match (Shift+Enter)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 10 4-4 4 4"/></svg></button><button id="mqnext" type="button" aria-label="Next match (Enter)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 6 4 4 4-4"/></svg></button></label>
+    <span class="dsep"></span>
     <span class="seg scrollseg wheelseg" role="group" aria-label="Scroll wheel"><button class="segb" data-mode="pan" data-tip="Scroll wheel pans  (W)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v12M2 8h12M8 2 6.3 3.7M8 2l1.7 1.7M8 14l-1.7-1.7M8 14l1.7-1.7M2 8l1.7-1.7M2 8l1.7 1.7M14 8l-1.7-1.7M14 8l-1.7 1.7"/></svg>Pan</button><button class="segb" data-mode="zoom" data-tip="Scroll wheel zooms  (W)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3M5 7h4M7 5v4"/></svg>Zoom</button></span>
     <span class="dsep"></span>
     <button id="zout" data-tip="Zoom out  (−)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3.5 8h9"/></svg></button>
@@ -829,13 +872,14 @@ pre.code{border-color:transparent;border-radius:16px;background:var(--panel2)}
  <p>Each box is a function. Endpoints sit on the left and fan out to whatever they call. Every value keeps one colour everywhere it travels.</p>
  <div class="cols">
   <h5>Reading</h5>
-  <div class="how">Hover a <b>variable</b> to trace it across rows, code and arrows. Hover a <b>row</b> to light up the arrow it sends.</div>
+  <div class="how">Hover a <b>variable</b> to trace it across the code and arrows. Hover a <b>call line</b> to light up the arrow it sends.</div>
   <div class="how">Click a <b>variable</b> to number its path: where it comes from and where it goes. The <b>?</b> on a box asks where a parameter comes from, why the box can fail, or which routes reach it.</div>
-  <div class="how">Click a row to jump to that call site in the code. Click an underlined call in the code to fly to its box.</div>
+  <div class="how">Boxes show the lines that call something or raise, with their <b>if</b> / <b>for</b> / <b>try</b> lines; <b>⋯</b> or <b>View code</b> unfolds the rest. Click an underlined call to fly to its box.</div>
   <div class="how">Solid arrows carry arguments in. Dashed arrows carry the typed return value back.</div>
   <h5>Keys</h5>
   <div class="kr"><span>Change what's compared</span><span><kbd>G</kbd></span></div>
   <div class="kr"><span>Filter endpoints</span><span><kbd>/</kbd><kbd>⌘K</kbd></span></div>
+  <div class="kr"><span>Find in this map (next / previous)</span><span><kbd>Ctrl</kbd><kbd>F</kbd><kbd>↵</kbd><kbd>⇧↵</kbd></span></div>
   <div class="kr"><span>Next / previous endpoint</span><span><kbd>J</kbd><kbd>K</kbd></span></div>
   <div class="kr"><span>Fit to screen</span><span><kbd>F</kbd><kbd>⇧1</kbd></span></div>
   <div class="kr"><span>Zoom</span><span><kbd>+</kbd><kbd>−</kbd><kbd>0</kbd></span></div>
@@ -895,14 +939,18 @@ function hl(src,vars,calls,locals){
 
 function hlDiff(diff,vars,calls,locals){
  if(!diff)return '(new definition — no previous version)';
+ let nln=0,skip=false;
  return diff.split('\n').map(l=>{
+   const h=l.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+   if(h){nln=+h[1];skip=false;}else if(l.startsWith('@@'))skip=true;
    if(l.startsWith('@@'))return '<span class="dl dhunk">'+esc(l)+'</span>';
    if(l.startsWith('+++')||l.startsWith('---'))return '<span class="dl dfile">'+esc(l)+'</span>';
    const add=l.startsWith('+'), del=l.startsWith('-'), ctx=l.startsWith(' ');
    const cls=add?'dadd':del?'ddel':'';
    // keep the +/-/space marker literal, syntax-highlight the code after it (same var colours as New/Old)
    const marker=(add||del||ctx)?l[0]:'';
-   return lineBlock(esc(marker)+(hl(marker?l.slice(1):l,vars,calls,locals)||' '),cls,marker?l.slice(1):l,marker?1:0);
+   const ln=(!skip&&(add||ctx))?nln++ -1:null;
+   return lineBlock(esc(marker)+(hl(marker?l.slice(1):l,vars,calls,locals)||' '),cls,marker?l.slice(1):l,marker?1:0,ln);
  }).join('');
 }
 
@@ -926,13 +974,13 @@ function diffFlags(diff){
 }
 
 // full source, syntax-highlighted, with the diffed lines tinted (cls = dadd on new side, ddel on old side)
-function hlSide(src,vars,flags,cls,calls,locals){
- return codeLines(src,vars,calls,locals,i=>flags.has(i+1)?cls:'');
+function hlSide(src,vars,flags,cls,calls,locals,noLn){
+ return codeLines(src,vars,calls,locals,i=>flags.has(i+1)?cls:'',null,noLn);
 }
 // Highlight the whole source once (so multi-line strings stay coloured), then cut it into one block
 // per line. hl() emits flat spans, so a span crossing a newline is closed and reopened on the next line.
 // Each line carries its own indent so wrapped continuation lines hang under the code, not at column 0.
-function codeLines(src,vars,calls,locals,clsOf,hlf){
+function codeLines(src,vars,calls,locals,clsOf,hlf,noLn){
  src=String(src==null?'':src);
  const raw=src.split('\n'),html=(hlf||hl)(src,vars,calls,locals),out=[];
  let cur='',open='';
@@ -942,15 +990,15 @@ function codeLines(src,vars,calls,locals,clsOf,hlf){
    else t.split('\n').forEach((p,k)=>{if(k){if(open)cur+='</span>';out.push(cur);cur=open;}cur+=p;});
  });
  out.push(cur);
- return out.map((l,i)=>lineBlock(l||' ',clsOf?clsOf(i):'',raw[i]||'',0)).join('');
+ return out.map((l,i)=>lineBlock(l||' ',clsOf?clsOf(i):'',raw[i]||'',0,noLn?null:i)).join('');
 }
-function lineBlock(inner,cls,rawLine,extra){const ind=rawLine.match(/^\s*/)[0].replace(/\t/g,'    ').length+(extra||0);return '<span class="dl'+(cls?' '+cls:'')+'" style="--ind:'+ind+'ch">'+inner+'</span>';}
+function lineBlock(inner,cls,rawLine,extra,ln){const ind=rawLine.match(/^\s*/)[0].replace(/\t/g,'    ').length+(extra||0);return '<span class="dl'+(cls?' '+cls:'')+'"'+(ln!=null?' data-ln="'+ln+'"':'')+' style="--ind:'+ind+'ch">'+inner+'</span>';}
 
 const stage=$('#stage'), world=$('#world'), svg=$('#edges');
 let view={x:40,y:20,s:1};
 function applyView(){world.style.transform='translate('+view.x+'px,'+view.y+'px) scale('+view.s+')';$('#zpct').textContent=Math.round(view.s*100)+'%';drawMinimap();}
-let FLOW={}, nodes={}, edges=[], curEp=null, dragMoved=false, inputTokens={}, legendInputs=[], pvcolor={}, chgList=[], chgIdx=-1, chgNavOn=false;
-// overview first: boxes open as their call rows; source is one click (or C) away. Changed code always shows its diff.
+let FXL={}, FLOW={}, nodes={}, edges=[], curEp=null, dragMoved=false, inputTokens={}, legendInputs=[], pvcolor={}, chgList=[], chgIdx=-1, chgNavOn=false;
+// overview first: boxes open on their folded code; the rest is one click (or C) away. Changed code always shows its diff.
 let codeShown=store.get('code',false);
 const REVKEY='flowsegul_reviewed';
 function loadReviewed(){try{return new Set(JSON.parse(localStorage.getItem(REVKEY)||'[]'));}catch(e){return new Set();}}
@@ -1004,6 +1052,7 @@ function build(ep){
  // map node id -> the callee's simple function name, to light up call sites inside the code
  const nameById={}; ep.nodes.forEach(n=>{nameById[n.id]=(n.title||'').split('.').pop();});
 
+ FXL={};(((ep.effects||{}).items)||[]).forEach(it=>{if(it.risk&&it.ln)(FXL[it.node]=FXL[it.node]||[]).push(it);});
  ep.nodes.forEach((n,idx)=>{
    const c=code[n.fnKey]||{};
    // which function names this node calls → colour (matches its arrow) + target node to jump to
@@ -1019,27 +1068,26 @@ function build(ep){
    card.appendChild(head);
    if(n.changed)head.querySelector('.vwbtn').onclick=(e)=>{e.stopPropagation();setViewed(n,!card.classList.contains('viewed'));};
    const body=el('div','nbody');
-   // one row per statement; extra calls in the same statement have no expr — they still get an
-   // arrow (edge), but we don't render a blank duplicate row for them.
    (n.notes||[]).forEach(t=>body.appendChild(el('div','step note',esc(t))));
    const nodeVars=nodeVarsFor(n);
    const ins=renderIns(n,nodeVars);if(ins)body.appendChild(ins);
-   (n.steps||[]).forEach(s=>{if(s.expr==='')return;const row=renderStep(s,nodeVars);if(s.target&&nameById[s.target])row.dataset.callee=nameById[s.target];body.appendChild(row);});
-   // raise lines: red when nothing on the way to the route handles the error
-   (n.raises||[]).forEach(r=>{const m=/^raise\s+/.test(r.text)?r.text.replace(/^raise\s+/,''):r.text;
-     const row=el('div','step raise'+(r.esc?'':' handled'),'<span class="kw">raise</span> '+(r.esc?'<span class="sq" data-err="'+esc(r.t)+'" data-tip="'+esc(r.t)+'">'+esc(m)+'</span>':esc(m)));
-     row.dataset.err=r.t;body.appendChild(row);});
-   if(c.code||n.diff||n.base!=null){   // deleted nodes have no HEAD code but do have a removal diff
+   const hasCode=!!(c.code||n.diff||n.base!=null);
+   // no source to fold (a caller grafted in from outside): its calls as one-line rows
+   if(!hasCode)(n.steps||[]).forEach((s,si)=>{if(s.expr==='')return;const row=renderStep(s,nodeVars);row.dataset.row=si;if(s.target&&nameById[s.target])row.dataset.callee=nameById[s.target];body.appendChild(row);});
+   if(hasCode){card.classList.add('pyc');   // deleted nodes have no HEAD code but do have a removal diff
      const pre=el('pre','code');
      const flags=diffFlags(n.diff||'');
      const lset=new Set(n.locals||[]);
      const paint=(mode)=>{
-       if(mode==='Plain'){pre.className='code';pre.innerHTML=codeLines(c.code,nodeVars,callMarks,lset);return;}
-       pre.className='code diff';
+       const full=pre.classList.contains('full');
+       if(mode==='Plain'){pre.className='code';pre.innerHTML=codeLines(c.code,nodeVars,callMarks,lset);}
+       else{pre.className='code diff';
        if(mode==='Diff')pre.innerHTML=hlDiff(n.diff||'',nodeVars,callMarks,lset);
-       else if(mode==='Old')pre.innerHTML=hlSide(n.base||'',nodeVars,flags.oldRemoved,'ddel',callMarks,lset);
+       else if(mode==='Old')pre.innerHTML=hlSide(n.base||'',nodeVars,flags.oldRemoved,'ddel',callMarks,lset,true);
        else if(n.deleted)pre.innerHTML='(deleted — no current version)';
-       else pre.innerHTML=hlSide(c.code,nodeVars,flags.newAdded,'dadd',callMarks,lset);
+       else pre.innerHTML=hlSide(c.code,nodeVars,flags.newAdded,'dadd',callMarks,lset);}
+       pre.classList.toggle('full',full||mode!=='Plain');
+       foldCode(pre,n,nodeVars,nameById,c.code);
      };
      if(n.changed&&(n.diff||n.base!=null)){
        // changed code is the point of a review, so its diff always stays open
@@ -1053,8 +1101,8 @@ function build(ep){
        const bar=el('div','codebar');
        const btn=el('button','codebtn');
        bar.appendChild(btn);
-       btn.onclick=(e)=>{e.stopPropagation();setNodeCode(card,pre.hidden);relayout();};
-       body.appendChild(bar);body.appendChild(pre);paint('Plain');
+       btn.onclick=(e)=>{e.stopPropagation();setNodeCode(card,!pre.classList.contains('full'));relayout();};
+       body.appendChild(pre);body.appendChild(bar);paint('Plain');
        setNodeCode(card,codeShown,pre,btn);
      }
    }
@@ -1066,7 +1114,7 @@ function build(ep){
  });
 
  // edges: every node's steps that target another node
- ep.nodes.forEach(n=>{(n.steps||[]).forEach(s=>{if(s.target&&nodes[s.target])edges.push({src:n.id,dst:s.target,color:(s.var&&s.var!=='return')?varColor[s.var]:'var(--edge)',rowVar:s.var,label:s.arg||'',ret:s.ret||'',bind:s.bind||[],keys:edgeKeys(n.id,s),esc:s.esc||[],caught:s.caught||[]});});});
+ ep.nodes.forEach(n=>{(n.steps||[]).forEach((s,si)=>{if(s.target&&nodes[s.target])edges.push({src:n.id,dst:s.target,color:(s.var&&s.var!=='return')?varColor[s.var]:'var(--edge)',rowVar:s.var,row:si,label:s.arg||'',ret:s.ret||'',bind:s.bind||[],keys:edgeKeys(n.id,s),esc:s.esc||[],caught:s.caught||[]});});});
  // schema edges: only the response shape (dashed). The request model is shown as a node but not
  // wired with an arrow — it's the input type, not a call, so an arrow would just be documentation.
  (ep.modelEdges||[]).forEach(m=>{if(m.kind==='resp'&&nodes[m.src]&&nodes[m.dst])
@@ -1075,7 +1123,6 @@ function build(ep){
  layout();
  closeDrawer();
  $('#epinfo').innerHTML='<span class="m '+esc(ep.method.toUpperCase())+'">'+esc(ep.method)+'</span><span class="path" title="'+esc(ep.path)+'">'+esc(ep.path)+'</span><span class="sum" title="'+esc(ep.summary||'')+'">'+esc(ep.summary||'')+'</span>'+modelChips(ep)+statusChips(ep)+callerChips(ep);pinSt=null;okFocus(false);setErr(null);
- fxStrip(ep);
  renderLegend(varColor);
  fit(false);
  setupChgNav();
@@ -1087,45 +1134,91 @@ function build(ep){
 function statusChips(ep){
  if(!(ep.statuses||[]).length)return '';
  return '<span class="stchips" role="group" aria-label="Responses">'+ep.statuses.map(s=>'<button type="button" aria-pressed="false" class="stc '+esc(s.kind)+(s.new?' new':'')+'" data-st="'+esc(s.code)+'"'
-   +(s.types.length?' data-err="'+esc(s.types.join(' '))+'" data-tip="'+esc(s.types.join('\n'))+'"':'')+'>'+esc(s.code)+'</button>').join('')+'</span>';
+   +(s.types.length?' data-err="'+esc(s.types.join(' '))+'" data-tip="'+esc((s.lines&&s.lines.length?s.lines.slice(0,4):s.types).join('\n'))+'"':'')+'>'+esc(s.code)+'</button>').join('')+'</span>';
 }
 
-// what the route does to the world, in the order it happens: database writes, the commit, and
-// steps that can't be undone (email, HTTP, files, queues). Hover a chip to see its line and box;
-// click to go there. A red one can't be undone while an error or the commit can still follow it.
-function fxStrip(ep){
- const box=$('#fxstrip'),F=(ep&&ep.effects)||{};let items=F.items||[];
- box.hidden=!items.length;stage.classList.toggle('hasfx',!box.hidden);
- if(!items.length){box.innerHTML='';return;}
- const MAX=12;
- const chip=it=>{
-   const errs=(it.risk||[]).filter(r=>r!=='commit');
-   const tip=it.code+'\n'+it.fn+' · '+it.file.split('/').pop()+':'+it.line+(it.risk?'\ncan follow: '+it.risk.join(' · '):'');
-   return '<span class="fxw'+(it.cond?' cond':'')+'"><button class="fx '+esc(it.k)+(it.risk?' risk':'')+(it.via?' via':'')+'" data-go="'+esc(it.node)+'" data-tip="'+esc(tip)+'"'
-     +(errs.length?' data-err="'+esc(errs.join(' '))+'"':'')+'>'+esc(it.label)+(it.n>1?' <b>×'+it.n+'</b>':'')+'</button>'
-     +((it.via||it.cond)?'<i>'+esc(it.via||it.cond)+'</i>':'')+'</span>';
- };
- // a long strip shows each step once, where it first happens (×n counts the rest), keeps every
- // red one, and folds runs of the others into a +N chip
- if(items.length>MAX){const seen=new Map();items=items.reduce((out,it)=>{const k=[it.k,it.label,it.via||'',!!it.risk].join('|'),o=seen.get(k);
-   if(o){o.n=(o.n||1)+(it.n||1);if(!it.cond)o.cond='';if(it.risk)o.risk=[...new Set(o.risk.concat(it.risk))];return out;}
-   const c=Object.assign({},it);seen.set(k,c);out.push(c);return out;},[]);}
- const h=[];let run=[];
- const flush=()=>{if(run.length)h.push('<span class="fxw"><span class="fx unk" data-tip="'+esc(run.map(i=>i.label).join('\n'))+'">+'+run.length+'</span></span>');run=[];};
- items.forEach((it,i)=>{if(i<MAX||it.risk){flush();h.push(chip(it));}else run.push(it);});
- flush();
- if(F.commit==='unknown')h.push('<span class="fxw"><span class="fx unk" data-tip="no commit found">commit ?</span></span>');
- box.innerHTML=h.join('<span class="fxa">→</span>');
-}
-$('#fxstrip').addEventListener('click',e=>{const c=e.target.closest('.fx[data-go]');if(c)focusNode(nodes[c.dataset.go]);});
-$('#fxstrip').addEventListener('mouseover',e=>{const c=e.target.closest('.fx[data-go]'),nd=c&&nodes[c.dataset.go];if(nd)nd.el.classList.add('fxhot');});
-$('#fxstrip').addEventListener('mouseout',e=>{world.querySelectorAll('.node.fxhot').forEach(n=>n.classList.remove('fxhot'));});
 
+// a box opens on its folded code: the lines that call something or raise, and the if/for/try/with
+// lines around them. "View code" unfolds the rest in place, so no line is ever shown twice.
 function setNodeCode(card,show,pre,btn){
  pre=pre||card.querySelector('pre.code');btn=btn||card.querySelector('.codebtn');
  if(!pre||!btn)return;
- pre.hidden=!show;card.classList.toggle('wide',show);
- btn.innerHTML=ICON_CODE+(show?'Hide code':'View code');
+ if(pre.classList.contains('js')){pre.hidden=!show;card.classList.toggle('wide',show);btn.innerHTML=ICON_CODE+(show?'Hide code':'View code');return;}
+ pre.classList.toggle('full',show);card.classList.toggle('wide',show);
+ btn.innerHTML=ICON_CODE+(show?'Fold code':'View code');
+ btn.hidden=!pre.querySelector('.dl.f');
+}
+const codeOpen=pre=>!!pre&&pre.classList.contains('full');
+// wrap each statement's lines into a .step (the arrows leave from it) and mark the rest folded
+function foldCode(pre,n,nv,nameById,src){
+ const own=new Map(),keep=new Set(),items=[];
+ const add=(ln,ctx,mk)=>{if(!ln)return;const k=ln[0]+'-'+ln[1];let it=own.get(ln[0]);
+   if(!it||it.k!==k){it={k,ln,si:[],mk};items.push(it);for(let i=ln[0];i<=ln[1];i++)own.set(i,it);}
+   (ctx||[]).forEach(([a,b])=>{for(let i=a;i<=b;i++)keep.add(i);});return it;};
+ (n.steps||[]).forEach((s,si)=>{const it=add(s.ln,s.ctx,'s');if(!it)return;it.si.push(si);if(!it.s)it.s=s;});
+ (n.raises||[]).forEach((r,ri)=>{const it=add(r.ln,r.ctx,'r');if(it){it.r=r;it.ri=ri;}});
+ const fx=FXL[n.id]||[];
+ const raw=String(src||'').split('\n');
+ fx.forEach(f=>{for(let i=f.ln[0];i<=f.ln[1];i++)keep.add(i);blockHeads(raw,f.ln[0]).forEach(i=>keep.add(i));});
+ (n.hints||[]).forEach(h=>{keep.add(h[0]);blockHeads(raw,h[0]).forEach(i=>keep.add(i));});
+ let cur=null,curIt=null,gap=false;
+ [...pre.children].forEach(dl=>{
+   if(!dl.classList.contains('dl'))return;
+   const ln=dl.dataset.ln==null?null:+dl.dataset.ln,it=ln==null?null:own.get(ln);
+   if(it){
+     if(curIt!==it){cur=el('span',stepClass(it));decorate(cur,it,nv,nameById);dl.before(cur);curIt=it;}
+     cur.appendChild(dl);gap=false;return;
+   }
+   cur=curIt=null;
+   if(ln!=null&&!keep.has(ln)){dl.classList.add('f');if(!gap){dl.before(el('span','fmk','⋯'));gap=true;}}else gap=false;
+ });
+ // an irreversible step with an error or the commit still to come: squiggle its lines, say what follows
+ fx.forEach(f=>{const dls=[...pre.querySelectorAll('.dl')].filter(d=>d.dataset.ln!=null&&+d.dataset.ln>=f.ln[0]&&+d.dataset.ln<=f.ln[1]);if(!dls.length)return;
+   const errs=f.risk.filter(r=>r!=='commit');
+   dls.forEach(d=>{d.classList.add('fxsq');d.dataset.tip=f.risk.join(' · ');if(errs.length)d.dataset.err=errs.join(' ');});
+   dls[dls.length-1].insertAdjacentHTML('beforeend','<span class="fxtag">before '+esc(f.risk.includes('commit')?'commit':errs[0])+'</span>');});
+ // review hints: one squiggle per line, every hint on it in the hover; unsure ones only if nothing sure is there
+ const hl=new Map();(n.hints||[]).forEach(h=>{if(!hl.has(h[0]))hl.set(h[0],[]);hl.get(h[0]).push(h);});
+ hl.forEach((hs,ln)=>{const d=pre.querySelector('.dl[data-ln="'+ln+'"]');if(!d)return;
+   const sure=hs.some(h=>h[4]);hs=sure?hs.filter(h=>h[4]).concat(hs.filter(h=>!h[4])):hs;
+   // the squiggle goes under the code itself, not the indent before it
+   const w=el('span','hsq'+(sure?'':' unsure'));w.append(...d.childNodes);d.appendChild(w);
+   const t=w.firstChild;if(t&&t.nodeType===3){const m=t.data.match(/^\s*/)[0];if(m){t.data=t.data.slice(m.length);w.before(m);}}
+   const tip=h=>h[3].replace(/; /g,'\n');w.dataset.tip=hs.map(tip).join('\n\n');
+   d.insertAdjacentHTML('beforeend',hs.map(h=>'<span class="htag'+(h[4]?'':' unsure')+'" data-tip="'+esc(tip(h))+'">'+esc(h[2])+'</span>').join(''));});
+ // squiggles go on the call's own name (or the whole raise) once its lines are in place
+ pre.querySelectorAll('.step').forEach(st=>{const it=st._it;
+   if(it.r){if(it.r.esc)st.querySelectorAll('.dl').forEach(d=>{d.classList.add('sq');d.dataset.err=it.r.t;});return;}
+   (it.si||[]).forEach(si=>{const s=n.steps[si];const c=[...st.querySelectorAll('.call')].find(x=>x.dataset.target===s.target)||st.querySelector('.call');if(!c)return;
+     if(s.esc&&s.esc.length){c.classList.add('sq');c.dataset.err=s.esc.join(' ');}
+     else if(s.caught&&s.caught.length){c.classList.add('sqok');c.dataset.err=s.caught.map(x=>x[0]).join(' ');c.dataset.st=String(s.caught[0][1]||'');}});});
+ // leading and trailing folded lines need no marker: the box's edges say it
+ pre.classList.toggle('none',!pre.querySelector('.dl:not(.f)'));
+ const kids=[...pre.children].filter(e=>!e.classList.contains('f'));
+ if(kids[0]&&kids[0].classList.contains('fmk'))kids[0].remove();
+ const last=kids[kids.length-1];if(last&&last.classList.contains('fmk'))last.remove();
+}
+// the `if …:` / `for …:` / `with …:` lines a line sits in, by indentation
+function blockHeads(raw,k){
+ const out=[],ind=l=>l.match(/^\s*/)[0].replace(/\t/g,'    ').length;let cur=raw[k]==null?0:ind(raw[k]);
+ for(let j=k-1;j>=0&&cur>0;j--){const t=raw[j].trim();if(!t||t[0]==='#')continue;const i=ind(raw[j]);if(i>=cur)continue;
+   if(/^(async\s+)?def\b/.test(t))break;
+   if(/^(if|elif|else|for|async\s+for|while|with|async\s+with|try|except|finally|match|case)\b.*:\s*(#.*)?$/.test(t))out.push(j);
+   cur=i;}
+ return out;
+}
+function stepClass(it){
+ if(it.r)return 'step raise'+(it.r.esc?'':' handled');
+ return 'step'+(it.s&&it.s.var==='return'?' ret':'');
+}
+function decorate(row,it,nv,nameById){
+ row._it=it;
+ if(it.r){row.dataset.err=it.r.t;if(it.r.st)row.dataset.st=it.r.st;row.dataset.ri=it.ri;}
+ if(!it.s)return;
+ const s=it.s,col=(s.var&&s.var!=='return')?nv[s.var]:null;
+ if(col)row.style.borderLeftColor=col;
+ row.dataset.rowvar=s.var;row.dataset.row=it.si[0];row.dataset.si=it.si.join(' ');
+ if(s.target&&nameById[s.target])row.dataset.callee=nameById[s.target];
 }
 
 // ── values across calls ──
@@ -1182,13 +1275,12 @@ function renderStep(s,nv){
  while((m=re.exec(src))){
    const w=m[1];
    if(w&&nv[w]&&src[m.index-1]!=='.'){const t=fieldTail(src,re.lastIndex);re.lastIndex+=t.length;expr+=vchip(w,nv[w],t,w+t);}
-   else expr+=esc(m[0]);
+   else expr+=esc(m[0])+('.(,'.includes(m[0])?'<wbr>':'');
  }
  // an error this call can let through gets a red squiggle; one handled right here gets a green one
  if(s.esc&&s.esc.length)expr='<span class="sq" data-err="'+esc(s.esc.join(' '))+'">'+expr+'</span>';
  else if(s.caught&&s.caught.length)expr='<span class="sqok" data-err="'+esc(s.caught.map(c=>c[0]).join(' '))+'" data-st="'+esc(String(s.caught[0][1]||''))+'">'+expr+'</span>';
  row.innerHTML=label+expr;
- row.dataset.rowvar=s.var;
  return row;
 }
 
@@ -1214,7 +1306,7 @@ function layout(){
    // order the column by the mean height of the caller rows pointing into each box (the barycenter
    // step of layered layout), so arrows run roughly level and cross less. Stable for ties/roots.
    const bary={};
-   ids.forEach((id,i)=>{const ys=edges.filter(e=>e.dst===id&&!e.plain&&nodes[e.src]&&nodes[e.src].def.col<col).map(e=>anchorRow(nodes[e.src],e.rowVar));bary[id]=ys.length?ys.reduce((a,b)=>a+b,0)/ys.length:Infinity;});
+   ids.forEach((id,i)=>{const ys=edges.filter(e=>e.dst===id&&!e.plain&&nodes[e.src]&&nodes[e.src].def.col<col).map(e=>anchorRow(nodes[e.src],e.row));bary[id]=ys.length?ys.reduce((a,b)=>a+b,0)/ys.length:Infinity;});
    ids=ids.map((id,i)=>[id,i]).sort((a,b)=>(bary[a[0]]-bary[b[0]])||(a[1]-b[1])).map(p=>p[0]);
    let y=padTop, maxW=320;
    ids.forEach(id=>{const nd=nodes[id];nd.x=x;nd.y=y;place(nd);y+=nd.el.offsetHeight+gapY;maxW=Math.max(maxW,nd.el.offsetWidth);});
@@ -1224,7 +1316,20 @@ function layout(){
 }
 function relayout(){requestAnimationFrame(()=>{layout();});}
 function place(nd){nd.el.style.left=nd.x+'px';nd.el.style.top=nd.y+'px';}
-function anchorRow(nd,rowVar){const rows=nd.el.querySelectorAll('.step');if(!nd.el.classList.contains('shut'))for(const r of rows){if(r.dataset.rowvar===rowVar)return nd.y+r.offsetTop+r.offsetHeight/2;}return nd.y+Math.min(nd.el.offsetHeight/2,24);}
+// the height an arrow leaves a box at: the middle of the call's own line (the first line of a call
+// that spans several), kept inside the code block when that scrolls
+function anchorRow(nd,si){
+ const top=nd.y+Math.min(nd.el.offsetHeight/2,24);
+ if(nd.el.classList.contains('shut'))return top;
+ const rows=[...nd.el.querySelectorAll('.step')];
+ const r=si!=null&&rows.find(x=>(x.dataset.si||x.dataset.row||'').split(' ').includes(String(si)));
+ if(!r||!r.getClientRects().length)return top;
+ const line=r.querySelector('.dl')||r,h=Math.min(line.offsetHeight||r.offsetHeight,20);
+ let y=0,e=line;while(e&&e!==nd.el){y+=e.offsetTop;e=e.offsetParent;}
+ const pre=r.closest('pre');
+ if(pre){y-=pre.scrollTop;let py=0,p=pre;while(p&&p!==nd.el){py+=p.offsetTop;p=p.offsetParent;}y=Math.max(py+8,Math.min(py+pre.clientHeight-8,y+h/2))-h/2;}
+ return nd.y+y+h/2;
+}
 function bez(x0,y0,cx0,cy0,cx1,cy1,x1,y1,t){const u=1-t;return[u*u*u*x0+3*u*u*t*cx0+3*u*t*t*cx1+t*t*t*x1, u*u*u*y0+3*u*u*t*cy0+3*u*t*t*cy1+t*t*t*y1];}
 function argTspans(text,base){return text.split(/,\s*/).map((piece,i)=>{const key=piece.split('=')[0].trim();const c=inputTokens[key];return '<tspan fill="'+(c||base)+'">'+esc((i?', ':'')+piece)+'</tspan>';}).join('');}
 // a value pill: the variable travelling along an arrow. Solid = produced here, dashed = consumed.
@@ -1247,22 +1352,25 @@ function groupEdges(){
  });
  return order;
 }
-let GORIG=[],GKEYS=[];            // GORIG[groupIndex] = ["<callerNodeId>|<rowVar>", …]  (for hover-linking)
+let GORIG=[],GKEYS=[],GRET=[];     // GORIG[groupIndex] = ["<callerNodeId>|<step index>", …]  (for hover-linking)
 function drawEdges(){
  if(RMODE){svg.innerHTML='';drawMinimap();return;}
  svg.setAttribute('width',8000);svg.setAttribute('height',5000);
- let defs='<defs>',stubs='',fwd='',ret='',labels='';GORIG=[];GKEYS=[];
+ let defs='<defs>',stubs='',fwd='',ret='',labels='';GORIG=[];GKEYS=[];GRET=[];
  groupEdges().forEach((g,i)=>{
    const a=nodes[g.src],b=nodes[g.dst];if(!a||!b)return;
    const gc='ge ge'+i;                       // linking hook: every part of this group carries ge<i>
-   GORIG[i]=g.items.map(e=>g.src+'|'+e.rowVar);
+   GORIG[i]=g.items.map(e=>g.src+'|'+e.row);
    // variable spotlight hook: which vars this bundle carries (produced results + argument tokens)
    const gkeys=new Set();
    g.items.forEach(e=>(e.keys||[]).forEach(k=>gkeys.add(k)));
    GKEYS[i]=[...gkeys];
+   // the return side carries only what the call produced, not the arguments that went in
+   GRET[i]=[...new Set([].concat(...g.items.filter(e=>e.rowVar&&e.rowVar!=='·'&&e.rowVar!=='return')
+     .map(e=>originsOf(g.src,e.rowVar).map(([o,p])=>o+'@'+p))))];
    const dv=gkeys.size?' data-keys="'+esc([...gkeys].join(' '))+'"':'';
    // each call's own origin row (var-coloured) so you see exactly which line(s) make the call
-   const origins=g.items.map(e=>({y:e.rowVar?anchorRow(a,e.rowVar):a.y+34,col:e.color||'var(--edge)'}));
+   const origins=g.items.map(e=>({y:e.row!=null?anchorRow(a,e.row):a.y+34,col:e.color||'var(--edge)'}));
    const rx=a.x+a.el.offsetWidth, ry=origins.reduce((s,o)=>s+o.y,0)/origins.length;
    const jx=origins.length>1?rx+26:rx;        // manifold junction: stubs fan in here, one arrow leaves
    // stubs: from each call line at the box edge, curving into the shared junction
@@ -1323,25 +1431,27 @@ function drawEdges(){
  drawMinimap();
 }
 // hover-linking: a call line ↔ its (possibly bundled) arrow. Delegated, so it survives every redraw.
-function setLink(gis){
- setSpotH([].concat(...(gis||[]).map(gi=>(GKEYS[gi]||[]).map(splitKey))));
+function setLink(gis,retOnly){
+ setSpotH([].concat(...(gis||[]).map(gi=>((retOnly?GRET:GKEYS)[gi]||[]).map(splitKey))));
  svg.classList.toggle('linking',gis&&gis.length>0);
  svg.querySelectorAll('.ge.on').forEach(el=>el.classList.remove('on'));
  world.querySelectorAll('.step.hl').forEach(el=>el.classList.remove('hl'));
  (gis||[]).forEach(gi=>{
    svg.querySelectorAll('.ge'+gi).forEach(el=>el.classList.add('on'));
-   (GORIG[gi]||[]).forEach(k=>{const[nid,rv]=k.split('|');const card=world.querySelector('.node[data-id="'+nid+'"]');if(card)card.querySelectorAll('.step').forEach(st=>{if(st.dataset.rowvar===rv)st.classList.add('hl');});});
+   (GORIG[gi]||[]).forEach(k=>{const[nid,rv]=k.split('|');const card=world.querySelector('.node[data-id="'+nid+'"]');if(card)card.querySelectorAll('.step').forEach(st=>{if((st.dataset.si||st.dataset.row||'').split(' ').includes(rv))st.classList.add('hl');});});
  });
 }
-world.addEventListener('mouseover',e=>{if(e.target.closest('[data-var]'))return;const st=e.target.closest('.step[data-rowvar]');if(!st)return;const card=st.closest('.node');if(!card)return;const key=card.dataset.id+'|'+st.dataset.rowvar;const gis=GORIG.map((o,i)=>o&&o.includes(key)?i:-1).filter(i=>i>=0);if(gis.length)setLink(gis);});
-world.addEventListener('mouseout',e=>{if(e.target.closest('.step[data-rowvar]'))setLink([]);});
-svg.addEventListener('mouseover',e=>{const t=e.target.closest('[data-g]');if(t)setLink([+t.dataset.g]);});
+world.addEventListener('mouseover',e=>{if(e.target.closest('[data-var]'))return;const st=e.target.closest('.step[data-row]');if(!st)return;const card=st.closest('.node');if(!card)return;const keys=(st.dataset.si||st.dataset.row).split(' ').map(r=>card.dataset.id+'|'+r);const gis=GORIG.map((o,i)=>o&&keys.some(k=>o.includes(k))?i:-1).filter(i=>i>=0);if(gis.length)setLink(gis);});
+world.addEventListener('mouseout',e=>{if(e.target.closest('.step[data-row]'))setLink([]);});
+svg.addEventListener('mouseover',e=>{const t=e.target.closest('[data-g]');if(t)setLink([+t.dataset.g],t.classList.contains('gr'));});
 svg.addEventListener('mouseout',e=>{if(e.target.closest('[data-g]'))setLink([]);});
 
 // error focus: hover a squiggle, an error label on an arrow or a status chip → everything that
 // error touches stays lit (rows, arrow labels, the arrow it travels back along, the route's status)
 function errMatch(e,H){
  if(H.st&&e.dataset.st===H.st)return true;
+ // a response chip lights the raise lines that give its own status, not every raise of that type
+ if(H.chip&&e.dataset.st)return false;
  return (e.dataset.err||'').split(' ').some(x=>x&&H.t.includes(x));
 }
 function setErr(src){
@@ -1349,7 +1459,7 @@ function setErr(src){
  [world,svg,$('#epinfo')].forEach(r=>r.classList.toggle('errfocus',on));
  document.querySelectorAll('.errhot').forEach(e=>e.classList.remove('errhot'));
  if(!on)return;
- const H={t:(src.dataset.err||'').split(' ').filter(Boolean),st:src.dataset.st||''};
+ const H={t:(src.dataset.err||'').split(' ').filter(Boolean),st:src.dataset.st||'',chip:src.classList.contains('stc')};
  document.querySelectorAll('#world [data-err],#edges [data-err],#epinfo [data-err],#epinfo [data-st]').forEach(e=>{if(errMatch(e,H)){e.classList.add('errhot');
    const st=e.closest('.step');if(st)st.classList.add('errhot');const card=e.closest('.node');if(card)card.classList.add('errhot');}});
 }
@@ -1369,9 +1479,10 @@ const HAS_ASK=typeof startAsk==='function';
 if(HAS_ASK){const _start=startAsk;startAsk=function(nid,q){if(pinSt){pinSt=null;restorePin();}return _start(nid,q);};}
 document.addEventListener('click',e=>{const t=HAS_ASK&&e.target.closest&&e.target.closest('.node .ub');if(!t)return;e.stopPropagation();
  const nid=t.closest('.node').dataset.id;if(questionsFor(nid).some(q=>q.k==='routes'))startAsk(nid,{k:'routes'});},true);
-document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('#epinfo .stc');if(!b)return;pinSt=pinSt===b.dataset.st?null:b.dataset.st;if(pinSt&&typeof clearAsk==='function')clearAsk(true);restorePin();});
-document.addEventListener('mouseover',e=>{const t=e.target.closest&&e.target.closest('.stc[data-err],.step.raise,.fx[data-err]');if(t){okFocus(false);setErr(t);}});
-document.addEventListener('mouseout',e=>{const t=e.target.closest&&e.target.closest('.stc[data-err],.step.raise,.fx[data-err]');if(t&&!(e.relatedTarget&&t.contains(e.relatedTarget))){if(pinSt)restorePin();else setErr(null);}});
+document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('#epinfo .stc');if(!b)return;
+ if(b.dataset.err){const top=curEp.nodes.find(n=>n.entry);if(top)askErr(top.id,b.dataset.err.split(' ').filter(Boolean));return;}pinSt=pinSt===b.dataset.st?null:b.dataset.st;if(pinSt&&typeof clearAsk==='function')clearAsk(true);restorePin();});
+document.addEventListener('mouseover',e=>{const t=e.target.closest&&e.target.closest('.stc[data-err],.step.raise,.fxsq[data-err]');if(t){okFocus(false);setErr(t);}});
+document.addEventListener('mouseout',e=>{const t=e.target.closest&&e.target.closest('.stc[data-err],.step.raise,.fxsq[data-err]');if(t&&!(e.relatedTarget&&t.contains(e.relatedTarget))){if(pinSt)restorePin();else setErr(null);}});
 
 // variable spotlight: hover any variable → it lights up everywhere (chips, code tokens, and every
 // arrow that carries it), while the rest fades. This is the "trace this value" view.
@@ -1411,18 +1522,10 @@ world.addEventListener('mouseout',e=>{const t=e.target.closest('[data-var]');if(
 $('#legend').addEventListener('mouseover',e=>{const t=e.target.closest('[data-var]');if(t)setSpot(t.dataset.var);});
 $('#legend').addEventListener('mouseout',e=>{const t=e.target.closest('[data-var]');if(t)setSpot(null);});
 
-// click a step row (top summary) → scroll the code block below to that exact call site & flash it
-world.addEventListener('click',e=>{
- const st=e.target.closest('.step[data-callee]');
- if(!st||e.target.closest('[data-var]'))return;
- const card=st.closest('.node'), pre=card.querySelector('pre.code');if(!pre)return;
- if(pre.hidden){setNodeCode(card,true);relayout();}
- const tgt=[...pre.querySelectorAll('.call')].find(c=>c.textContent===st.dataset.callee);
- if(!tgt)return;
- tgt.scrollIntoView({block:'nearest',inline:'nearest',behavior:'smooth'});
- tgt.classList.remove('callflash');void tgt.offsetWidth;tgt.classList.add('callflash');
- setTimeout(()=>tgt.classList.remove('callflash'),1600);
-});
+// ⋯ in folded code unfolds the box
+world.addEventListener('click',e=>{const m=e.target.closest&&e.target.closest('pre.code .fmk');if(!m)return;e.stopPropagation();setNodeCode(m.closest('.node'),true);relayout();});
+// a scrolled code block moves its call lines, so the arrows follow
+world.addEventListener('scroll',e=>{if(e.target.matches&&e.target.matches('pre.code'))scheduleEdges();},true);
 
 // changed-node navigator (opt-in): step through the changed nodes of the current endpoint
 function setupChgNav(){
@@ -1470,7 +1573,7 @@ $('#helppop').addEventListener('click',e=>{if(!e.target.closest('.sheet'))toggle
 // ── request/response models: chips in the header → a slide-out field drawer (no graph clutter) ──
 function modelChips(ep){
  const chip=(name,kind)=>{const m=(ep.models||{})[name]||{};return '<span class="mchip'+(m.changed?' chg':'')+'" data-model="'+esc(name)+'" title="'+esc(name)+'"><span class="k">'+kind+'</span><span class="mn">'+esc(name)+'</span></span>';};
- const h=(ep.reqModels||[]).map(n=>chip(n,'req')).join('')+(ep.respModels||[]).map(n=>chip(n,'resp')).join('');
+ const h=(ep.reqModels||[]).map(n=>chip(n,'req')).join('')+(ep.respModels||[]).map(n=>chip(n,'resp')).join('')+(ep.flowModels||[]).map(n=>chip(n,'uses')).join('');
  return h?'<div class="mchips">'+h+'</div>':'';
 }
 let mstack=[];
@@ -1529,7 +1632,9 @@ function focusNode(nd){
  setTimeout(()=>nd.el.classList.remove('flash'),1800);
 }
 world.addEventListener('click',e=>{const c=e.target.closest&&e.target.closest('.call[data-target]');
- if(!c)return;e.stopPropagation();focusNode(nodes[c.dataset.target]);});
+ if(!c)return;e.stopPropagation();const nd=nodes[c.dataset.target];if(!nd)return;
+ if(!RMODE){const h=xHere();if(h){h.kind='view';xhist.push(h);rBar();}}
+ focusNode(nd);});
 // scroll = smooth zoom toward the cursor; pan is done by dragging empty canvas (or two-finger scroll)
 function zoomAt(cx,cy,factor){
  const r=stage.getBoundingClientRect();const mx=cx-r.left,my=cy-r.top;
@@ -1564,7 +1669,7 @@ function fit(anim){
  if(!b||!r.width){view={x:20,y:20,s:1};applyView();return;}
  const pad=36,w=b.x1-b.x0,h=b.y1-b.y0;
  // keep the first boxes clear of the side-effect strip at the top
- const top=stage.classList.contains('hasfx')?$('#fxstrip').offsetHeight:0, H=r.height-top;
+ const top=0, H=r.height-top;
  let s=Math.min(1,(r.width-pad*2)/w,(H-pad*2-40)/h);
  s=Math.max(anim?0.2:0.75,s);
  view.s=s;
@@ -1681,6 +1786,12 @@ function rCode(text,marks,o){
  return out+synHtml(text,cls,i,text.length);
 }
 
+// `draft erased when showPromo is false`: hover shows the line that now unmounts it
+function chkChip([k,t,tip]){
+ const d=tip?' data-tip="'+esc(tip)+'" tabindex="0"':'';
+ return '<span class="rc chk bad"'+d+'>'+esc(t)+'</span>';
+}
+
 // which boxes to draw: everything the action's steps touch, the components that rerun (a few),
 // the pinned state's lines, and the tree between them so the columns read parent → child
 function rShownSet(){
@@ -1692,7 +1803,8 @@ function rShownSet(){
    A.steps.forEach(st=>(st.rr||[]).forEach(([u,row])=>{if(s.has(u)&&row)need.add(row);}));}
  if(rv.pin){const st=RS[rv.pin];[st.row].concat(st.hops,st.sites).forEach(addRow);st.sigs.forEach(u=>s.add(u));}
  rv.extra.forEach(u=>s.add(u));
- [...s].forEach(u=>{
+ // an action's boxes line up in step order (rLayout), so the tree between them isn't needed
+ if(!A)[...s].forEach(u=>{
    if(!RU[u]||RU[u].kind!=='component')return;
    const prev=new Map([[u,null]]),q=[[u,0]];let hit=null;
    for(let i=0;i<q.length&&!hit;i++){const [x,d]=q[i];if(d>=6)continue;
@@ -1701,7 +1813,7 @@ function rShownSet(){
  });
  return {s,need};
 }
-function rRowVisible(id){const r=RR[id];return !r.kids||r.kids.some(k=>rv.shown.has(k))||rv.need.has(id);}
+function rRowVisible(id){const r=RR[id];return !r.kids||r.f||r.kids.some(k=>rv.shown.has(k))||rv.need.has(id);}
 function rBox(U){
  const card=el('div','node rbox'+(U.kind!=='component'?' '+U.kind:''));card.dataset.id=U.id;
  const head=el('div','nhead');
@@ -1713,19 +1825,21 @@ function rBox(U){
  const steps=inds.map(x=>x-base).filter(x=>x>0),unit=steps.length?Math.max(2,Math.min(4,Math.min(...steps))):2;
  ids.forEach(id=>{
    const r=RR[id],st=RSTATE_ROW[id];
-   const row=el('div','rrow'+(st?' srow':'')+(r.unc?' unc':''));row.id='rr-'+id;row.dataset.row=id;
+   const row=el('div','rrow'+(st?' srow':'')+(r.unc?' unc':'')+(r.chg?' chg':r.chgp?' chg chgp':''));row.id='rr-'+id;row.dataset.row=id;
    row.style.setProperty('--i',Math.min(6,Math.round((r.i-base)/unit)));
    let h=rCode(r.t,r.m,{state:st&&st.id});
    if(st){row.dataset.s=st.id;row.tabIndex=0;row.setAttribute('role','button');row.setAttribute('aria-pressed','false');
      row.setAttribute('aria-label',(st.name||st.setter)+' state, show where it is set');
      h+='<span class="sets">set in '+st.sites.length+' place'+(st.sites.length===1?'':'s')+'</span>';}
    (r.api||[]).forEach(a=>{h+=apiChips(a);});
+   (r.f||[]).forEach(f=>{h+=chkChip(f);});
    row.innerHTML=h;fitMarks(row,r);body.appendChild(row);
  });
  if(U.code){
    const bar=el('div','codebar'),btn=el('button','codebtn'),pre=el('pre','code js');
    bar.appendChild(btn);body.appendChild(bar);body.appendChild(pre);
-   pre.innerHTML=codeLines(U.code,{},{},null,null,hlJs);
+   const chgL=new Set(U.chg||[]);   // a diff view: the lines this change touched, tinted as added
+   pre.innerHTML=codeLines(U.code,{},{},null,chgL.size?i=>chgL.has(U.codeLine+i)?'dadd':'':null,hlJs);
    btn.onclick=e=>{e.stopPropagation();const show=pre.hidden;show?rv.code.add(U.id):rv.code.delete(U.id);setNodeCode(card,show);relayout();};
    setNodeCode(card,codeShown||rv.code.has(U.id),pre,btn);
  }
@@ -1746,6 +1860,7 @@ function rBuild(force){
 // columns by render-tree depth, parent left of child; within a column, under the row that renders it
 function rLayout(){
  const ids=Object.keys(nodes);if(!ids.length){drawMinimap();return;}
+ if(rv.base)return rStepLayout(ids);
  const comps=ids.filter(id=>RU[id].kind!=='fn');
  const depths=[...new Set(comps.map(id=>RU[id].depth||0))].sort((a,b)=>a-b);
  const colOf=id=>RU[id].kind==='fn'?depths.length:depths.indexOf(RU[id].depth||0);
@@ -1765,6 +1880,28 @@ function rLayout(){
    col.forEach(id=>{const nd=nodes[id];const want=ys.get(id);if(isFinite(want))y=Math.max(y,want-10);nd.x=x;nd.y=y;place(nd);y+=nd.el.offsetHeight+26;w=Math.max(w,nd.el.offsetWidth);});
    x+=w+56;
  }
+ drawMinimap();
+}
+
+// an action: left to right in the order its steps first reach each box; boxes first reached on the
+// same step (the ones that rerun) stack in one column; each box's first lit line sits on one line
+function rStepLayout(ids){
+ const first=new Map(),firstRow=new Map();
+ rv.base.steps.forEach((st,i)=>{
+   st.r.forEach(r=>{const u=RR[r]&&RR[r].u;if(u&&!first.has(u)){first.set(u,i);firstRow.set(u,r);}});
+   (st.rr||[]).forEach(([u,row])=>{if(!first.has(u)){first.set(u,i);if(row)firstRow.set(u,row);}});
+ });
+ const keys=[...new Set(ids.map(id=>first.has(id)?first.get(id):1e9))].sort((a,b)=>a-b);
+ const LINE=150;let x=24;
+ keys.forEach(k=>{
+   const col=ids.filter(id=>(first.has(id)?first.get(id):1e9)===k).sort((a,b)=>a<b?-1:1);
+   let y=24,w=340;
+   col.forEach((id,j)=>{const nd=nodes[id];const e=firstRow.has(id)&&rEl(firstRow.get(id));
+     const off=e?e.offsetTop:24;
+     if(j===0)y=Math.max(24,LINE-off);
+     nd.x=x;nd.y=y;place(nd);y+=nd.el.offsetHeight+26;w=Math.max(w,nd.el.offsetWidth);});
+   x+=w+56;
+ });
  drawMinimap();
 }
 
@@ -1985,7 +2122,7 @@ function openCaller(row){
 function rUnitView(row){
  const R=RR[row],U=R&&RU[R.u];if(!U)return;
  side.querySelectorAll('.ep').forEach(x=>x.classList.remove('on'));
- if(!RMODE){RMODE=true;svg.innerHTML='';$('#chgnav').hidden=true;fxStrip(null);closeDrawer();}
+ if(!RMODE){RMODE=true;svg.innerHTML='';$('#chgnav').hidden=true;closeDrawer();}
  curEp={id:'unit:'+row,nodes:[],react:true};
  Object.assign(rv,{base:null,act:null,step:1,hover:null,pin:null,sstep:1,extra:new Set([U.id]),shownKey:'',unitRow:row});rhist=[];
  rBuild(true);fit(false);
@@ -1998,7 +2135,8 @@ function xBack(){
  if(h.kind==='ep'){xSelect(EPBYID[h.id]||{id:h.id});}
  else if(h.kind==='act'){const it=epEls.find(e=>e.ep.__act&&e.ep.__act.id===h.id);if(it){xnav=true;try{selectEp(it.ep,it.d);}finally{xnav=false;}rv.step=h.step||1;if(h.pin)rv.pin=h.pin;rBuild();}}
  else if(h.kind==='unit')rUnitView(h.row);
- view.x=h.v.x;view.y=h.v.y;view.s=h.v.s;applyView();rBar();
+ else if(h.kind==='view'&&(RMODE||!curEp||curEp.id!==h.id)){xhist=xhist.filter(x=>x.kind!=='view');return xBack();}
+ view.x=h.v.x;view.y=h.v.y;view.s=h.v.s;if(h.kind==='view')animateView();else applyView();rBar();
 }
 $('#epinfo').addEventListener('click',e=>{
  const c=e.target.closest('a.rc.call');if(c){e.preventDefault();openCaller(c.dataset.row);return;}
@@ -2016,12 +2154,13 @@ function rLegend(){
   +'<span><span class="dash"></span></span><span>not sure: spread props, context</span>'
   +(Object.keys(HTTP).length&&graph.endpoints.length?'<span><span class="rc api" style="margin:0"><span class="dot"></span>GET /items</span></span><span>request, click for its route</span>'
     +'<span><span class="rc bad" style="margin:0">no route</span></span><span>won\'t reach a route as written</span>':'')
+  +(RPROB.length?'<span><span class="rc chk bad" style="margin:0;cursor:default">draft erased when open is false</span></span><span>this branch makes it start over, hover for the line</span>':'')
   +'<span><kbd>Esc</kbd></span><span>clear</span>'
   +'</div></div>';
 }
 function rLeave(){if(!RMODE)return;RMODE=false;world.classList.remove('rdim');$('#stepbar').hidden=true;rv.pin=null;rv.hover=null;}
 function selectAction(A){
- RMODE=true;curEp={id:A.id,nodes:[],react:true};fxStrip(null);
+ RMODE=true;curEp={id:A.id,nodes:[],react:true};
  svg.innerHTML='';$('#chgnav').hidden=true;closeDrawer();
  Object.assign(rv,{base:A,act:A,step:1,hover:null,pin:null,sstep:1,extra:new Set(),shownKey:''});rhist=[];
  rBuild(true);fit(false);
@@ -2040,8 +2179,8 @@ function selectEp(ep,d){if(!xnav)xhist=[];
    (d.dataset.anc||'').split(' ').forEach(a=>{if(a&&collapsed.has('fe|'+a)){collapsed.delete('fe|'+a);ch=true;const h=side.querySelector('.ctree[data-cid="'+a.slice(2)+'"]');if(h)h.classList.remove('shut');}});
    if(ch)store.set('sidecollapsed',[...collapsed]);
    const id=d.dataset.k+'|'+d.dataset.grp;if(collapsed.has(id)){collapsed.delete(id);store.set('sidecollapsed',[...collapsed]);side.querySelectorAll('.grp').forEach(g=>{if(g.dataset.k+'|'+g.dataset.grp===id)g.classList.remove('shut');});ch=true;}
-   if(ch)applySide();}side.querySelectorAll('.ep').forEach(x=>x.classList.remove('on'));d.classList.add('on');d.scrollIntoView({block:'nearest'});store.set('ep',ep.id);if(ep.__act){selectAction(ep.__act);curEp=ep;}else build(ep);}
-const bothKinds=graph.endpoints.length&&RX&&RX.actions.length;
+   if(ch)applySide();}side.querySelectorAll('.ep').forEach(x=>x.classList.remove('on'));d.classList.add('on');d.scrollIntoView({block:'nearest'});store.set('ep',ep.id);if(ep.__act){selectAction(ep.__act);curEp=ep;}else if(ep.__prob){rUnitView(ep.__prob);curEp=ep;}else build(ep);}
+const bothKinds=graph.endpoints.length&&RX&&(RX.actions.length||(RX.problems||[]).length);
 // groups are folder names; drop the leading folders every group shares (e.g. "frontend/") so they stay short
 function shortGroups(names){const segs=names.filter(Boolean).map(n=>n.split('/'));if(segs.length<2)return n=>n;
  let k=0;while(segs.every(x=>x.length>k+1&&x[k]===segs[0][k]))k++;return n=>n?n.split('/').slice(k).join('/'):n;}
@@ -2064,6 +2203,21 @@ graph.endpoints.forEach((ep,i)=>{
  d.querySelector('.revchk').onclick=(e)=>{e.stopPropagation();markReviewed(ep,d);};
  side.appendChild(d); epEls.push({ep,d});
 });
+// states this diff starts throwing away (React mode): one line each, opens its component with the line lit
+const RPROB=((RX&&RX.problems)||[]).filter(([k,r])=>RR[r]&&RU[RR[r].u]);
+if(RPROB.length){
+ const byRow=new Map();RPROB.forEach(([k,r])=>{byRow.set(r,(byRow.get(r)||[]).concat(k));});
+ grpHead('grp','Problems','Problems',byRow.size,'fe');
+ [...byRow].sort((a,b)=>{const x=RR[a[0]],y=RR[b[0]],fx=RU[x.u].file,fy=RU[y.u].file;return fx<fy?-1:fx>fy?1:x.a-y.a;}).forEach(([r])=>{
+   const R=RR[r],U=RU[R.u];
+   const t=(R.f||[]).filter(f=>byRow.get(r).includes(f[0])).map(f=>f[1]).join(' · ');
+   const item={id:'prob:'+r,title:t,path:U.name+' · '+U.file.split('/').pop()+':'+R.a,method:'',group:'',nodes:[],__prob:r};
+   const d=el('div','ep prob');d.tabIndex=0;d.dataset.k='fe';d.dataset.grp='Problems';d.dataset.tip=U.file+':'+R.a+'\n'+R.t;
+   d.innerHTML='<span class="eptext"><div class="t">'+esc(item.title)+'</div><div class="p">'+esc(item.path)+'</div></span>';
+   d.onclick=()=>selectEp(item,d);d.onkeydown=e=>{if(e.key==='Enter')selectEp(item,d);};
+   side.appendChild(d);epEls.push({ep:item,d});
+ });
+}
 // user actions (React mode) as a component tree: each component sits under the one that renders it
 // (its first known parent), with its own actions right under its name. Components with no actions
 // anywhere below them are left out.
@@ -2081,7 +2235,10 @@ if(RX&&RX.actions.length){
    const d=el('div','ep act');d.tabIndex=0;d.dataset.k='fe';d.dataset.anc=anc.join(' ');d.style.setProperty('--d',depth);
    const R=RR[A.row],U=R&&RU[R.u];
    if(U)d.dataset.tip=U.file+':'+R.a+'\n'+R.t;
-   d.innerHTML='<span class="eptext"><div class="t">'+esc(A.label)+'</div><div class="p">'+esc(A.sub)+'</div></span>';
+   // a diff view: changed on its own path (dot), or only through something it re-renders (faded)
+   const dm=(DATA.meta||{}).mode!=='all';if(dm&&A.affected)d.classList.add('aff');
+   d.innerHTML='<span class="eptext"><div class="t">'+esc(A.label)+'</div><div class="p">'+esc(A.sub)+(dm&&A.affected?' · affected':'')+'</div></span>'+(dm&&!A.affected?'<span class="chgdot"></span>':'');
+   if(dm)d.dataset.tip=(d.dataset.tip?d.dataset.tip+'\n\n':'')+(A.affected?'Not edited: it re-renders a component whose props changed':'Its path runs through changed code');
    d.onclick=()=>selectEp(item,d);
    d.onkeydown=e=>{if(e.key==='Enter')selectEp(item,d);};
    side.appendChild(d);epEls.push({ep:item,d});};
@@ -2290,14 +2447,14 @@ function traceFrom(nid,name,S){
  if(made){const t=made.target,tn=NB(t);
    const ids=retIdents(t),feed=sigParams(t).concat((tn.steps||[]).map(s=>s.var),Object.keys(tn.alias||{}),tn.locals||[]).filter(v=>ids.has(v));
    [...new Set(feed)].forEach(v=>traceFrom(t,v,S));
-   S.push({nid,t:'ret',v:name,g:[gIndex(nid,t,made.var),'r'],code:landLine(made,n),also:[[nid,made.var]]});
+   S.push({nid,t:'ret',v:name,g:[gIndex(nid,t,made.var),'r'],code:landLine(made,n),also:[[nid,n.steps.indexOf(made)]]});
    return;}
  const ins=[];callersOf(nid).forEach(({c,s})=>(s.bind||[]).forEach(b=>{if(b.p===name)ins.push({c,s,b});}));
  if(ins.length){ins.forEach(({c,s,b})=>{
    const gi=gIndex(c.id,nid,s.var),moved=b.text!==name;
    if(b.from)traceFrom(c.id,b.from,S);else (b.uses||[]).forEach(u=>traceFrom(c.id,u,S));
-   if(moved)S.push({nid:c.id,t:'row',rv:s.var,v:b.from,g:[gi,'f'],code:b.text});
-   S.push({nid,t:'ins',v:name,g:[gi,'f'],code:name,also:moved?[]:[[c.id,s.var]]});});
+   if(moved)S.push({nid:c.id,t:'row',rv:c.steps.indexOf(s),v:b.from,g:[gi,'f'],code:b.text});
+   S.push({nid,t:'ins',v:name,g:[gi,'f'],code:name,also:moved?[]:[[c.id,c.steps.indexOf(s)]]});});
    return;}
  if(n.entry&&sigParams(nid).includes(name)){const ty=sigType(nid,name);S.push({nid,t:'head',code:name+(ty?': '+ty:'')});return;}
  const a=assignLine(nid,name);
@@ -2315,8 +2472,8 @@ function usesOfVar(nid,v,path,S){
      const bp=b.path||'',pp=path||'',rest='';
      const hit=b.from===v?(bp===pp||(bp.startsWith(pp)&&'.['.includes(bp[pp.length]))):(!path&&(b.uses||[]).includes(v));if(!hit)return;
      const gi=gIndex(nid,t.target,t.var),moved=b.text!==b.p;
-     if(moved)S.push({nid,t:'row',rv:t.var,v,g:[gi,'f'],code:b.text});
-     S.push({nid:t.target,t:'ins',v:b.p,g:[gi,'f'],code:b.p,also:moved?[]:[[nid,t.var]]});
+     if(moved)S.push({nid,t:'row',rv:n.steps.indexOf(t),v,g:[gi,'f'],code:b.text});
+     S.push({nid:t.target,t:'ins',v:b.p,g:[gi,'f'],code:b.p,also:moved?[]:[[nid,n.steps.indexOf(t)]]});
      usesOfVar(t.target,b.p,rest,S);
      if(!rest&&retIdents(t.target).has(b.p))retUp(t.target,S);});});
  // a local that is just another name for it: `items = payload.items`, `for i in items`
@@ -2329,7 +2486,7 @@ function retUp(nid,S){
  const n=NB(nid);if(!n||S.seen.has('u'+nid))return;S.seen.add('u'+nid);
  if(n.entry){const r=(curEp.respModels||[])[0];S.push({nid,t:'head',code:'response'+(r?': '+r:'')});return;}
  callersOf(nid).forEach(({c,s})=>{if(s.var==='·')return;   // result thrown away
-   S.push({nid:c.id,t:'ret',v:s.var==='return'?'response':s.var,g:[gIndex(c.id,nid,s.var),'r'],code:landLine(s,c),also:[[c.id,s.var]]});
+   S.push({nid:c.id,t:'ret',v:s.var==='return'?'response':s.var,g:[gIndex(c.id,nid,s.var),'r'],code:landLine(s,c),also:[[c.id,c.steps.indexOf(s)]]});
    if(s.var==='return')retUp(c.id,S);else if(s.var&&s.var!=='·')usesOfVar(c.id,s.var,'',S);});
 }
 
@@ -2337,8 +2494,8 @@ function retUp(nid,S){
 function belowOf(nid){const out=new Set(),q=[nid];while(q.length){const x=q.shift();if(out.has(x))continue;out.add(x);(NB(x)?NB(x).steps||[]:[]).forEach(s=>{if(s.target&&NB(s.target))q.push(s.target);});}return out;}
 function raisesBelow(nid){const out=[];belowOf(nid).forEach(x=>((NB(x)||{}).raises||[]).forEach((r,i)=>{if(!r.here)out.push({nid:x,r,i});}));return out;}
 function routeStatus(r){if(r.st)return r.st;const s=(curEp.statuses||[]).find(s=>s.kind!=='ok'&&s.types.includes(r.t));return s?s.code:'500';}
-function traceFail(nid,S){const below=belowOf(nid);
- raisesBelow(nid).forEach(({nid:x,r,i})=>{const bad=!r.st;
+function traceFail(nid,S,types,ri){const below=belowOf(nid);
+ raisesBelow(nid).filter(({nid:x,r,i})=>ri!=null?x===nid&&i===ri:!types||types.includes(r.t)).forEach(({nid:x,r,i})=>{const bad=!r.st;
    S.push({nid:x,t:'raise',ri:i,err:bad,code:cut(r.text,40)});
    failUp(x,r,below,nid,S,new Set([x]));});}
 function failUp(x,r,below,asked,S,seen){
@@ -2348,9 +2505,9 @@ function failUp(x,r,below,asked,S,seen){
    if(x!==asked&&below.has(x)&&!below.has(c.id))return;
    if(seen.has(c.id))return;seen.add(c.id);
    const gi=gIndex(c.id,x,s.var),h=(s.caught||[]).find(k=>k[0]===r.t);
-   if(h){S.push({nid:c.id,t:'row',rv:s.var,g:[gi,'fr'],ok:1,tag:'except '+r.t+(h[1]?' → '+h[1]:''),errT:r.t,code:callShort(s,x)});
+   if(h){S.push({nid:c.id,t:'row',rv:c.steps.indexOf(s),g:[gi,'fr'],ok:1,tag:'except '+r.t+(h[1]?' → '+h[1]:''),errT:r.t,code:callShort(s,x)});
      const top=curEp.nodes.find(n=>n.entry);if(h[1]&&top)S.push({nid:top.id,t:'head',chip:String(h[1]),http:1,code:String(h[1]),box:curEp.method.toUpperCase()+' '+curEp.path});return;}
-   S.push({nid:c.id,t:'row',rv:s.var,g:[gi,'fr'],err:bad,tag:r.t,errT:r.t,code:callShort(s,x)});
+   S.push({nid:c.id,t:'row',rv:c.steps.indexOf(s),g:[gi,'fr'],err:bad,tag:r.t,errT:r.t,code:callShort(s,x)});
    if(c.entry){const st=routeStatus(r);S.push({nid:c.id,t:'head',err:bad,chip:st,http:!bad,code:st,box:curEp.method.toUpperCase()+' '+curEp.path});}
    else failUp(c.id,r,below,asked,S,seen);});
  if(NB(x)&&NB(x).entry&&x===asked&&!callersOf(x).length){const st=routeStatus(r);S.push({nid:x,t:'head',err:bad,chip:st,http:!bad,code:st,box:curEp.method.toUpperCase()+' '+curEp.path});}
@@ -2404,11 +2561,27 @@ world.addEventListener('click',e=>{
  startAsk(nid,{k:'value',p:v,path});
 });
 
+// click an error (a raise line, a squiggled call, an error label on an arrow, a route's error status):
+// step through its path, numbered: where it's raised, each call it goes up through, what catches it or
+// what the client gets. Clicking the same error again lets go.
+function askErr(nid,types,ri){
+ if(!types.length)return;
+ if(ASK&&ASK.q.k==='fail'&&ASK.nid===nid&&(ASK.q.t||[]).join()===types.join()&&ASK.q.ri===ri)return clearAsk();
+ setErr(null);startAsk(nid,{k:'fail',t:types,ri});}
+document.addEventListener('click',e=>{
+ const t=!RMODE&&!dragMoved&&e.target.closest&&!e.target.closest('#world [data-var]')&&e.target.closest('#world .step.raise,#world .sq[data-err],#world .sqok[data-err],#edges .errlab[data-err]');
+ if(!t)return;e.stopPropagation();
+ const types=(t.dataset.err||t.closest('[data-err]').dataset.err||'').split(' ').filter(Boolean);
+ if(t.dataset.eg!=null){const g=groupEdges()[+t.dataset.eg];if(g)askErr(g.dst,types);return;}
+ const card=t.closest('.node'),row=t.closest('.step[data-row]'),rr=t.closest('.step.raise');if(!card)return;
+ if(rr)return askErr(card.dataset.id,types,+rr.dataset.ri);   // this raise line only
+ const s=row&&(NB(card.dataset.id).steps||[])[+row.dataset.row];
+ askErr(s&&s.target&&NB(s.target)?s.target:card.dataset.id,types);},true);
 function startAsk(nid,q){
  clearAsk(true);setSpot(null);setLink([]);
  const S=stepSink(),t=short(NB(nid).title);let here=-1;
  if(q.k==='from')traceFrom(nid,q.p,S);
- else if(q.k==='fail')traceFail(nid,S);
+ else if(q.k==='fail')traceFail(nid,S,q.t,q.ri);
  else if(q.k==='routes')traceRoutes(nid,S);
  else{traceFrom(nid,q.p,S);
    // the clicked value is the last step of where it came from; mark it, then follow it onward
@@ -2419,11 +2592,11 @@ function startAsk(nid,q){
  const nm=esc(q.p+(q.path||''));
  const head={from:'<span class="hk">←</span> '+nm+' <span class="hk">'+esc(t)+'</span>',
    value:nm+' <span class="hk">'+esc(t)+'</span>',
-   fail:esc(t)+'() <span class="tag" style="color:var(--del)">raise</span>',routes:esc(t)+'() <span class="hk">also in</span>'}[q.k];
+   fail:(q.t?'<span style="color:var(--del)">'+esc(q.t.join(', '))+'</span> <span class="hk">from '+esc(t)+'()</span>':esc(t)+'() <span class="tag" style="color:var(--del)">raise</span>'),routes:esc(t)+'() <span class="hk">also in</span>'}[q.k];
  ASK={nid,q,steps:S.list,extra:S.extra,more:S.more,head,here,opened:[]};
  // everything the answer points at has to be visible: open collapsed boxes, and code for code lines
  S.list.forEach(st=>{const nd=nodes[st.nid];if(!nd)return;nd.el.classList.remove('shut');
-   if(st.t==='code'){const pre=nd.el.querySelector('pre.code');if(pre&&pre.hidden){setNodeCode(nd.el,true);ASK.opened.push(nd.el);}}});
+   if(st.t==='code'){const pre=nd.el.querySelector('pre.code');if(pre&&!codeOpen(pre)&&![...pre.querySelectorAll('.dl:not(.f)')].some(l=>l.textContent.trim()===st.line)){setNodeCode(nd.el,true);ASK.opened.push(nd.el);}}});
  renderAskList();relayout();if(S.list.length)requestAnimationFrame(()=>requestAnimationFrame(fitAnswer));
  const f=$('#asklist .ast');if(f)f.focus({preventScroll:true});
 }
@@ -2456,7 +2629,7 @@ function renderAskList(){
   +(ASK.more?'<li><span class="ast" style="cursor:default"><span class="askn more">+'+ASK.more+'</span></span></li>':'')
   +(!ASK.steps.length&&!ASK.extra.length?'<li><span class="ast" style="cursor:default;color:var(--muted)">not traced</span></li>':'');
  box.innerHTML='<div class="al-h"><span>'+ASK.head+'</span><button class="al-x" aria-label="Clear" data-tip="Clear  (Esc)">✕</button></div><ol>'+items+'</ol>';
- box.style.top=(stage.classList.contains('hasfx')?$('#fxstrip').offsetHeight+24:14)+'px';
+ box.style.top='14px';
  box.hidden=false;
 }
 $('#asklist').addEventListener('click',e=>{
@@ -2474,7 +2647,7 @@ $('#asklist').addEventListener('keydown',e=>{if(e.key!=='ArrowDown'&&e.key!=='Ar
  if(items.length)items[(i+(e.key==='ArrowDown'?1:-1)+items.length)%items.length].focus();});
 function markCur(i){$('#askmarks').querySelectorAll('.askn').forEach(m=>m.classList.toggle('cur',+m.dataset.i===i));}
 function pulseMark(i){markCur(i);setTimeout(()=>{const a=document.activeElement;if(!(a&&a.closest&&a.closest('#asklist')))markCur(-1);},1400);}
-const rowOf=(nid,rv)=>{const nd=nodes[nid];return nd?[...nd.el.querySelectorAll('.step')].find(r=>r.dataset.rowvar===rv):null;};
+const rowOf=(nid,i)=>{const nd=nodes[nid];return nd?[...nd.el.querySelectorAll('.step')].find(r=>(r.dataset.si||r.dataset.row||'').split(' ').includes(String(i))):null;};
 function anchorOf(st){
  const nd=nodes[st.nid];if(!nd)return null;const card=nd.el;
  if(st.t==='row')return rowOf(st.nid,st.rv);
@@ -2483,7 +2656,7 @@ function anchorOf(st){
    ||[...card.querySelectorAll('.nbody [data-var]')].find(x=>x.dataset.var===st.v&&x.getClientRects().length);   // no line of its own: the first row that uses it
  if(st.t==='var')return [...card.querySelectorAll('.nbody [data-var]')].find(x=>x.dataset.var===st.v&&(x.dataset.path||'')===(st.path||'')&&x.getClientRects().length)
    ||[...card.querySelectorAll('.nbody [data-var]')].find(x=>x.dataset.var===st.v&&x.getClientRects().length);
- if(st.t==='code'){const pre=card.querySelector('pre.code');return pre&&!pre.hidden?[...pre.querySelectorAll('.dl')].find(l=>l.textContent.trim()===st.line):null;}
+ if(st.t==='code'){const pre=card.querySelector('pre.code');return pre?[...pre.querySelectorAll('.dl')].find(l=>l.textContent.trim()===st.line&&l.getClientRects().length):null;}
  if(st.t==='ret'){const gi=st.g[0];return [...svg.querySelectorAll('g.pillg.ge'+gi+'.gr')].find(p=>p.textContent===st.v)||svg.querySelector('path.ge'+gi+'.gr');}
  return null;
 }
@@ -2529,7 +2702,7 @@ function paintAsk(){
 function askCodeLines(){
  const N=t=>t.replace(/\s+/g,'');
  world.querySelectorAll('.node.ask-on').forEach(card=>{
-   const pre=card.querySelector('pre.code');if(!pre||pre.hidden)return;
+   const pre=card.querySelector('pre.code');if(!pre)return;
    const dls=[...pre.querySelectorAll('.dl')],txt=dls.map(l=>N(l.textContent.replace(/^[+-]/,'')));
    const hit=(from,to)=>{for(let k=from;k<=to;k++)dls[k].classList.add('ask-hit');};
    card.querySelectorAll('.step.ask-hit,.ins .in.ask-hit').forEach(r=>{
@@ -2548,10 +2721,83 @@ function askCodeLines(){
 {let down=null;
  stage.addEventListener('pointerdown',e=>{down=e.target.closest('.node,.float,.drawer')?null:[e.clientX,e.clientY];});
  stage.addEventListener('pointerup',e=>{if(down&&Math.abs(e.clientX-down[0])+Math.abs(e.clientY-down[1])<4)clearAsk();down=null;});}
-// a keyboard-focused box off-screen: glide to it
-world.addEventListener('focusin',e=>{if(!e.target.classList||!e.target.classList.contains('node'))return;const r=e.target.getBoundingClientRect(),s=stage.getBoundingClientRect();
+// a keyboard-focused box off-screen: glide to it. Not on a mouse press: that focus comes from
+// clicking inside the box, and gliding then would slide a call name away before the click lands.
+let ptrFocus=0;
+world.addEventListener('pointerdown',()=>{ptrFocus=Date.now();},true);
+world.addEventListener('focusin',e=>{if(!e.target.classList||!e.target.classList.contains('node')||Date.now()-ptrFocus<600)return;const r=e.target.getBoundingClientRect(),s=stage.getBoundingClientRect();
  if(r.left<s.left||r.right>s.right||r.top<s.top||r.bottom>s.bottom)focusNode(nodes[e.target.dataset.id]);});
 
+// ── find in this map ──
+// Matches function names first, then any row or code line, in the boxes of the current map.
+// Enter / Shift+Enter (or ↓ ↑) step through them; each step glides to the box and lights the line.
+const MF={q:'',hits:[],i:-1};
+function mfNorm(t){return t.replace(/\s+/g,'').toLowerCase();}
+function mfName(card){const t=card.querySelector('.ntitle');if(!t)return '';
+ return [...t.childNodes].filter(n=>n.nodeType===3||n.classList.contains('rsig')).map(n=>n.textContent).join('');}
+function mfClear(){world.classList.remove('finding');
+ world.querySelectorAll('.fnode,.fname,.fcurn').forEach(e=>e.classList.remove('fnode','fname','fcurn'));
+ world.querySelectorAll('.fline').forEach(e=>e.classList.remove('fline','fcur'));
+ if(MF_HL){CSS.highlights.delete('mfind');CSS.highlights.delete('mfcur');}}
+function mfRanges(el,q){const out=[],w=document.createTreeWalker(el,NodeFilter.SHOW_TEXT);let n;
+ while((n=w.nextNode())){if(n.parentElement.closest('.nsub,.ub,button'))continue;const t=n.nodeValue.toLowerCase();let k=t.indexOf(q);
+  while(k>=0){const r=new Range();r.setStart(n,k);r.setEnd(n,k+q.length);out.push(r);k=t.indexOf(q,k+q.length);}}
+ return out;}
+function mfRun(jump){
+ const q=$('#mq').value.trim(),ql=q.toLowerCase(),box=$('#mfind');mfClear();
+ MF.q=q;MF.hits=[];MF.i=-1;box.classList.toggle('has',!!q);box.classList.remove('none');
+ if(!q){MF.i=-1;$('#mqn').textContent='';return;}
+ const cards=Object.values(nodes).filter(nd=>nd.el&&nd.el.isConnected&&!nd.el.hidden).sort((a,b)=>a.x-b.x||a.y-b.y);
+ const names=[],lines=[];
+ cards.forEach(nd=>{const card=nd.el;
+  if(mfName(card).toLowerCase().includes(ql))names.push({nd,el:null});
+  // a summary row and its code line say the same thing: count it once, prefer what is on screen
+  const seen=new Set(),pre=card.querySelector('pre.code'),rows=[...card.querySelectorAll('.nbody>.step,.nbody>.ins,.nbody>.rrow')],dls=pre?[...pre.querySelectorAll('.dl')]:[];
+  const hit=e=>e.textContent.toLowerCase().includes(ql);
+  const first=pre&&!pre.hidden?[dls,rows]:[rows,dls];
+  const nm=names.length&&names[names.length-1].nd===nd?mfNorm(mfName(card)):null;
+  first.forEach(list=>list.filter(hit).forEach(e=>{const k=mfNorm(e.textContent);
+   if([...seen].some(x=>x.includes(k)))return;
+   if(nm&&e.classList.contains('dl')&&/^(async)?(def|function|const)/.test(k)&&k.includes(nm.replace(/^(async)?(function)/,'').replace(/\(.*/,'')))return;
+   seen.add(k);lines.push({nd,el:e});}));});
+ MF.hits=names.concat(lines);
+ MF.hits.forEach(h=>{h.nd.el.classList.add('fnode');if(!h.el){h.nd.el.classList.add('fname');h.r=mfRanges(h.nd.el.querySelector('.ntitle'),ql);}
+  else{h.el.classList.add('fline');h.r=mfRanges(h.el,ql);}});
+ mfPaint();
+ world.classList.add('finding');
+ if(!MF.hits.length){MF.i=-1;box.classList.add('none');$('#mqn').textContent='0';return;}
+ MF.i=jump?0:-1;mfCount();if(jump)mfShow();
+}
+const MF_HL=!!(window.CSS&&CSS.highlights&&window.Highlight);document.documentElement.classList.toggle('nohl',!MF_HL);
+function mfPaint(){if(!MF_HL)return;const all=[],cur=[];MF.hits.forEach((h,i)=>(i===MF.i?cur:all).push(...(h.r||[])));
+ CSS.highlights.set('mfind',new Highlight(...all));CSS.highlights.set('mfcur',new Highlight(...cur));}
+function mfCount(){$('#mqn').textContent=(MF.i<0?'':(MF.i+1)+'/')+MF.hits.length;}
+function mfStep(d){if(!MF.hits.length)return;MF.i=(MF.i+d+MF.hits.length)%MF.hits.length;mfCount();mfShow();}
+function mfShow(){
+ const h=MF.hits[MF.i];if(!h)return;
+ world.querySelectorAll('.fcur').forEach(e=>e.classList.remove('fcur'));world.querySelectorAll('.fcurn').forEach(e=>e.classList.remove('fcurn'));
+ h.nd.el.classList.add('fcurn');
+ const pre=h.el&&h.el.closest('pre.code');
+ if(pre&&(pre.hidden||h.el.classList.contains('f')&&!codeOpen(pre))){setNodeCode(h.nd.el,true);relayout();setTimeout(()=>mfShow(),80);return;}
+ mfPaint();
+ if(!h.el){focusNode(h.nd);return;}
+ h.el.classList.add('fcur');
+ if(pre){const top=h.el.offsetTop-pre.offsetTop;if(top<pre.scrollTop||top>pre.scrollTop+pre.clientHeight-20)pre.scrollTop=top-pre.clientHeight/3;}
+ // centre the line (not the whole box, which can be taller than the screen)
+ const r=stage.getBoundingClientRect(),card=h.nd.el;let y=0,e=h.el;while(e&&e!==card){y+=e.offsetTop;e=e.offsetParent;}if(pre)y-=pre.scrollTop;
+ view.x=r.width/2-(h.nd.x+card.offsetWidth/2)*view.s;view.y=r.height/2-(h.nd.y+y+h.el.offsetHeight/2)*view.s;animateView();
+}
+{const mq=$('#mq');let t=null;
+ mq.addEventListener('input',()=>{clearTimeout(t);t=setTimeout(()=>mfRun(true),120);});
+ mq.addEventListener('keydown',e=>{
+  if(e.key==='Enter'||e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();clearTimeout(t);
+   if(mq.value.trim()!==MF.q){mfRun(true);return;}mfStep(e.key==='ArrowUp'||(e.key==='Enter'&&e.shiftKey)?-1:1);}
+  else if(e.key==='Escape'){e.stopPropagation();if(mq.value){mq.value='';mfRun(false);}else mq.blur();}});
+ $('#mqnext').onclick=()=>mfStep(1);$('#mqprev').onclick=()=>mfStep(-1);
+ // a new map (another route or action, code shown or hidden): search it again, without moving the view
+ let pend=0;new MutationObserver(()=>{if(!MF.q||pend)return;pend=requestAnimationFrame(()=>{pend=0;mfRun(false);});})
+  .observe(world,{childList:true});
+}
 // V marks the changed box under the pointer, else the one the Changes stepper is on
 let hoverNode=null;
 world.addEventListener('mouseover',e=>{const c=e.target.closest('.node');hoverNode=c?c.dataset.id:null;});
@@ -2562,6 +2808,7 @@ window.addEventListener('keydown',e=>{
  if(e.altKey&&e.key==='ArrowLeft'&&!(e.target.closest&&e.target.closest('input,textarea,[contenteditable]'))){
    if(RMODE&&rhist.length){e.preventDefault();rBack();}else if(xhist.length){e.preventDefault();xBack();}
    if(RMODE||xhist.length)return;}
+ if((e.metaKey||e.ctrlKey)&&!e.altKey&&!e.shiftKey&&(e.key==='f'||e.key==='F')){e.preventDefault();$('#mq').focus();$('#mq').select();return;}
  if((e.metaKey||e.ctrlKey)&&(e.key==='k'||e.key==='K')){e.preventDefault();if(document.body.classList.contains('noside'))toggleSide();$('#q').focus();$('#q').select();return;}
  if(e.metaKey||e.ctrlKey||e.altKey)return;
  const typing=e.target.closest&&e.target.closest('input,textarea,[contenteditable]');
@@ -2594,14 +2841,28 @@ window.addEventListener('keydown',e=>{
 if(store.get('review',false))toggleReview();
 if(store.get('nomap',false))toggleMap();
 if(store.get('noside',false))document.body.classList.add('noside');
+// sidebar width: drag the right edge (200–520px), double-click resets; remembered per browser
+{const SW0=252,g=$('#sgrip'),root=document.documentElement,clamp=w=>Math.max(200,Math.min(520,Math.round(w)));
+ const setW=w=>{root.style.setProperty('--sidew',w+'px');};
+ const w0=store.get('sidew',null);if(w0)setW(clamp(w0));
+ g.addEventListener('pointerdown',e=>{if(e.button!==0)return;e.preventDefault();g.setPointerCapture(e.pointerId);
+  const sx=e.clientX,sw=$('#sidebar').offsetWidth;document.body.classList.add('sizing');g.classList.add('drag');
+  const mv=ev=>setW(clamp(sw+ev.clientX-sx));
+  const up=()=>{g.removeEventListener('pointermove',mv);g.removeEventListener('pointerup',up);g.removeEventListener('pointercancel',up);
+   document.body.classList.remove('sizing');g.classList.remove('drag');store.set('sidew',$('#sidebar').offsetWidth);drawMinimap();};
+  g.addEventListener('pointermove',mv);g.addEventListener('pointerup',up);g.addEventListener('pointercancel',up);});
+ g.addEventListener('dblclick',()=>{setW(SW0);store.set('sidew',null);drawMinimap();});}
 updateRevProgress();
 applyView();
 if(!epEls.length){
  $('#empty').hidden=false;$('#legend').hidden=true;
- if(META.mode!=='all'){$('#emptyh').textContent='No changes here';$('#emptyp').innerHTML='Nothing in <b>'+esc(META.head||'the working tree')+'</b> differs from <b>'+esc(META.base)+'</b>. Pick another range with the button at the top left.';}
+ if(META.mode!=='all'){const un=META.unread||[];$('#emptyh').textContent=un.length?'Nothing to draw here':'No changes here';
+   $('#emptyp').innerHTML=un.length
+     ?'<b>'+esc(META.head||'the working tree')+'</b> changes '+un.length+' file'+(un.length>1?'s':'')+' against <b>'+esc(META.base)+'</b>, but none that this view draws (Python routes and functions):<br>'+un.slice(0,12).map(f=>'<code>'+esc(f)+'</code>').join('<br>')+(un.length>12?'<br>and '+(un.length-12)+' more':'')
+     :'Nothing in <b>'+esc(META.head||'the working tree')+'</b> differs from <b>'+esc(META.base)+'</b>. Pick another range with the button at the top left.';}
 }
 else{
- const last=store.get('ep',null), start=epEls.find(x=>x.ep.id===last)||epEls[0];
+ const last=store.get('ep',null), start=epEls.find(x=>x.ep.id===last)||epEls.find(x=>!x.ep.__prob)||epEls[0];
  requestAnimationFrame(()=>{selectEp(start.ep,start.d);requestAnimationFrame(()=>{layout();fit(false);});});
 }
 let ridle;window.addEventListener('resize',()=>{clearTimeout(ridle);ridle=setTimeout(()=>{drawEdges();drawMinimap();},120);});

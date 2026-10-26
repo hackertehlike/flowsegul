@@ -55,6 +55,23 @@ FILES = {
                 raise ValueError("unknown coupon")
             return total * 0.9 if coupon else total
     ''',
+    'app/clients.py': '''
+        import httpx
+
+        graph = httpx.AsyncClient(base_url="https://graph.microsoft.com/v1.0")
+
+
+        def get_http() -> httpx.AsyncClient:
+            return httpx.AsyncClient()
+
+
+        class Directory:
+            def __init__(self):
+                self.client = httpx.AsyncClient()
+
+            async def rename(self, uid: str, name: str):
+                await self.client.patch(f"/users/{uid}", json={"displayName": name})
+    ''',
     'app/tasks.py': '''
         from celery import shared_task
 
@@ -66,7 +83,7 @@ FILES = {
     'app/api/routes.py': '''
         import os
         import httpx
-        from fastapi import APIRouter, BackgroundTasks
+        from fastapi import APIRouter, BackgroundTasks, Depends
         from sqlalchemy import update
         from app.deps import SessionDep, PlainSession, CurrentUser
         from app.models import Order, User, Payment, Document
@@ -74,6 +91,7 @@ FILES = {
         from app.services.partners import notify_partner
         from app.services.pricing import apply_coupon
         from app.tasks import rebuild_report
+        from app.clients import graph, get_http, Directory
 
         router = APIRouter()
 
@@ -129,6 +147,14 @@ FILES = {
             session.add(current_user)
             session.commit()
             return current_user
+
+
+        @router.put("/graph/me")
+        async def graph_calls(http=Depends(get_http)):
+            await graph.put("/me", json={})
+            await Directory().rename("1", "x")
+            await http.delete("/me/photo")
+            return await http.get("/me")
 
 
         @router.get("/orders/{order_id}")
