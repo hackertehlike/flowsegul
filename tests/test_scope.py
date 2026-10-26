@@ -1,6 +1,7 @@
 """Bare-name calls resolve the way Python scopes names: the caller's own variables, then a def in
-the same module, then what the module imports, and only then a repo-wide match by name, which is
-drawn as a maybe and never picks one of several.
+the same module, then what the module imports. A name nothing binds reaches nothing; a name imported
+from a repo file the scan can't see falls back to a match by name, drawn as a maybe that never picks
+one of several.
 
 Run: python3 -m unittest discover -s tests
 """
@@ -99,12 +100,23 @@ FILES = {
             return {"id": 0, "admin": True}
     ''',
     'app/loose.py': '''
-        def by_name_two():
+        from .gone import run as gone_run, only_here as gone_one
+
+
+        def unbound_two():
             return run()
 
 
-        def by_name_one():
+        def unbound_one():
             return only_here()
+
+
+        def by_name_two():
+            return gone_run()
+
+
+        def by_name_one():
+            return gone_one()
 
 
         def builtin(path):
@@ -189,10 +201,14 @@ class Scope(unittest.TestCase):
         self.assertEqual(self.steps('app/callers.py::param'), [])
         self.assertEqual(self.steps('app/loose.py::builtin'), [])
 
+    def test_a_name_nothing_binds_reaches_nothing(self):
+        self.assertEqual(self.steps('app/loose.py::unbound_two'), [])
+        self.assertEqual(self.steps('app/loose.py::unbound_one'), [])
+
     def test_name_only_match_is_a_maybe_and_never_picks_one(self):
         two = self.steps('app/loose.py::by_name_two')
         self.assertEqual(sorted(two), [('app/jobs/alpha.py::run', 2), ('app/jobs/beta.py::run', 2)])
-        self.assertIsNone(self.idx.resolve(gen.ast.parse('run()').body[0].value, None,
+        self.assertIsNone(self.idx.resolve(gen.ast.parse('gone_run()').body[0].value, None,
                                            'app/loose.py::by_name_two'))
         self.assertEqual(self.steps('app/loose.py::by_name_one'), [('app/util.py::only_here', 1)])
 

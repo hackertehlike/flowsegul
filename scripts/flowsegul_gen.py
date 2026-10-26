@@ -27,6 +27,7 @@ PALETTE = ['#3b82f6','#0ea5a4','#d97706','#db2777','#16a34a','#7c3aed','#ea580c'
 INPUT_PALETTE = ['#e8590c','#1098ad','#9c36b5','#2f9e44','#c2255c','#1971c2']
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from flowsegul_effects import timeline as effect_timeline  # noqa: E402
+import flowsegul_hints  # noqa: E402
 SKIP_PARAMS = {'self', 'cls', 'db', 'body', 'request', 'session'}
 
 
@@ -52,6 +53,9 @@ def parse_py(src):
         except SyntaxError:
             pass
         raise
+
+
+flowsegul_hints.parse = parse_py
 
 def _excluded(rel_dir):
     """Skip hidden folders, virtualenvs, tests and migrations. Only folders *inside* the scanned
@@ -275,33 +279,6 @@ def _module_stmts(body):
 _BUILTIN_NAMES = set(dir(builtins))
 
 
-def _scope_names(fn):
-    """Names a function binds in its own scope: parameters, assignments, loop and `with … as`
-    targets, `except … as e`, and the defs and classes nested in it. A comprehension's loop variable
-    and a nested function's variables live in their own scopes, so they don't count; neither do
-    names declared `global` or `nonlocal`."""
-    a = fn.args
-    names = {x.arg for x in [*getattr(a, 'posonlyargs', []), *a.args, *a.kwonlyargs, a.vararg, a.kwarg] if x}
-    outer = set()
-    todo = list(fn.body)
-    while todo:
-        n = todo.pop()
-        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            names.add(n.name)
-            todo += n.decorator_list
-            continue
-        if isinstance(n, (ast.Lambda, ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)):
-            continue
-        if isinstance(n, (ast.Global, ast.Nonlocal)):
-            outer.update(n.names)
-        elif isinstance(n, ast.Name) and isinstance(n.ctx, ast.Store):
-            names.add(n.id)
-        elif isinstance(n, ast.ExceptHandler) and n.name:
-            names.add(n.name)
-        todo += ast.iter_child_nodes(n)
-    return names - outer
-
-
 class Index:
     """All functions/methods across the given files, with resolution helpers.
 
@@ -331,6 +308,8 @@ class Index:
         self.includes = []     # (rel, parent expr, child expr, prefix) from `x.include_router(y, prefix=…)`
         self.attr_types = {}   # class -> [(rel, {attr: type text})] for `self.attr`
         self.local_types = {}  # qual -> {local name: type text, or '' for a builtin value}
+        self.local_refs = {}   # qual -> ids of the Name nodes in its body that read a local value
+        self.written_in = {}   # id(expr) -> rel, for code read from another file (a Depends in an alias)
         self.module_types = {} # rel -> {module-level name: type text}, e.g. `order_service = OrderService()`
         self._pending = []     # (qual, method, path, rel, router var) until every file's routers are known
         self.str_consts = {}   # rel -> {NAME: "text"} module-level string constants
@@ -682,10 +661,12 @@ class Index:
         when that's a builtin (a dict's `.get`) it is not one of ours. For `module.x()`, a candidate
         defined in a file named after the module (`usage_service.x` → usage_service.py) wins. Unknown
         receivers fall back to a name match (`order_repo.get` → OrderRepository.get), then to the
-        only candidate. A bare `x()` is looked up the way Python does (see bare_targets).
+        only candidate. A bare `x()` is looked up the way Python does (see bare_targets); a local
+        of the caller (a parameter, variable, loop target, nested def…) is a value, not a function: None.
         """
         fn = call.func
         caller_rel = caller_qual.split('::', 1)[0] if caller_qual else ''
+        caller_rel = self.written_in.get(id(fn), caller_rel)
         if isinstance(fn, ast.Attribute):
             recv, name = fn.value, fn.attr
             if isinstance(recv, ast.Name) and recv.id in ('self', 'cls'):
@@ -734,6 +715,10 @@ class Index:
                     for q in cands):
                 return None   # `.get()`, `.items()`, `.append()` on something we can't place
         elif isinstance(fn, ast.Name):
+            # `await write(event_id)` where `write` is a parameter, a variable or a nested def: a
+            # value of the caller, not whichever module function happens to share its name
+            if self.reads_local(fn, caller_qual):
+                return None
             cands, sure = self.bare_targets(fn.id, caller_qual)
             # a match by name alone is drawn only when it's the one function of that name
             return cands[0] if cands and (sure or len(cands) == 1) else None
@@ -822,8 +807,8 @@ class Index:
     def bare_targets(self, name, caller_qual):
         """([qual], sure) for a bare `name(...)` called in `caller_qual`, scoped like Python: the
         caller's own variables and nested defs, then the module's own def, then its imports. Only when
-        none of those binds the name, the repo's functions of that name: `sure` is False then, and
-        there may be several."""
+        it's imported from a repo file that doesn't show the def, the repo's functions of that name:
+        `sure` is False then, and there may be several. A name nothing binds reaches nothing."""
         rel = caller_qual.split('::', 1)[0] if caller_qual else ''
         r = None
         if caller_qual in self.funcs:
@@ -835,15 +820,15 @@ class Index:
         r = r or self.scope_lookup(rel, name)
         if r and r[0] in ('def', 'import'):
             return [r[1]], True
-        if r and r[0] == 'other':
-            return [], True
-        real = r[1] if r else name
-        return [q for q in self.by_simple.get(real, []) if q != caller_qual], False
+        if not r or r[0] == 'other':
+            return [], True                       # nothing binds it: Python couldn't reach a def by name either
+        return [q for q in self.by_simple.get(r[1], []) if q != caller_qual], False
 
     def _own_names(self, qual):
         key = ('own', qual)
         if key not in self.local_types:
-            self.local_types[key] = _scope_names(self.funcs[qual]['node'])
+            fn = self.funcs[qual]['node']
+            self.local_types[key] = _scope_names(fn.body, fn.args)
         return self.local_types[key]
 
     def _own_imports(self, qual):
@@ -859,9 +844,17 @@ class Index:
             self.local_types[key] = out
         return self.local_types[key]
 
+    def reads_local(self, name_node, caller_qual):
+        """Whether this Name reads a local of the caller (or of a function it is nested in)."""
+        if caller_qual not in self.funcs:
+            return False
+        if caller_qual not in self.local_refs:
+            self.local_refs[caller_qual] = _local_refs(self.funcs[caller_qual]['node'])
+        return id(name_node) in self.local_refs[caller_qual]
+
     def name_guess(self, call, caller_qual):
         """The candidates of a bare call that only a repo-wide name match can place, else None."""
-        if not isinstance(call.func, ast.Name):
+        if not isinstance(call.func, ast.Name) or self.reads_local(call.func, caller_qual):
             return None
         cands, sure = self.bare_targets(call.func.id, caller_qual)
         return None if sure or not cands else cands
@@ -894,6 +887,78 @@ def _ctor_type(value):
     if isinstance(value, ast.Constant) and value.value is not None:
         return type(value.value).__name__
     return None
+
+
+_SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)
+_COMPS = (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
+
+
+def _scope_names(body, args):
+    """Names a function scope binds: its parameters, assignment/for/with/except/walrus/match
+    targets, nested def and class names, minus `global`/`nonlocal` ones. Imports are left out:
+    `from m import x` inside a function still names m's `x`, and the resolver follows the import."""
+    names = {a.arg for a in [*getattr(args, 'posonlyargs', []), *args.args, *args.kwonlyargs,
+                             args.vararg, args.kwarg] if a is not None}
+    outer, todo = set(), list(body)
+    while todo:
+        n = todo.pop()
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            names.add(n.name)     # its body is its own scope; decorators and defaults run here
+            todo += n.decorator_list + (getattr(n, 'bases', []) +
+                                        [k.value for k in getattr(n, 'keywords', [])])
+            if not isinstance(n, ast.ClassDef):
+                todo += [d for d in n.args.defaults + n.args.kw_defaults if d is not None]
+            continue
+        if isinstance(n, ast.Lambda):
+            todo += [d for d in n.args.defaults + n.args.kw_defaults if d is not None]
+            continue
+        if isinstance(n, _COMPS):  # its targets are its own; a walrus inside binds out here
+            names.update(m.target.id for m in ast.walk(n) if isinstance(m, ast.NamedExpr))
+            continue
+        if isinstance(n, (ast.Global, ast.Nonlocal)):
+            outer.update(n.names)
+        elif isinstance(n, ast.Name) and not isinstance(n.ctx, ast.Load):
+            names.add(n.id)
+        elif isinstance(n, ast.ExceptHandler) and n.name:
+            names.add(n.name)
+        elif getattr(n, 'name', None) and type(n).__name__ in ('MatchAs', 'MatchStar'):
+            names.add(n.name)
+        elif type(n).__name__ == 'MatchMapping' and n.rest:
+            names.add(n.rest)
+        todo += ast.iter_child_nodes(n)
+    return names - outer
+
+
+def _local_refs(fn):
+    """ids of the Name nodes in `fn`'s body that read one of its locals (or, in a nested def or
+    lambda, a local of that one or of an enclosing function). The function's own decorators,
+    defaults and annotations run in the module, so they are not looked at."""
+    out = set()
+
+    def visit(n, env):
+        if isinstance(n, _SCOPES):
+            for d in getattr(n, 'decorator_list', []) + n.args.defaults + n.args.kw_defaults:
+                if d is not None:
+                    visit(d, env)
+            body = n.body if isinstance(n.body, list) else [n.body]
+            inner = env | _scope_names(body, n.args)
+            for b in body:
+                visit(b, inner)
+            return
+        if isinstance(n, _COMPS):
+            inner = env | {m.id for g in n.generators for m in ast.walk(g.target) if isinstance(m, ast.Name)}
+            for c in ast.iter_child_nodes(n):
+                visit(c, inner)
+            return
+        if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load) and n.id in env:
+            out.add(id(n))
+        for c in ast.iter_child_nodes(n):
+            visit(c, env)
+
+    env = _scope_names(fn.body, fn.args)
+    for s in fn.body:
+        visit(s, env)
+    return out
 
 
 def _local_types(fn):
@@ -1602,10 +1667,14 @@ def _depends_in(node, idx, rel, seen=(), kinds=('Depends', 'Security'), bare=Fal
     or imported). `bare` also collects plain `helper(…)` calls, e.g. `Annotated[int, _or_default(10)]`."""
     out = []
     for n in ast.walk(node):
-        if (isinstance(n, ast.Call) and unparse(n.func).split('.')[-1] in kinds and n.args
-                or bare and isinstance(n, ast.Call) and isinstance(n.func, ast.Name)):
+        if isinstance(n, ast.Call) and unparse(n.func).split('.')[-1] in kinds and n.args:
             n.flow_rel = rel      # names in it are looked up in the file the alias is written in
             out.append(n)
+            idx.written_in[id(n.args[0])] = rel   # `Depends(get_user)` names deps.py's get_user
+        elif bare and isinstance(n, ast.Call) and isinstance(n.func, ast.Name):
+            n.flow_rel = rel
+            out.append(n)
+            idx.written_in[id(n.func)] = rel
         elif isinstance(n, ast.Name) and n.id not in seen:
             val = idx.module_values.get(rel, {}).get(n.id)
             src_rel = rel
@@ -2042,6 +2111,10 @@ def build_endpoint(entry_qual, idx, meta, depth, tag, changed_q=frozenset(), cha
             rs.append(x)
         if rs:
             n['raises'] = rs
+        if info['file'] in idx.file_src:
+            hs = flowsegul_hints.hints_for(info, idx, code_lines_of(info, idx.file_src[info['file']]))
+            if hs:
+                n['hints'] = hs
         ub = (used_by or {}).get(q, [])
         if len(ub) > 1:
             n['usedBy'] = ub
