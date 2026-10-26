@@ -159,7 +159,11 @@ wrappers like `api('/items')`. Vite's `server.proxy` rewrites, Next.js `rewrites
   (`N` / `Shift+N`), and deleted defs shown as removal diffs. Decorator edits count, and so do
   edits to a module-level name a function reads (`LIMIT = 500`): that function's diff opens with
   the line. New files you haven't `git add`ed, deleted files, and module-level code no function
-  reads (`app.include_router(…)`) are shown too.
+  reads (`app.include_router(…)`) are shown too. Each changed function has a **Viewed** tick, and
+  **Mark all viewed** in the toolbar (`Shift+V`) ticks every changed function in the endpoint on screen.
+- **Constants** — an ALL_CAPS module-level name a function reads (`ONEDRIVE_TOOL_NAMES`,
+  `config.MAX_RETRIES`) is underlined in its code; hover it to see the line that sets it and where,
+  even when it is imported from another file.
 - **Review mode** — tick endpoints off as reviewed with a progress bar (persisted in localStorage).
   A tick belongs to the code you reviewed: when that route's code changes, it clears.
 - **Keyboard first** — `/` filters endpoints, `J`/`K` moves between them, `F` fits, `?` lists the rest.
